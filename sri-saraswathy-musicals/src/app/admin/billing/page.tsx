@@ -1,300 +1,405 @@
 "use client";
-import { useState, useMemo } from "react";
-import Link from "next/link";
-import { motion } from "framer-motion";
-import { invoices } from "@/lib/data/invoices";
-import { products } from "@/lib/data/products";
-import { formatINR, calculateGST } from "@/lib/utils";
-import { Plus, Download, Printer, Search, X, ChevronRight, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useMemo, useState } from "react";
+import {
+  User as UserIcon,
+  ShoppingBag,
+  List,
+  Plus,
+  Minus,
+  Trash2,
+  MessageCircle,
+  Search,
+} from "lucide-react";
+import { usePOS, productStock, genInvoiceId, type Bill, type Source, type Branch } from "@/lib/store/pos";
+import { formatINR, cn } from "@/lib/utils";
 
-interface Line {
-  productId: string;
+interface Row {
+  id: string;
+  name: string;
+  price: number;
   qty: number;
-  discount: number;
 }
 
 export default function BillingPage() {
-  const [showForm, setShowForm] = useState(false);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "pending" | "cancelled">("all");
-  const [branch, setBranch] = useState<"Branch 1" | "Branch 2">("Branch 1");
-  const [customer, setCustomer] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
-  const [productPickerOpen, setProductPickerOpen] = useState(false);
-  const [paymentMode, setPaymentMode] = useState<"upi" | "cash" | "card" | "bank">("upi");
+  const coupons = usePOS((s) => s.coupons);
+  const invProducts = usePOS((s) => s.invProducts);
+  const addBill = usePOS((s) => s.addBill);
 
-  const filtered = useMemo(() => {
-    let list = [...invoices];
-    if (statusFilter !== "all") list = list.filter(i => i.status === statusFilter);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(i => i.number.toLowerCase().includes(q) || i.customer.toLowerCase().includes(q));
-    }
-    return list;
-  }, [search, statusFilter]);
+  const [source, setSource] = useState<Source>("offline");
+  const [branch, setBranch] = useState<Branch>("Branch 1");
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1 }]);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [discType, setDiscType] = useState<"₹" | "%">("₹");
+  const [discVal, setDiscVal] = useState(0);
+  const [delivery, setDelivery] = useState(0);
+  const [cash, setCash] = useState<number | "">("");
+  const [toast, setToast] = useState<string | null>(null);
 
-  const addLine = (productId: string) => {
-    setLines((ls) => [...ls, { productId, qty: 1, discount: 0 }]);
-    setProductPickerOpen(false);
-  };
+  const activeRows = rows.filter((r) => r.name.trim() && r.price > 0);
+  const subtotal = activeRows.reduce((n, r) => n + r.price * r.qty, 0);
+  const itemCount = activeRows.reduce((n, r) => n + r.qty, 0);
 
-  const updateLine = (idx: number, patch: Partial<Line>) => {
-    setLines((ls) => ls.map((l, i) => i === idx ? { ...l, ...patch } : l));
-  };
+  const coupon = coupons.find((c) => c.code === couponCode);
+  const couponDiscount = useMemo(() => {
+    if (!coupon) return 0;
+    if (subtotal < coupon.minOrder) return 0;
+    return Math.round((subtotal * coupon.discountPct) / 100);
+  }, [coupon, subtotal]);
+  const manualDiscount = discType === "%" ? Math.round((subtotal * (Number(discVal) || 0)) / 100) : Number(discVal) || 0;
+  const totalDiscount = Math.min(subtotal, couponDiscount + manualDiscount);
+  const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
+  const change = cash === "" ? 0 : Number(cash) - grand;
+  const couponBelowMin = coupon && subtotal > 0 && subtotal < coupon.minOrder;
 
-  const removeLine = (idx: number) => {
-    setLines((ls) => ls.filter((_, i) => i !== idx));
-  };
-
-  const invoiceCalc = useMemo(() => {
-    let subtotal = 0, cgst = 0, sgst = 0;
-    lines.forEach((l) => {
-      const p = products.find(pr => pr.id === l.productId);
-      if (!p) return;
-      const lineAmt = p.price * l.qty * (1 - l.discount / 100);
-      const g = calculateGST(lineAmt, p.gstRate);
-      subtotal += lineAmt;
-      cgst += g.cgst;
-      sgst += g.sgst;
+  /* ── row helpers ── */
+  const setRow = (id: string, patch: Partial<Row>) =>
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { id: crypto.randomUUID(), name: "", price: 0, qty: 1 }]);
+  const removeRow = (id: string) =>
+    setRows((rs) => (rs.length === 1 ? [{ id: crypto.randomUUID(), name: "", price: 0, qty: 1 }] : rs.filter((r) => r.id !== id)));
+  const addFromCatalog = (name: string, price: number) => {
+    setRows((rs) => {
+      const existing = rs.find((r) => r.name === name);
+      if (existing) return rs.map((r) => (r.id === existing.id ? { ...r, qty: r.qty + 1 } : r));
+      const blank = rs.find((r) => !r.name.trim());
+      if (blank) return rs.map((r) => (r.id === blank.id ? { ...r, name, price, qty: 1 } : r));
+      return [...rs, { id: crypto.randomUUID(), name, price, qty: 1 }];
     });
-    return { subtotal, cgst, sgst, total: subtotal + cgst + sgst };
-  }, [lines]);
+  };
+
+  const clearOrder = () => {
+    setRows([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1 }]);
+    setCouponCode("");
+    setDiscVal(0);
+    setDelivery(0);
+    setCash("");
+  };
+
+  const buildBill = (): Bill | null => {
+    if (activeRows.length === 0) {
+      setToast("Add at least one item first.");
+      setTimeout(() => setToast(null), 2500);
+      return null;
+    }
+    return {
+      id: genInvoiceId(),
+      createdAt: new Date().toISOString(),
+      customerName: customerName.trim() || "Walk-in",
+      phone: phone.trim(),
+      source,
+      branch,
+      items: activeRows.map((r) => ({ name: r.name.trim(), price: r.price, qty: r.qty })),
+      subtotal,
+      coupon: coupon?.code,
+      discount: totalDiscount,
+      delivery: Number(delivery) || 0,
+      total: grand,
+      status: "completed",
+      payment: source === "online" ? "Razorpay" : "Cash",
+    };
+  };
+
+  const saveOnly = () => {
+    const bill = buildBill();
+    if (!bill) return;
+    addBill(bill);
+    setToast(`Saved ${bill.id} · ${formatINR(bill.total)}`);
+    setTimeout(() => setToast(null), 3000);
+    clearOrder();
+    setCustomerName("");
+    setPhone("");
+  };
+
+  const sendWhatsApp = () => {
+    const bill = buildBill();
+    if (!bill) return;
+    if (!phone.trim()) {
+      setToast("Enter a mobile number to send via WhatsApp.");
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    addBill(bill);
+    const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty)}`).join("%0A");
+    const msg =
+      `*Sri Saraswathy Musicals*%0AInvoice ${bill.id}%0A%0A${lines}%0A%0ASubtotal: ${formatINR(bill.subtotal)}` +
+      `%0ADiscount: -${formatINR(bill.discount)}%0ADelivery: ${formatINR(bill.delivery)}%0A*Grand Total: ${formatINR(bill.total)}*%0A%0AThank you!`;
+    const num = phone.replace(/\D/g, "");
+    window.open(`https://wa.me/91${num}?text=${msg}`, "_blank", "noopener,noreferrer");
+    setToast(`Bill saved · WhatsApp opened for ${phone}`);
+    setTimeout(() => setToast(null), 3000);
+    clearOrder();
+    setCustomerName("");
+    setPhone("");
+  };
+
+  const catalogItems = invProducts
+    .filter((p) => p.active)
+    .filter((p) => p.name.toLowerCase().includes(catalogQuery.toLowerCase()));
+
+  const fieldCls =
+    "w-full rounded-xl border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
 
   return (
-    <div className="p-5 md:p-10">
-      <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="eyebrow">Billing</p>
-          <h1 className="heading-serif mt-3 text-display-md text-ink-900">Invoices <em>& GST</em></h1>
-          <p className="mt-2 text-sm text-ink-500">Create, view, and export invoices for both branches.</p>
+    <div className="p-5 md:p-8">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">
+          {toast}
         </div>
-        <button onClick={() => setShowForm(true)} className="btn-gold-solid">
-          <Plus className="h-3.5 w-3.5" /> New invoice
-        </button>
-      </div>
+      )}
 
-      {/* Filters */}
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by invoice # or customer"
-            className="w-full border border-ink-200 bg-ivory-50 py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
+      {/* Header */}
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="border-l-4 border-ink-900 pl-4">
+          <h1 className="text-2xl font-bold text-ink-900">POS Billing Panel</h1>
+          <p className="mt-1 text-sm text-ink-500">Quick invoice generator · synced to Orders &amp; Analytics</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(["all", "paid", "pending", "cancelled"] as const).map((s) => (
+        <div className="flex items-center gap-2 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+          {(["offline", "online"] as Source[]).map((s) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
-              className={cn("border px-4 py-2 text-xs uppercase tracking-widest transition-all",
-                statusFilter === s ? "border-ink-900 bg-ink-900 text-ivory-100" : "border-ink-200 hover:border-gold-400")}
+              onClick={() => setSource(s)}
+              className={cn(
+                "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
+                source === s ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
+              )}
             >
-              {s}
+              <span className={cn("h-1.5 w-1.5 rounded-full", s === "offline" ? "bg-gold-400" : "bg-success")} />
+              {s === "offline" ? "Offline (POS)" : "Online Order"}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto border border-ink-100 bg-ivory-50">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-ink-100 bg-ivory-100 text-left text-[10px] uppercase tracking-[0.16em] text-ink-500">
-              <th className="px-4 py-3">Invoice #</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Branch</th>
-              <th className="px-4 py-3">Items</th>
-              <th className="px-4 py-3 text-right">Total</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {filtered.map((i) => (
-              <tr key={i.id} className="hover:bg-ivory-100/50">
-                <td className="px-4 py-3 tabular font-medium text-ink-900">{i.number}</td>
-                <td className="px-4 py-3 text-ink-600">{i.date}</td>
-                <td className="px-4 py-3 text-ink-900">{i.customer}</td>
-                <td className="px-4 py-3 text-ink-600">{i.branch}</td>
-                <td className="px-4 py-3 text-ink-600">{i.items.length}</td>
-                <td className="px-4 py-3 tabular text-right font-medium text-ink-900">{formatINR(i.total)}</td>
-                <td className="px-4 py-3">
-                  <span className={cn("px-2 py-1 text-[10px] font-semibold uppercase tracking-widest",
-                    i.status === "paid" && "bg-success/10 text-success",
-                    i.status === "pending" && "bg-warning/10 text-warning",
-                    i.status === "cancelled" && "bg-danger/10 text-danger",
-                  )}>{i.status}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1">
-                    <button className="grid h-7 w-7 place-items-center text-ink-500 hover:text-gold-600" aria-label="Print">
-                      <Printer className="h-3.5 w-3.5" />
-                    </button>
-                    <button className="grid h-7 w-7 place-items-center text-ink-500 hover:text-gold-600" aria-label="Download">
-                      <Download className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Slide-over: New Invoice */}
-      {showForm && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-ink-900/40" onClick={() => setShowForm(false)} />
-          <motion.div
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-            className="absolute right-0 top-0 h-full w-full max-w-2xl overflow-y-auto bg-ivory-50 shadow-2xl"
-          >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ink-100 bg-ivory-50 px-6 py-4">
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        {/* ── LEFT ── */}
+        <div className="space-y-6">
+          {/* Customer */}
+          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <UserIcon className="h-4 w-4 text-gold-600" />
+              <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">Customer Details</h2>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <p className="text-[10px] uppercase tracking-widest text-gold-600">New</p>
-                <h2 className="heading-serif text-2xl text-ink-900">Create invoice</h2>
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Customer Name</label>
+                <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Enter name" className={fieldCls} />
               </div>
-              <button onClick={() => setShowForm(false)} className="grid h-9 w-9 place-items-center hover:bg-ivory-100">
-                <X className="h-5 w-5" />
-              </button>
+              <div>
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Mobile Number (WhatsApp)</label>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Enter 10-digit number" inputMode="numeric" className={fieldCls} />
+              </div>
+            </div>
+          </section>
+
+          {/* Order items */}
+          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4 text-gold-600" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">Order Items</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={clearOrder} className="rounded-lg px-3 py-2 text-xs font-semibold text-ink-500 hover:bg-ink-900/5 hover:text-ink-900">
+                  Clear Order
+                </button>
+                <button
+                  onClick={() => setCatalogOpen((o) => !o)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all",
+                    catalogOpen ? "bg-ink-900 text-ivory-50" : "bg-ink-900 text-ivory-50 hover:bg-ink-800",
+                  )}
+                >
+                  <List className="h-3.5 w-3.5" /> Catalog
+                </button>
+                <button onClick={addRow} className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
+                  <Plus className="h-3.5 w-3.5" /> Add Item
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-6 p-6">
-              {/* Branch + customer */}
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Branch</span>
-                  <select value={branch} onChange={(e) => setBranch(e.target.value as any)} className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm focus:border-gold-500 focus:outline-none">
+            {/* Catalog picker */}
+            {catalogOpen && (
+              <div className="mb-4 rounded-xl border border-ink-100 bg-[#FAF7EF] p-3">
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2">
+                  <Search className="h-3.5 w-3.5 text-ink-400" />
+                  <input value={catalogQuery} onChange={(e) => setCatalogQuery(e.target.value)} placeholder="Search catalog…" className="w-full bg-transparent text-sm focus:outline-none" />
+                </div>
+                <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
+                  {catalogItems.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => addFromCatalog(p.name, p.basePrice)}
+                      className="flex items-center gap-3 rounded-lg border border-ink-100 bg-ivory-50 p-2 text-left transition-all hover:border-gold-400 hover:shadow-sm"
+                    >
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md bg-ink-100">
+                        {p.photo && <img src={p.photo} alt="" className="h-full w-full object-cover" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
+                        <p className="text-xs text-ink-500">{formatINR(p.basePrice)} · {productStock(p)} in stock</p>
+                      </div>
+                      <Plus className="h-4 w-4 shrink-0 text-gold-600" />
+                    </button>
+                  ))}
+                  {catalogItems.length === 0 && <p className="col-span-full py-6 text-center text-sm text-ink-400">No products found.</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Rows */}
+            <div className="space-y-3">
+              {rows.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                  <input
+                    value={r.name}
+                    onChange={(e) => setRow(r.id, { name: e.target.value })}
+                    placeholder="Item name / description…"
+                    className={cn(fieldCls, "flex-1")}
+                  />
+                  <div className="relative w-28 shrink-0">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
+                    <input
+                      type="number"
+                      value={r.price || ""}
+                      onChange={(e) => setRow(r.id, { price: Number(e.target.value) })}
+                      placeholder="Price"
+                      className={cn(fieldCls, "pl-7")}
+                    />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 rounded-xl border border-ink-200 bg-ivory-50 px-1">
+                    <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="w-6 text-center text-sm font-semibold tabular-nums">{r.qty}</span>
+                    <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <button onClick={() => removeRow(r.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* ── RIGHT: summary ── */}
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
+            {/* meta */}
+            <dl className="space-y-2 border-b border-dashed border-ink-200 pb-4 text-xs">
+              <div className="flex items-center justify-between">
+                <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Source</dt>
+                <dd className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", source === "offline" ? "bg-gold-100 text-gold-700" : "bg-success/15 text-success")}>{source}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Branch</dt>
+                <dd>
+                  <select value={branch} onChange={(e) => setBranch(e.target.value as Branch)} className="rounded-md border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-medium focus:outline-none">
                     <option>Branch 1</option>
                     <option>Branch 2</option>
                   </select>
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Invoice #</span>
-                  <input readOnly value={`SSM/26-27/${String(143 + invoices.length).padStart(4, "0")}`} className="w-full border border-ink-200 bg-ivory-100 px-4 py-3 text-sm text-ink-500" />
-                </label>
-                <div className="md:col-span-2">
-                  <label className="block">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Customer</span>
-                    <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Name or GSTIN"
-                      className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm focus:border-gold-500 focus:outline-none" />
-                  </label>
-                </div>
+                </dd>
               </div>
+              <div className="flex items-center justify-between">
+                <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Customer</dt>
+                <dd className="font-medium text-ink-900">{customerName || "—"}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Phone</dt>
+                <dd className="font-medium text-ink-900">{phone || "—"}</dd>
+              </div>
+            </dl>
 
-              {/* Line items */}
-              <div>
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Line items</p>
-                  <button onClick={() => setProductPickerOpen(true)} className="text-xs font-semibold uppercase tracking-widest text-gold-600 hover:underline">
-                    + Add product
-                  </button>
+            {activeRows.length === 0 ? (
+              <p className="py-5 text-center text-sm text-ink-400">No items added yet</p>
+            ) : (
+              <ul className="max-h-40 space-y-2 overflow-y-auto py-4 text-sm">
+                {activeRows.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-ink-700">{r.name} <span className="text-ink-400">× {r.qty}</span></span>
+                    <span className="shrink-0 font-medium tabular-nums text-ink-900">{formatINR(r.price * r.qty)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* coupon */}
+            <div className="mt-2">
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Apply Coupon</label>
+              <select value={couponCode} onChange={(e) => setCouponCode(e.target.value)} className={cn(fieldCls, "py-2.5")}>
+                <option value="">No Coupon</option>
+                {coupons.map((c) => (
+                  <option key={c.code} value={c.code}>{c.code} — {c.discountPct}% off</option>
+                ))}
+              </select>
+              {couponBelowMin && <p className="mt-1 text-[11px] text-danger">Min order {formatINR(coupon!.minOrder)} for {coupon!.code}</p>}
+            </div>
+
+            {/* manual discount */}
+            <div className="mt-4">
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Manual Discount</label>
+              <div className="flex gap-2">
+                <select value={discType} onChange={(e) => setDiscType(e.target.value as "₹" | "%")} className="w-16 rounded-xl border border-ink-200 bg-ivory-50 px-2 py-2.5 text-sm focus:outline-none">
+                  <option value="₹">₹</option>
+                  <option value="%">%</option>
+                </select>
+                <input type="number" value={discVal || ""} onChange={(e) => setDiscVal(Number(e.target.value))} placeholder="0" className={cn(fieldCls, "py-2.5")} />
+              </div>
+            </div>
+
+            {/* totals */}
+            <div className="mt-5 space-y-2 border-t border-ink-100 pt-4 text-sm">
+              <div className="flex items-center justify-between text-ink-600">
+                <span>Subtotal ({itemCount} items)</span>
+                <span className="font-medium tabular-nums text-ink-900">{formatINR(subtotal)}</span>
+              </div>
+              {totalDiscount > 0 && (
+                <div className="flex items-center justify-between text-success">
+                  <span>Discount</span>
+                  <span className="font-medium tabular-nums">- {formatINR(totalDiscount)}</span>
                 </div>
+              )}
+              <div className="flex items-center justify-between text-ink-600">
+                <span>Delivery</span>
+                <input type="number" value={delivery || ""} onChange={(e) => setDelivery(Number(e.target.value))} placeholder="0" className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-right text-sm focus:border-gold-500 focus:outline-none" />
+              </div>
+            </div>
 
-                {lines.length === 0 ? (
-                  <div className="border border-dashed border-ink-200 py-10 text-center text-sm text-ink-400">
-                    No products yet. <button onClick={() => setProductPickerOpen(true)} className="text-gold-600 underline">Add one</button>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-ink-100 border border-ink-100 bg-ivory-100/40">
-                    {lines.map((l, idx) => {
-                      const p = products.find(pr => pr.id === l.productId)!;
-                      const amt = p.price * l.qty * (1 - l.discount / 100);
-                      return (
-                        <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 p-3 text-sm">
-                          <div className="min-w-0">
-                            <p className="truncate text-ink-900">{p.name}</p>
-                            <p className="text-xs text-ink-400">HSN {p.hsn} · {p.gstRate}%</p>
-                          </div>
-                          <input type="number" value={l.qty} min={1} onChange={(e) => updateLine(idx, { qty: +e.target.value })}
-                            className="tabular w-16 border border-ink-200 bg-ivory-50 px-2 py-1.5 text-center text-sm" />
-                          <input type="number" value={l.discount} min={0} max={100} onChange={(e) => updateLine(idx, { discount: +e.target.value })}
-                            className="tabular w-14 border border-ink-200 bg-ivory-50 px-2 py-1.5 text-center text-sm" placeholder="%" />
-                          <p className="tabular w-28 text-right font-medium text-ink-900">{formatINR(amt)}</p>
-                          <button onClick={() => removeLine(idx)} className="grid h-8 w-8 place-items-center text-ink-400 hover:text-danger">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+            <div className="mt-4 flex items-center justify-between border-t border-ink-100 pt-4">
+              <span className="text-sm font-bold uppercase tracking-wider text-ink-900">Grand Total</span>
+              <span className="text-2xl font-bold tabular-nums text-ink-900">{formatINR(grand)}</span>
+            </div>
+
+            {/* cash */}
+            {source === "offline" && (
+              <div className="mt-4 rounded-xl border border-ink-100 bg-[#FAF7EF] p-3">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Cash Payment</label>
+                <input type="number" value={cash} onChange={(e) => setCash(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Amount received (₹)" className={cn(fieldCls, "py-2.5")} />
+                {cash !== "" && grand > 0 && (
+                  <p className={cn("mt-2 text-xs font-medium", change >= 0 ? "text-success" : "text-danger")}>
+                    {change >= 0 ? `Change to return: ${formatINR(change)}` : `Short by ${formatINR(-change)}`}
+                  </p>
                 )}
               </div>
+            )}
 
-              {/* Payment */}
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Payment mode</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {(["upi", "cash", "card", "bank"] as const).map((m) => (
-                    <button key={m} onClick={() => setPaymentMode(m)}
-                      className={cn("border py-2.5 text-xs uppercase tracking-widest transition-all",
-                        paymentMode === m ? "border-gold-500 bg-gold-500 text-ink-900" : "border-ink-200 hover:border-gold-400")}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Totals */}
-              <div className="border border-ink-100 bg-ivory-100/40 p-5">
-                <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Summary</p>
-                <div className="space-y-2 text-sm">
-                  <SumRow label="Taxable value" value={formatINR(invoiceCalc.subtotal)} />
-                  <SumRow label="CGST" value={formatINR(invoiceCalc.cgst)} />
-                  <SumRow label="SGST" value={formatINR(invoiceCalc.sgst)} />
-                  <div className="flex items-end justify-between border-t border-ink-100 pt-3">
-                    <span className="text-xs uppercase tracking-[0.18em] text-ink-500">Grand total</span>
-                    <span className="tabular font-display text-2xl text-ink-900">{formatINR(invoiceCalc.total)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button className="btn-gold-solid flex-1">Generate invoice</button>
-                <button onClick={() => setShowForm(false)} className="btn-ghost">Cancel</button>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Product picker overlay */}
-          {productPickerOpen && (
-            <div className="absolute inset-0 z-20 bg-ink-900/60 p-4 md:p-10" onClick={() => setProductPickerOpen(false)}>
-              <div className="mx-auto max-w-2xl bg-ivory-50 p-6" onClick={(e) => e.stopPropagation()}>
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="heading-serif text-xl text-ink-900">Pick a product</p>
-                  <button onClick={() => setProductPickerOpen(false)}><X className="h-5 w-5" /></button>
-                </div>
-                <div className="max-h-96 divide-y divide-ink-100 overflow-y-auto">
-                  {products.map((p) => (
-                    <button key={p.id} onClick={() => addLine(p.id)} className="flex w-full items-center justify-between gap-3 py-3 text-left hover:bg-ivory-100">
-                      <div>
-                        <p className="text-sm text-ink-900">{p.name}</p>
-                        <p className="text-xs text-ink-500">{p.brand} · HSN {p.hsn}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className="tabular text-sm text-ink-900">{formatINR(p.price)}</p>
-                        <ChevronRight className="h-4 w-4 text-ink-400" />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SumRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-ink-500">{label}</span>
-      <span className="tabular text-ink-900">{value}</span>
+            {/* actions */}
+            <button onClick={sendWhatsApp} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#128C4B] py-3.5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-[#0f7a41]">
+              <MessageCircle className="h-4 w-4" /> Send Bill via WhatsApp
+            </button>
+            <button onClick={saveOnly} className="mt-2 w-full rounded-xl border border-ink-200 py-3.5 text-xs font-bold uppercase tracking-wider text-ink-700 transition-colors hover:border-gold-500 hover:text-gold-600">
+              Save Bill Only
+            </button>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
