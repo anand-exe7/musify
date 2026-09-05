@@ -79,14 +79,14 @@ export function Hero() {
       ref={sectionRef}
       onMouseMove={handleMouse}
       onMouseLeave={resetMouse}
-      className="relative w-full overflow-hidden bg-ivory-100 text-ink-900"
+      className="relative -mt-16 w-full overflow-hidden bg-ivory-100 text-ink-900"
     >
-      {/* Warm wash + faint grid */}
+      {/* Warm wash — richer cream with a soft gold glow behind the figure */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(120% 90% at 50% 8%, #FCFAF3 0%, #F6F1E4 45%, #EFEBDD 100%)",
+            "radial-gradient(70% 60% at 50% 82%, rgba(201,162,75,0.12) 0%, rgba(201,162,75,0) 60%), radial-gradient(130% 100% at 50% 0%, #FDFBF3 0%, #F3EDDD 52%, #E8E1CE 100%)",
         }}
       />
       <div
@@ -182,13 +182,13 @@ export function Hero() {
       </svg>
 
       {/* ── Content ──────────────────────────────────────────── */}
-      <div className="container-page relative z-10 min-h-[100svh] pb-14 pt-28 lg:pb-0 lg:pt-0">
+      <div className="container-page relative z-10 min-h-[100svh] pb-12 pt-24 lg:pb-0 lg:pt-0">
         {/* Top-right note — desktop only */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4 }}
-          className="hidden lg:absolute lg:right-0 lg:top-32 lg:block lg:text-right"
+          className="hidden lg:absolute lg:right-0 lg:top-28 lg:block lg:text-right"
         >
           <p className="max-w-[16rem] text-[11px] font-semibold uppercase leading-relaxed tracking-[0.18em] text-ink-400">
             Where old-world craft
@@ -198,7 +198,7 @@ export function Hero() {
         </motion.div>
 
         {/* Heading block */}
-        <div className="relative z-20 max-w-lg lg:max-w-2xl lg:pt-40">
+        <div className="relative z-20 max-w-lg lg:max-w-2xl lg:pt-28">
           <motion.h1
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
@@ -259,15 +259,15 @@ export function Hero() {
               className="inline-block whitespace-nowrap font-sans font-black uppercase leading-none"
               style={{
                 y: wordScrollY,
-                fontSize: "clamp(3.25rem, 13.5vw, 12.5rem)",
-                letterSpacing: "-0.04em",
+                fontSize: "clamp(3.75rem, 14.5vw, 15rem)",
+                letterSpacing: "-0.045em",
                 color: "transparent",
                 backgroundImage:
-                  "linear-gradient(180deg, rgba(200,190,171,0.9) 0%, rgba(250,246,236,0.55) 55%, rgba(200,190,171,0.3) 100%)",
+                  "linear-gradient(180deg, rgba(90,74,56,0.42) 0%, rgba(138,122,101,0.30) 55%, rgba(138,122,101,0.16) 100%)",
                 WebkitBackgroundClip: "text",
                 backgroundClip: "text",
-                WebkitTextStroke: "1px rgba(10,9,8,0.05)",
-                filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.5))",
+                WebkitTextStroke: "1px rgba(90,74,56,0.12)",
+                filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.45))",
               }}
             >
               Saraswathy
@@ -277,7 +277,7 @@ export function Hero() {
           {/* Drummer — mouse layer wraps scroll layer */}
           <motion.div
             style={{ x: drumX, y: drumMY, rotate: drumRot }}
-            className="relative z-10 flex w-full max-w-[520px] justify-center will-change-transform lg:w-[54%] lg:max-w-[880px]"
+            className="relative z-10 flex w-[150%] max-w-[620px] shrink-0 justify-center will-change-transform lg:w-[64%] lg:max-w-[1040px]"
           >
             <motion.div style={{ y: imgY }} className="w-full">
               <Image
@@ -363,6 +363,27 @@ export function Hero() {
             />
           </span>
         </div>
+      </div>
+
+      {/* Progressive blur — gradual frost behind the floating header */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-30 h-24">
+        {[
+          { blur: 0.5, from: 0, to: 30 },
+          { blur: 1.5, from: 18, to: 55 },
+          { blur: 4, from: 40, to: 80 },
+          { blur: 10, from: 65, to: 100 },
+        ].map((l, i) => (
+          <div
+            key={i}
+            className="absolute inset-0"
+            style={{
+              backdropFilter: `blur(${l.blur}px)`,
+              WebkitBackdropFilter: `blur(${l.blur}px)`,
+              maskImage: `linear-gradient(to top, transparent ${l.from}%, #000 ${l.to}%)`,
+              WebkitMaskImage: `linear-gradient(to top, transparent ${l.from}%, #000 ${l.to}%)`,
+            }}
+          />
+        ))}
       </div>
 
       {/* Progressive blur — gradual handoff into the next section */}

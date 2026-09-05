@@ -7,7 +7,7 @@ import { formatINR } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
 
 export function Featured() {
-  const items = getFeaturedProducts();
+  const items = getFeaturedProducts().slice(0, 4);
 
   return (
     <section id="featured" className="bg-ink-900 py-20 text-ivory-100 md:py-28">
