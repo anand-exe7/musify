@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { InstrumentSVG } from "@/components/ui/InstrumentSVG";
 import { categories } from "@/lib/data/categories";
 import { ArrowUpRight } from "lucide-react";
 
@@ -33,19 +33,26 @@ export function Categories() {
             >
               <Link
                 href={`/shop?category=${cat.id}`}
-                className="group relative block h-full overflow-hidden border border-ink-100 bg-ivory-50 p-4 transition-all hover:border-gold-400 hover:shadow-card md:p-6"
+                className="group relative block h-full overflow-hidden border border-ink-100 bg-ink-900 transition-all hover:border-gold-400 hover:shadow-card"
               >
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-gold-50/0 to-gold-50/40 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
-                <div className="relative flex h-24 items-center justify-center md:h-28">
-                  <div className="h-full w-full max-w-[80px] transition-transform duration-500 group-hover:-translate-y-1 md:max-w-[100px]">
-                    <InstrumentSVG instrument={cat.icon} />
-                  </div>
+                <div className="relative aspect-[3/4] w-full overflow-hidden">
+                  <Image
+                    src={cat.photo}
+                    alt={cat.name}
+                    fill
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
+                    className="object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/40 to-transparent" />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-gold-400/0 to-gold-400/0 opacity-0 transition-opacity duration-500 group-hover:from-gold-400/20 group-hover:opacity-100" />
                 </div>
-                <div className="relative mt-4 border-t border-ink-100 pt-3">
-                  <p className="heading-serif text-base text-ink-900 md:text-lg">{cat.name}</p>
-                  <p className="mt-0.5 text-[10px] uppercase tracking-widest text-ink-400">
-                    {cat.count} pieces
-                  </p>
+                <div className="absolute inset-x-0 bottom-0 p-4 md:p-5">
+                  <p className="text-[9px] uppercase tracking-[0.24em] text-gold-400">{cat.tagline}</p>
+                  <div className="mt-1 flex items-end justify-between">
+                    <p className="heading-serif text-lg text-ivory-50 md:text-xl">{cat.name}</p>
+                    <span className="tabular text-[10px] uppercase tracking-widest text-ivory-100/60">{cat.count}</span>
+                  </div>
+                  <span className="mt-3 block h-px w-8 bg-gold-400 transition-all duration-500 group-hover:w-full" />
                 </div>
               </Link>
             </motion.div>
