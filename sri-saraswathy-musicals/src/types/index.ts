@@ -1,0 +1,94 @@
+export type Category =
+  | "string"
+  | "keyboard"
+  | "wind"
+  | "percussion"
+  | "indian-classical"
+  | "accessories";
+
+export type Origin = "western" | "indian";
+
+export interface Product {
+  id: string;
+  slug: string;
+  name: string;
+  brand: string;
+  category: Category;
+  origin: Origin;
+  price: number;
+  mrp: number;
+  gstRate: number;
+  hsn: string;
+  stock: number;
+  rating: number;
+  reviews: number;
+  tagline: string;
+  description: string;
+  specs: { label: string; value: string }[];
+  features: string[];
+  images: string[]; // SVG keys (fallback)
+  photo?: string;    // primary product photograph URL
+  photos?: string[]; // gallery URLs
+  featured?: boolean;
+  bestSeller?: boolean;
+  new?: boolean;
+}
+
+export interface CartItem {
+  productId: string;
+  quantity: number;
+}
+
+export interface Order {
+  id: string;
+  date: string;
+  status: "delivered" | "shipped" | "processing" | "cancelled";
+  items: { productId: string; quantity: number; price: number }[];
+  subtotal: number;
+  gst: number;
+  shipping: number;
+  total: number;
+  address: string;
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  date: string;
+  customer: string;
+  branch: "Branch 1" | "Branch 2";
+  items: { name: string; hsn: string; qty: number; rate: number; gst: number; amount: number }[];
+  subtotal: number;
+  cgst: number;
+  sgst: number;
+  total: number;
+  paymentMode: "cash" | "card" | "upi" | "bank";
+  status: "paid" | "pending" | "cancelled";
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: "admin" | "branch1-manager" | "branch2-manager" | "cashier" | "customer";
+  branch?: "Branch 1" | "Branch 2";
+  active: boolean;
+  lastLogin: string;
+  permissions: {
+    billing: boolean;
+    inventory: boolean;
+    analytics: boolean;
+    users: boolean;
+  };
+}
+
+export interface Vendor {
+  id: string;
+  name: string;
+  gst: string;
+  phone: string;
+  email: string;
+  outstanding: number;
+  totalPurchases: number;
+}
