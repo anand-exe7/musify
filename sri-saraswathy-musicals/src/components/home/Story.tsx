@@ -23,16 +23,9 @@ export function Story() {
             <h2 className="heading-serif mt-4 text-display-lg text-ink-900">
               Every instrument is <em>set up</em> in our workshop before it leaves.
             </h2>
-            <div className="mt-10 flex items-center gap-4 border-t border-ink-100 pt-6">
-              <svg viewBox="0 0 200 60" className="h-10 w-32 text-gold-600">
-                <path d="M8 40 C 20 10, 40 50, 60 20 S 100 40, 120 22 S 160 8, 194 38"
-                      fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <path d="M60 44 l 10 6 l 8 -3" fill="none" stroke="currentColor" strokeWidth="1" />
-              </svg>
-              <div>
-                <p className="font-serif italic text-lg text-ink-900">R. Krishnan Naidu</p>
-                <p className="text-xs uppercase tracking-[0.2em] text-ink-500">Head luthier · Est. 1978</p>
-              </div>
+            <div className="mt-10 border-t border-ink-100 pt-6">
+              <p className="font-serif italic text-lg text-ink-900">R. Krishnan Naidu</p>
+              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-ink-500">Head luthier · Est. 1978</p>
             </div>
           </motion.div>
 

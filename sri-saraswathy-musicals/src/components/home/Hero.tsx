@@ -1,84 +1,78 @@
 "use client";
-import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Play, ArrowRight, Instagram, Facebook, Youtube, Phone } from "lucide-react";
-import { useState } from "react";
-
-// Rotating background photos — royalty-free Unsplash (musician imagery)
-const scenes = [
-  {
-    src: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=80",
-    caption: "The Cello · Op. 118",
-  },
-  {
-    src: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=80",
-    caption: "The Saxophone · Op. 119",
-  },
-  {
-    src: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=80",
-    caption: "The Drums · Op. 120",
-  },
-];
+import { ArrowRight, Instagram, Facebook, Youtube, Phone, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 export function Hero() {
-  const [scene] = useState(0);
-  const current = scenes[scene];
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [muted, setMuted] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = muted;
+    v.play().catch(() => {});
+  }, [muted]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.readyState >= 2) setLoaded(true);
+    const on = () => setLoaded(true);
+    v.addEventListener("loadeddata", on);
+    v.addEventListener("canplay", on);
+    return () => {
+      v.removeEventListener("loadeddata", on);
+      v.removeEventListener("canplay", on);
+    };
+  }, []);
 
   return (
-    <section className="relative -mt-16 h-screen min-h-[720px] w-full overflow-hidden bg-ink-950 text-ivory-100">
-      {/* Background photograph */}
-      <Image
-        src={current.src}
-        alt=""
-        fill
-        priority
-        sizes="100vw"
-        className="pointer-events-none absolute inset-0 object-cover object-center opacity-70"
+    <section className="relative -mt-16 h-screen min-h-[680px] w-full overflow-hidden bg-ink-950 text-ivory-100">
+      {/* Video background */}
+      <video
+        ref={videoRef}
+        src="/hero-video.mp4"
+        autoPlay
+        loop
+        muted={muted}
+        playsInline
+        onLoadedData={() => setLoaded(true)}
+        className={`pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${loaded ? "opacity-70" : "opacity-0"}`}
       />
 
-      {/* SVG silhouette fallback (renders behind photo — shows if photo fails) */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 grid place-items-end">
-        <svg viewBox="0 0 400 800" className="h-full w-auto opacity-30" preserveAspectRatio="xMidYMax meet">
-          <defs>
-            <linearGradient id="silh" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#1F1108" />
-              <stop offset="100%" stopColor="#0A0908" />
-            </linearGradient>
-          </defs>
-          <path d="M200 200 c -40 0 -70 40 -60 90 l 10 60 c -30 20 -40 60 -30 100 l 20 250 c 5 40 -5 90 -20 100 l -80 0 l 0 -400 c 0 -100 60 -200 160 -200 z"
-                fill="url(#silh)" />
-          <ellipse cx="200" cy="160" rx="40" ry="48" fill="url(#silh)" />
-        </svg>
-      </div>
-
-      {/* Vignette gradients — mood the photo */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/40 to-ink-950/70" />
+      {/* Vignette gradients */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/50 to-ink-950/70" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-950 via-transparent to-ink-950/60" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950/50 via-transparent to-transparent" />
 
-      {/* Ornamental music-note flourish */}
-      <motion.svg
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, delay: 0.6 }}
-        viewBox="0 0 100 100" className="absolute right-[38%] top-[18%] hidden h-16 w-16 text-gold-400/80 md:block"
-        aria-hidden
+      {/* Grain overlay */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>\")",
+        }}
+      />
+
+      {/* Mute/unmute */}
+      <button
+        onClick={() => setMuted((m) => !m)}
+        aria-label={muted ? "Unmute video" : "Mute video"}
+        className="absolute right-4 top-24 z-20 grid h-10 w-10 place-items-center rounded-full border border-ivory-100/25 bg-ink-950/40 text-ivory-100/80 backdrop-blur-sm transition-all hover:border-gold-400 hover:text-gold-400 md:right-10 md:top-28"
       >
-        <path d="M55 20 C 48 20 44 26 46 34 L 48 60" fill="none" stroke="currentColor" strokeWidth="1.4" />
-        <ellipse cx="44" cy="62" rx="8" ry="6" fill="currentColor" transform="rotate(-25 44 62)" />
-      </motion.svg>
+        {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+      </button>
 
       {/* CONTENT LAYER */}
       <div className="relative z-10 flex h-full flex-col">
-        {/* Top pad for fixed header */}
         <div className="h-20 shrink-0" />
 
-        {/* Body */}
-        <div className="container-page relative flex-1">
-          <div className="grid h-full grid-cols-1 gap-10 pb-24 md:grid-cols-12 md:pb-32">
-            {/* LEFT COLUMN */}
-            <div className="relative flex flex-col justify-center md:col-span-7 md:pt-4">
+        <div className="container-page relative flex flex-1 items-center pb-24 md:pb-32">
+          <div className="grid w-full grid-cols-1 gap-8 md:grid-cols-12 md:gap-10">
+            {/* LEFT COLUMN — the story */}
+            <div className="relative flex flex-col justify-center md:col-span-8">
               <motion.p
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -88,101 +82,88 @@ export function Hero() {
                 Est. 1978 · Chennai & Bengaluru
               </motion.p>
 
-              {/* Giant bleeding wordmark */}
               <motion.h1
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 1, ease: "easeOut" }}
-                className="heading-serif mt-5 font-light leading-[0.88] text-ivory-50"
-                style={{ fontSize: "clamp(3.5rem, 10vw, 10rem)", letterSpacing: "-0.035em" }}
+                className="heading-serif mt-5 font-light leading-[0.9] text-ivory-50"
+                style={{ fontSize: "clamp(2.75rem, 7.5vw, 8rem)", letterSpacing: "-0.03em" }}
               >
-                <span className="block font-serif italic text-[0.32em] font-normal not-italic tracking-[0.32em] text-gold-400" style={{ letterSpacing: "0.32em" }}>SRI</span>
-                <span className="block">SARAS<span className="font-serif italic text-gold-400">w</span>ATHY</span>
+                <span className="block">
+                  Saras<span className="font-serif italic text-gold-400">w</span>athy
+                </span>
               </motion.h1>
 
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.3 }}
-                className="mt-8 max-w-md text-base leading-relaxed text-ivory-100/70 md:text-lg"
+                className="mt-6 max-w-md text-base leading-relaxed text-ivory-100/75 md:text-lg"
               >
-                A house of professional instruments — Carnatic, Hindustani, and Western.
-                Set up in our atelier, delivered by the luthier who set them up.
+                A house of professional instruments — set up in our atelier,
+                delivered by the luthier who set them up.
               </motion.p>
 
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.5 }}
-                className="mt-10"
+                className="mt-8 flex flex-wrap items-center gap-3"
               >
                 <Link
                   href="/shop"
-                  className="group inline-flex items-center gap-3 rounded-full bg-ivory-50 px-8 py-4 text-xs font-semibold uppercase tracking-[0.22em] text-ink-900 transition-all hover:bg-gold-400 hover:shadow-gold"
+                  className="group inline-flex items-center gap-3 rounded-full bg-ivory-50 px-7 py-3.5 text-xs font-semibold uppercase tracking-[0.22em] text-ink-900 transition-all hover:bg-gold-400 hover:shadow-gold"
                 >
                   Start your journey
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </Link>
+                <Link
+                  href="#play"
+                  className="group inline-flex items-center gap-3 rounded-full border border-ivory-100/30 px-7 py-3.5 text-xs font-semibold uppercase tracking-[0.22em] text-ivory-100 transition-all hover:border-gold-400 hover:text-gold-400"
+                >
+                  Play something
+                </Link>
               </motion.div>
+
+              {/* Metric strip */}
+              <motion.dl
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.7 }}
+                className="mt-10 hidden max-w-md grid-cols-3 gap-8 border-t border-ivory-100/15 pt-5 md:grid"
+              >
+                {[
+                  { n: "47", l: "years on the bench" },
+                  { n: "300+", l: "concert placements" },
+                  { n: "1yr", l: "trial period" },
+                ].map((m) => (
+                  <div key={m.l}>
+                    <dt className="font-display text-2xl text-ivory-50">{m.n}</dt>
+                    <dd className="mt-1 text-[10px] uppercase tracking-[0.2em] text-ivory-100/50">{m.l}</dd>
+                  </div>
+                ))}
+              </motion.dl>
             </div>
 
-            {/* RIGHT COLUMN */}
-            <div className="relative flex flex-col items-end justify-between text-right md:col-span-5 md:pt-4">
+            {/* RIGHT COLUMN — small caption block */}
+            <div className="relative hidden flex-col justify-center text-right md:col-span-4 md:flex">
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.7, delay: 0.4 }}
-                className="hidden items-end gap-6 md:flex"
               >
-                <div>
-                  <p className="heading-serif text-3xl font-light text-ivory-50 md:text-4xl">
-                    Curated<br />
-                    <span className="font-serif italic text-gold-400">by hand.</span>
-                  </p>
-                  <p className="mt-4 text-[10px] uppercase tracking-[0.24em] text-ivory-100/50">
-                    Watch our atelier ↓
-                  </p>
-                </div>
-                <button
-                  aria-label="Play tour"
-                  className="grid h-16 w-16 place-items-center rounded-full border border-ivory-100/40 text-ivory-100 backdrop-blur-sm transition-all hover:scale-110 hover:border-gold-400 hover:bg-gold-400/10 hover:text-gold-400"
-                >
-                  <Play className="h-5 w-5 fill-current" strokeWidth={1} />
-                </button>
-              </motion.div>
-
-              {/* Scene caption pinned bottom-right (above the giant wordmark) */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.7, delay: 0.7 }}
-                className="hidden text-right md:block"
-              >
-                <p className="text-[10px] uppercase tracking-[0.24em] text-ivory-100/50">Now playing</p>
-                <p className="font-serif italic text-lg text-ivory-100">{current.caption}</p>
+                <p className="heading-serif text-2xl font-light text-ivory-50 lg:text-3xl">
+                  Curated<br />
+                  <span className="font-serif italic text-gold-400">by hand.</span>
+                </p>
+                <p className="mt-3 text-[10px] uppercase tracking-[0.24em] text-ivory-100/50">
+                  Live from the atelier ↓
+                </p>
               </motion.div>
             </div>
           </div>
 
-          {/* Giant italic "Musicals" bleeding off the right */}
-          <motion.p
-            initial={{ opacity: 0, y: 60 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, delay: 0.6, ease: "easeOut" }}
-            className="pointer-events-none absolute right-0 leading-none text-ivory-50/95"
-            style={{
-              bottom: "-2vw",
-              fontFamily: "var(--font-serif), Georgia, serif",
-              fontStyle: "italic",
-              fontWeight: 400,
-              fontSize: "clamp(5rem, 15vw, 16rem)",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Musicals
-          </motion.p>
-
-          {/* Bottom bar — phone + socials (left) */}
+          {/* Bottom bar — phone + socials */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -209,7 +190,7 @@ export function Hero() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1, delay: 1 }}
-        className="pointer-events-none absolute bottom-4 left-1/2 z-20 hidden -translate-x-1/2 flex-col items-center gap-1 text-[10px] uppercase tracking-[0.32em] text-ivory-100/40 md:flex"
+        className="pointer-events-none absolute bottom-6 left-1/2 z-20 hidden -translate-x-1/2 flex-col items-center gap-1 text-[10px] uppercase tracking-[0.32em] text-ivory-100/40 md:flex"
       >
         <span>Scroll</span>
         <span className="h-8 w-px bg-gradient-to-b from-ivory-100/60 to-transparent" />
