@@ -42,7 +42,7 @@ function ShopContent() {
   };
 
   return (
-    <div className="container-page py-10 md:py-16">
+    <div className="container-page pb-10 pt-4 md:pb-16 md:pt-8">
       {/* Header */}
       <div className="mb-8">
         <p className="eyebrow">The Shop</p>
