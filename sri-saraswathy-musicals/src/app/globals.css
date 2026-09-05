@@ -44,18 +44,22 @@
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #E4D5B0;
+    background: rgba(138, 122, 101, 0.35);
     border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #C9A24B;
+    background: rgba(201, 162, 75, 0.6);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(138, 122, 101, 0.35) transparent;
   }
 
   /* Focus rings */

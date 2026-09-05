@@ -1,134 +1,349 @@
 "use client";
-import { useState } from "react";
-import { StatCard } from "@/components/admin/StatCard";
-import { SalesChart, CategoryPie } from "@/components/admin/SalesChart";
-import { invoices, categorySales } from "@/lib/data/invoices";
-import { products } from "@/lib/data/products";
-import { formatINR } from "@/lib/utils";
-import { Download, Calendar } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { useMemo, useState } from "react";
+import { usePOS, filterBills, productStock, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
+import { formatINR, cn } from "@/lib/utils";
 
-const branchData = [
-  { name: "Branch 1", revenue: 483420, invoices: 4 },
-  { name: "Branch 2", revenue: 440460, invoices: 3 },
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "all", label: "All Time" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "This Week" },
+  { key: "month", label: "This Month" },
+  { key: "year", label: "This Year" },
+  { key: "custom", label: "Custom" },
 ];
+const TABS = ["revenue", "today", "products", "coupons"] as const;
+const TAB_LABEL: Record<(typeof TABS)[number], string> = {
+  revenue: "Revenue",
+  today: "Today's Sales",
+  products: "Products",
+  coupons: "Coupons",
+};
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const monthlyGST = [
-  { m: "Apr", cgst: 42000, sgst: 42000 },
-  { m: "May", cgst: 58000, sgst: 58000 },
-  { m: "Jun", cgst: 71000, sgst: 71000 },
-  { m: "Jul", cgst: 62000, sgst: 62000 },
-  { m: "Aug", cgst: 89000, sgst: 89000 },
-  { m: "Sep", cgst: 47000, sgst: 47000 },
-];
+function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
+}
+
+function Stat({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: "gold" | "green" | "ink" }) {
+  return (
+    <Card>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
+      <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl", accent === "gold" ? "text-gold-600" : accent === "green" ? "text-success" : "text-ink-900")}>{value}</p>
+      {hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>}
+    </Card>
+  );
+}
 
 export default function AnalyticsPage() {
-  const [range, setRange] = useState<"7d" | "30d" | "90d" | "1y">("30d");
+  const bills = usePOS((s) => s.bills);
+  const invProducts = usePOS((s) => s.invProducts);
+  const coupons = usePOS((s) => s.coupons);
 
-  const totalRevenue = invoices.reduce((n, i) => n + i.total, 0);
-  const totalGST = invoices.reduce((n, i) => n + i.cgst + i.sgst, 0);
-  const avgOrderValue = totalRevenue / invoices.length;
-  const topProduct = [...products].sort((a, b) => b.reviews - a.reviews)[0];
+  const [tab, setTab] = useState<(typeof TABS)[number]>("revenue");
+  const [period, setPeriod] = useState<Period>("all");
+  const [custom, setCustom] = useState<{ from?: string; to?: string }>({});
+  const [channel, setChannel] = useState<Source | "all">("all");
+  const [branch, setBranch] = useState<BranchFilter>("all");
+  const [prodQuery, setProdQuery] = useState("");
+  const [couponQuery, setCouponQuery] = useState("");
+  const [txnQuery, setTxnQuery] = useState("");
+
+  const scoped = useMemo(
+    () => filterBills(bills, { period, branch, source: channel, custom }),
+    [bills, period, branch, channel, custom],
+  );
+
+  const m = useMemo(() => {
+    const totalRevenue = scoped.reduce((n, b) => n + b.total, 0);
+    const offline = scoped.filter((b) => b.source === "offline");
+    const online = scoped.filter((b) => b.source === "online");
+    const items = scoped.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
+    const revByItem = new Map<string, number>();
+    const qtyByItem = new Map<string, number>();
+    scoped.forEach((b) => b.items.forEach((i) => {
+      revByItem.set(i.name, (revByItem.get(i.name) || 0) + i.price * i.qty);
+      qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
+    }));
+    const topItems = [...revByItem.entries()].sort((a, b) => b[1] - a[1]);
+    return {
+      totalRevenue,
+      count: scoped.length,
+      offlineRev: offline.reduce((n, b) => n + b.total, 0),
+      onlineRev: online.reduce((n, b) => n + b.total, 0),
+      offlineCount: offline.length,
+      onlineCount: online.length,
+      items,
+      aov: scoped.length ? Math.round(totalRevenue / scoped.length) : 0,
+      topProduct: topItems[0]?.[0] ?? "—",
+      topItems,
+      qtyByItem,
+      revByItem,
+    };
+  }, [scoped]);
+
+  // revenue trend by month (respects branch + channel, ignores period so the year reads fully)
+  const monthly = useMemo(() => {
+    const base = filterBills(bills, { period: "all", branch, source: channel });
+    const totals = new Array(12).fill(0);
+    base.forEach((b) => { totals[new Date(b.createdAt).getMonth()] += b.total; });
+    return totals;
+  }, [bills, branch, channel]);
+  const maxMonth = Math.max(...monthly, 1);
+  const yearTotal = monthly.reduce((a, b) => a + b, 0);
+
+  const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
   return (
-    <div className="p-5 md:p-10">
-      <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
+    <div className="p-5 md:p-8">
+      {/* Header + period */}
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <p className="eyebrow">Analytics</p>
-          <h1 className="heading-serif mt-3 text-display-md text-ink-900">Reports <em>& insights</em></h1>
-          <p className="mt-2 text-sm text-ink-500">Sales, GST summaries, and branch-wise performance.</p>
+          <h1 className="text-2xl font-bold text-ink-900">POS Analytics</h1>
+          <p className="mt-1 text-sm text-ink-500">Real-time store &amp; channel insights</p>
         </div>
-        <div className="flex gap-2">
-          <div className="flex gap-1 border border-ink-200 p-1">
-            {(["7d", "30d", "90d", "1y"] as const).map((r) => (
-              <button key={r} onClick={() => setRange(r)}
-                className={cn("px-3 py-1.5 text-[10px] uppercase tracking-widest",
-                  range === r ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>
-                {r}
-              </button>
-            ))}
-          </div>
-          <button className="btn-ghost"><Download className="h-3.5 w-3.5" /> Export</button>
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Total revenue" value={formatINR(totalRevenue)} change={14.2} hint="MoM" accent="gold" index={0} />
-        <StatCard label="Total GST" value={formatINR(totalGST)} change={11.8} hint="CGST + SGST" accent="ink" index={1} />
-        <StatCard label="Avg. order value" value={formatINR(avgOrderValue)} change={-2.4} hint="per invoice" accent="maroon" index={2} />
-        <StatCard label="Top piece" value={topProduct.name.split(" ").slice(0, 2).join(" ")} hint={`${topProduct.reviews} reviews`} accent="gold" index={3} />
-      </div>
-
-      {/* Sales chart */}
-      <div className="mt-6"><SalesChart /></div>
-
-      {/* Branch + Category */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <div className="border border-ink-100 bg-ivory-50 p-5 md:p-6">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-500">Branch comparison</p>
-          <p className="heading-serif mt-1 text-xl text-ink-900">Revenue by branch</p>
-          <div className="mt-4 h-56">
-            <ResponsiveContainer>
-              <BarChart data={branchData} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid stroke="#E4D5B0" strokeDasharray="2 4" vertical={false} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8A7A65" }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8A7A65" }} tickFormatter={(v) => `${v / 1000}k`} />
-                <Tooltip contentStyle={{ background: "#0A0908", border: "1px solid #C9A24B", borderRadius: 0, fontSize: 12, color: "#FAF6EC" }}
-                  formatter={(v: number) => [formatINR(v), "Revenue"]} />
-                <Bar dataKey="revenue" fill="#C9A24B" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <CategoryPie />
-      </div>
-
-      {/* GST monthly */}
-      <div className="mt-6 border border-ink-100 bg-ivory-50 p-5 md:p-6">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-500">GST summary · FY 2026-27</p>
-        <p className="heading-serif mt-1 text-xl text-ink-900">Monthly CGST & SGST</p>
-        <div className="mt-4 h-64">
-          <ResponsiveContainer>
-            <BarChart data={monthlyGST} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-              <CartesianGrid stroke="#E4D5B0" strokeDasharray="2 4" vertical={false} />
-              <XAxis dataKey="m" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8A7A65" }} />
-              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8A7A65" }} tickFormatter={(v) => `${v / 1000}k`} />
-              <Tooltip contentStyle={{ background: "#0A0908", border: "1px solid #C9A24B", borderRadius: 0, fontSize: 12, color: "#FAF6EC" }}
-                formatter={(v: number, n) => [formatINR(v), n as string]} />
-              <Bar dataKey="cgst" fill="#C9A24B" stackId="s" name="CGST" />
-              <Bar dataKey="sgst" fill="#5B1E1E" stackId="s" name="SGST" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Top products */}
-      <div className="mt-6 border border-ink-100 bg-ivory-50 p-5 md:p-6">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-500">Top performers</p>
-        <p className="heading-serif mt-1 text-xl text-ink-900">Most-sold instruments</p>
-        <div className="mt-4 divide-y divide-ink-100">
-          {[...products].sort((a, b) => b.reviews - a.reviews).slice(0, 5).map((p, i) => (
-            <div key={p.id} className="flex items-center gap-4 py-3">
-              <span className="tabular w-8 text-center font-display text-lg text-gold-500">{i + 1}</span>
-              <div className="flex-1">
-                <p className="text-sm text-ink-900">{p.name}</p>
-                <p className="text-xs text-ink-400">{p.brand} · HSN {p.hsn}</p>
-              </div>
-              <div className="text-right">
-                <p className="tabular text-sm font-medium text-ink-900">{p.reviews} sold</p>
-                <p className="tabular text-xs text-ink-500">{formatINR(p.price * p.reviews)}</p>
-              </div>
-              <div className="hidden w-32 text-right text-xs md:block">
-                <div className="ml-auto h-1.5 w-full rounded-full bg-ink-100">
-                  <div className="h-full rounded-full bg-gold-500" style={{ width: `${Math.min(100, (p.reviews / 200) * 100)}%` }} />
-                </div>
-              </div>
-            </div>
+        <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
+          {PERIODS.map((p) => (
+            <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
+              {p.label}
+            </button>
           ))}
         </div>
       </div>
+
+      {/* custom range */}
+      {period === "custom" && (
+        <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-gold-300 bg-gold-50/50 p-4">
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">From</label>
+            <input type="date" value={custom.from ?? ""} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">To</label>
+            <input type="date" value={custom.to ?? ""} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+          </div>
+          <p className="pb-2 text-xs text-ink-500">{scoped.length} bill(s) in range</p>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="mb-6 flex gap-6 border-b border-ink-100">
+        {TABS.map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={cn("relative -mb-px border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors", tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
+            {TAB_LABEL[t]}
+          </button>
+        ))}
+      </div>
+
+      {/* Channel + branch filters */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+          {([["all", "All Channels"], ["offline", "Offline (POS)"], ["online", "Online (Razorpay)"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setChannel(k)} className={cn(pill, channel === k ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
+              {k !== "all" && <span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle", k === "offline" ? "bg-gold-400" : "bg-success")} />}
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
+          {([["all", "Overall"], ["Branch 1", "Branch 1"], ["Branch 2", "Branch 2"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setBranch(k)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── REVENUE ── */}
+      {tab === "revenue" && (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat label="Total Revenue" value={formatINR(m.totalRevenue)} hint="POS + online combined" accent="green" />
+            <Stat label="Completed Bills" value={String(m.count)} hint="in current view" />
+            <Stat label="Offline Bills" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} walk-in`} accent="gold" />
+            <Stat label="Online Bills" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} Razorpay`} accent="green" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat label="Total Items Sold" value={`${m.items} pcs`} />
+            <Stat label="Avg Order Value" value={formatINR(m.aov)} />
+            <Stat label="Top Product" value={m.topProduct} />
+            <Stat label="Offline / Online" value={`${m.offlineCount} / ${m.onlineCount}`} hint="bill count" />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+            {/* trend */}
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-ink-900">Revenue Trend · 2026</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
+                </div>
+                <span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold text-gold-700">Avg {formatINR(Math.round(yearTotal / 12))}/mo</span>
+              </div>
+              <div className="flex h-52 items-end gap-1.5">
+                {monthly.map((v, i) => (
+                  <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
+                    <div className="flex w-full flex-1 items-end">
+                      <div className="w-full rounded-t bg-ink-900 transition-all hover:bg-gold-500" style={{ height: `${(v / maxMonth) * 100}%`, minHeight: v > 0 ? 4 : 0 }} title={formatINR(v)} />
+                    </div>
+                    <span className="text-[8px] uppercase text-ink-400">{MONTHS[i]}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* order source + top items */}
+            <div className="space-y-4">
+              <Card>
+                <p className="mb-4 text-sm font-bold text-ink-900">Order Source</p>
+                {([["Offline", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"]] as const).map(([label, rev, cnt, color]) => (
+                  <div key={label} className="mb-4 last:mb-0">
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span className="font-semibold uppercase tracking-wider text-ink-500">{label} · {cnt}</span>
+                      <span className="font-bold tabular-nums text-ink-900">{formatINR(rev)}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-ink-100">
+                      <div className="h-full rounded-full" style={{ width: `${m.totalRevenue ? (rev / m.totalRevenue) * 100 : 0}%`, background: color }} />
+                    </div>
+                  </div>
+                ))}
+              </Card>
+              <Card>
+                <p className="mb-3 text-sm font-bold text-ink-900">Top Items by Revenue</p>
+                <ol className="space-y-3 text-sm">
+                  {m.topItems.slice(0, 5).map(([name, rev], i) => (
+                    <li key={name} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-ink-700">{i + 1}. {name}</span>
+                      <span className="shrink-0 font-bold tabular-nums text-ink-900">{formatINR(rev)}</span>
+                    </li>
+                  ))}
+                  {m.topItems.length === 0 && <li className="text-ink-400">No sales in this view.</li>}
+                </ol>
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TODAY'S SALES ── */}
+      {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} />}
+
+      {/* ── PRODUCTS ── */}
+      {tab === "products" && (
+        <Card>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-bold text-ink-900">Product Performance</p>
+            <input value={prodQuery} onChange={(e) => setProdQuery(e.target.value)} placeholder="Search product…" className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">
+                  <th className="py-3">Product</th><th>Category</th><th className="text-center">Units Sold</th><th className="text-right">Revenue</th><th className="text-right">In Stock</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-50">
+                {invProducts
+                  .filter((p) => p.name.toLowerCase().includes(prodQuery.toLowerCase()))
+                  .map((p) => ({ p, sold: m.qtyByItem.get(p.name) || 0, rev: m.revByItem.get(p.name) || 0 }))
+                  .sort((a, b) => b.rev - a.rev)
+                  .map(({ p, sold, rev }) => (
+                    <tr key={p.id} className="text-ink-800">
+                      <td className="py-3.5 font-semibold text-ink-900">{p.name}</td>
+                      <td className="text-ink-500">{p.category}</td>
+                      <td className="text-center font-semibold tabular-nums">{sold}</td>
+                      <td className="text-right font-semibold tabular-nums">{formatINR(rev)}</td>
+                      <td className="text-right tabular-nums text-ink-500">{productStock(p)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* ── COUPONS ── */}
+      {tab === "coupons" && <CouponsTab scoped={scoped} query={couponQuery} setQuery={setCouponQuery} couponCount={coupons.length} />}
+    </div>
+  );
+}
+
+/* ── Today tab ── */
+function TodayTab({ bills, branch, channel, query, setQuery }: { bills: ReturnType<typeof usePOS.getState>["bills"]; branch: BranchFilter; channel: Source | "all"; query: string; setQuery: (v: string) => void; }) {
+  const today = useMemo(() => filterBills(bills, { period: "today", branch, source: channel }), [bills, branch, channel]);
+  const rev = today.reduce((n, b) => n + b.total, 0);
+  const items = today.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
+  const filtered = today.filter((b) => b.phone.includes(query.trim()));
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Today's Revenue" value={formatINR(rev)} hint="Completed today" accent="green" />
+        <Stat label="Today's Bills" value={String(today.length)} hint="Completed today" />
+        <Stat label="Today's Items Sold" value={`${items} pcs`} hint="Quantity sold today" />
+        <Stat label="Today's Avg Order" value={formatINR(today.length ? Math.round(rev / today.length) : 0)} hint="Per invoice today" accent="gold" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+        <Card>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-bold text-ink-900">Today&apos;s Transactions</p>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search contact no…" className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+          </div>
+          {filtered.length === 0 ? (
+            <p className="py-12 text-center text-sm text-ink-400">No transactions found for today.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead><tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400"><th className="py-2">Invoice ID</th><th>Customer No</th><th>Source</th><th className="text-center">Items</th><th className="text-right">Grand Total</th></tr></thead>
+                <tbody className="divide-y divide-ink-50">
+                  {filtered.map((b) => (
+                    <tr key={b.id}><td className="py-3 font-semibold text-ink-900">{b.id}</td><td className="text-ink-600">{b.phone || "—"}</td><td className="uppercase text-ink-500">{b.source}</td><td className="text-center tabular-nums">{b.items.reduce((q, i) => q + i.qty, 0)}</td><td className="text-right font-semibold tabular-nums">{formatINR(b.total)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+        <div className="space-y-4">
+          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split</p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online"] as const).map((s) => { const r = today.filter((b) => b.source === s).reduce((n, b) => n + b.total, 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s}</span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
+          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Top Items</p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No items sold today.</p> : <p className="text-sm text-ink-500">{items} pcs across {today.length} bills</p>}</Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Coupons tab ── */
+function CouponsTab({ scoped, query, setQuery }: { scoped: ReturnType<typeof usePOS.getState>["bills"]; query: string; setQuery: (v: string) => void; couponCount: number; }) {
+  const used = scoped.filter((b) => b.coupon && b.discount > 0);
+  const totalDisc = used.reduce((n, b) => n + b.discount, 0);
+  const rows = used.filter((b) => (b.coupon || "").toLowerCase().includes(query.toLowerCase()) || b.phone.includes(query.trim()) || String(b.discount).includes(query.trim()));
+  return (
+    <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="space-y-4">
+        <p className="text-lg font-bold text-ink-900">Discount Summary</p>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Total Discounts Given</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900">{formatINR(totalDisc)}</p></Card>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Discounted Orders</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900">{used.length}</p></Card>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Avg Discount / Order</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900">{formatINR(used.length ? Math.round(totalDisc / used.length) : 0)}</p></Card>
+      </div>
+      <Card>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-bold text-ink-900">Promo Campaign Performance</p>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search code/mobile/amount…" className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        </div>
+        {rows.length === 0 ? <p className="py-12 text-center text-sm text-ink-400">No coupon usage in this view.</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead><tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400"><th className="py-3">Transaction ID</th><th>Customer Mobile</th><th>Coupon</th><th className="text-right">Order Total</th><th className="text-right">Discount Applied</th></tr></thead>
+              <tbody className="divide-y divide-ink-50">
+                {rows.map((b) => (
+                  <tr key={b.id}><td className="py-3.5 font-semibold text-ink-900">{b.id}</td><td className="text-ink-600">{b.phone || "—"}</td><td className="font-semibold text-gold-600">{b.coupon}</td><td className="text-right font-semibold tabular-nums">{formatINR(b.total)}</td><td className="text-right font-semibold tabular-nums text-success">- {formatINR(b.discount)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
