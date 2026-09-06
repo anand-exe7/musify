@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   User as UserIcon,
   ShoppingBag,
@@ -9,7 +9,9 @@ import {
   Trash2,
   MessageCircle,
   Search,
+  X,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { usePOS, productStock, genInvoiceId, type Bill, type Source, type Branch } from "@/lib/store/pos";
 import { formatINR, cn } from "@/lib/utils";
 
@@ -54,6 +56,27 @@ export default function BillingPage() {
   const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
   const change = cash === "" ? 0 : Number(cash) - grand;
   const couponBelowMin = coupon && subtotal > 0 && subtotal < coupon.minOrder;
+
+  // How many of each catalog product are already on the bill (for badges).
+  const qtyInOrder = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of rows) if (r.name.trim()) m[r.name] = (m[r.name] || 0) + r.qty;
+    return m;
+  }, [rows]);
+
+  // Close the catalog modal on Escape; lock body scroll while it is open.
+  useEffect(() => {
+    if (!catalogOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCatalogOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [catalogOpen]);
 
   /* ── row helpers ── */
   const setRow = (id: string, patch: Partial<Row>) =>
@@ -147,7 +170,7 @@ export default function BillingPage() {
     <div className="p-5 md:p-8">
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">
           {toast}
         </div>
       )}
@@ -221,35 +244,6 @@ export default function BillingPage() {
                 </button>
               </div>
             </div>
-
-            {/* Catalog picker */}
-            {catalogOpen && (
-              <div className="mb-4 rounded-xl border border-ink-100 bg-[#FAF7EF] p-3">
-                <div className="mb-3 flex items-center gap-2 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2">
-                  <Search className="h-3.5 w-3.5 text-ink-400" />
-                  <input value={catalogQuery} onChange={(e) => setCatalogQuery(e.target.value)} placeholder="Search catalog…" className="w-full bg-transparent text-sm focus:outline-none" />
-                </div>
-                <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
-                  {catalogItems.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => addFromCatalog(p.name, p.basePrice)}
-                      className="flex items-center gap-3 rounded-lg border border-ink-100 bg-ivory-50 p-2 text-left transition-all hover:border-gold-400 hover:shadow-sm"
-                    >
-                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md bg-ink-100">
-                        {p.photo && <img src={p.photo} alt="" className="h-full w-full object-cover" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
-                        <p className="text-xs text-ink-500">{formatINR(p.basePrice)} · {productStock(p)} in stock</p>
-                      </div>
-                      <Plus className="h-4 w-4 shrink-0 text-gold-600" />
-                    </button>
-                  ))}
-                  {catalogItems.length === 0 && <p className="col-span-full py-6 text-center text-sm text-ink-400">No products found.</p>}
-                </div>
-              </div>
-            )}
 
             {/* Rows */}
             <div className="space-y-3">
@@ -400,6 +394,130 @@ export default function BillingPage() {
           </div>
         </aside>
       </div>
+
+      {/* ── Catalog modal ── */}
+      <AnimatePresence>
+        {catalogOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setCatalogOpen(false)}
+            className="fixed inset-0 z-[60] flex items-end justify-center bg-ink-950/50 backdrop-blur-sm sm:items-center sm:p-6"
+          >
+            <motion.div
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, y: 60, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 60, scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 280, damping: 28 }}
+              className="flex max-h-[88vh] w-full flex-col overflow-hidden rounded-t-3xl bg-ivory-50 shadow-2xl sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Product catalog"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <List className="h-4 w-4 text-gold-600" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-ink-900">Product Catalog</h3>
+                  {itemCount > 0 && (
+                    <span className="rounded-full bg-gold-100 px-2 py-0.5 text-[11px] font-semibold text-gold-700">
+                      {itemCount} in order
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setCatalogOpen(false)}
+                  aria-label="Close catalog"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 transition-colors hover:bg-ink-900/5 hover:text-ink-900"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Search */}
+              <div className="border-b border-ink-100 p-4">
+                <div className="flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 py-2.5 focus-within:border-gold-500 focus-within:ring-2 focus-within:ring-gold-500/20">
+                  <Search className="h-4 w-4 shrink-0 text-ink-400" />
+                  <input
+                    autoFocus
+                    value={catalogQuery}
+                    onChange={(e) => setCatalogQuery(e.target.value)}
+                    placeholder="Search products…"
+                    className="w-full bg-transparent text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none"
+                  />
+                  {catalogQuery && (
+                    <button onClick={() => setCatalogQuery("")} aria-label="Clear search" className="shrink-0 text-ink-400 hover:text-ink-900">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Products grid */}
+              <div className="grid flex-1 content-start gap-2.5 overflow-y-auto p-4 sm:grid-cols-2">
+                {catalogItems.map((p) => {
+                  const inOrder = qtyInOrder[p.name] || 0;
+                  const stock = productStock(p);
+                  const out = stock <= 0;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addFromCatalog(p.name, p.basePrice)}
+                      disabled={out}
+                      className={cn(
+                        "group relative flex items-center gap-3 rounded-xl border p-2.5 text-left transition-all",
+                        inOrder > 0
+                          ? "border-gold-400 bg-gold-50/60"
+                          : "border-ink-100 bg-white hover:border-gold-400 hover:shadow-sm",
+                        out && "cursor-not-allowed opacity-50 hover:border-ink-100 hover:shadow-none",
+                      )}
+                    >
+                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-100">
+                        {p.photo && <img src={p.photo} alt="" className="h-full w-full object-cover" />}
+                        {inOrder > 0 && (
+                          <span className="absolute -right-1 -top-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-ink-900 shadow">
+                            {inOrder}
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
+                        <p className="text-xs font-medium tabular-nums text-ink-700">{formatINR(p.basePrice)}</p>
+                        <p className={cn("text-[11px]", out ? "text-danger" : "text-ink-400")}>
+                          {out ? "Out of stock" : `${stock} in stock`}
+                        </p>
+                      </div>
+                      {!out && (
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink-900 text-ivory-50 transition-colors group-hover:bg-gold-500 group-hover:text-ink-900">
+                          <Plus className="h-4 w-4" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {catalogItems.length === 0 && (
+                  <p className="col-span-full py-12 text-center text-sm text-ink-400">No products found.</p>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between gap-3 border-t border-ink-100 bg-[#FAF7EF] px-5 py-3.5">
+                <span className="text-xs text-ink-500">
+                  {activeRows.length} line{activeRows.length === 1 ? "" : "s"} · <span className="font-semibold text-ink-900">{formatINR(subtotal)}</span>
+                </span>
+                <button
+                  onClick={() => setCatalogOpen(false)}
+                  className="rounded-xl bg-ink-900 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-ink-800"
+                >
+                  Done
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
