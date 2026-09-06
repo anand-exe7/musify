@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { MusicLoader } from "./MusicLoader";
 
@@ -10,9 +11,12 @@ import { MusicLoader } from "./MusicLoader";
  * layout — and therefore this component — stays mounted across those.
  */
 export function Splash() {
+  const pathname = usePathname();
+  const isAdmin = pathname?.startsWith("/admin") ?? false;
   const [show, setShow] = useState(true);
 
   useEffect(() => {
+    if (isAdmin) return; // no marketing splash on the dashboard
     document.body.style.overflow = "hidden";
     const t = setTimeout(() => {
       setShow(false);
@@ -22,7 +26,9 @@ export function Splash() {
       clearTimeout(t);
       document.body.style.overflow = "";
     };
-  }, []);
+  }, [isAdmin]);
+
+  if (isAdmin) return null;
 
   return (
     <AnimatePresence>
