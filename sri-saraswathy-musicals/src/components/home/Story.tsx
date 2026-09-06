@@ -40,7 +40,7 @@ export function Story() {
             transition={{ duration: 0.8 }}
             className="relative"
           >
-            <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-ink-950 shadow-2xl lg:aspect-[4/5]">
+            <div className="relative aspect-video overflow-hidden rounded-md bg-ink-950 shadow-2xl">
               <video
                 src="/hero-video.mp4"
                 autoPlay

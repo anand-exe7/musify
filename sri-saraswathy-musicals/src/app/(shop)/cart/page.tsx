@@ -135,7 +135,7 @@ export default function CartPage() {
           </div>
           <div className="mt-4 border border-dashed border-gold-300 bg-gold-50/40 p-4 text-xs text-ink-600">
             <p className="mb-1 font-semibold uppercase tracking-widest text-gold-700">Included</p>
-            <p>Every order includes atelier set-up, first-year tuning where applicable, and a 12-month return.</p>
+            <p>Every order includes atelier set-up and first-year tuning where applicable, delivered and installed by our own team.</p>
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, User, ShoppingBag, Menu, X, ChevronDown } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { useCart } from "@/lib/store/cart";
+import { useAuth } from "@/lib/store/auth";
 import { categories } from "@/lib/data/categories";
 import { products } from "@/lib/data/products";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,6 @@ const nav: NavItem[] = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const isHome = pathname === "/";
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -36,6 +36,8 @@ export function Header() {
   const [search, setSearch] = useState<string>("");
   const [searchOpen, setSearchOpen] = useState(false);
   const count = useCart((s) => s.items.reduce((n, i) => n + i.quantity, 0));
+  const loggedIn = useAuth((s) => s.loggedIn);
+  const profileHref = mounted && loggedIn ? "/profile" : "/auth/login";
 
   useEffect(() => {
     setMounted(true);
@@ -68,11 +70,6 @@ export function Header() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // The hero is now a light composition, so the header keeps dark text
-  // everywhere. `atTop` only controls the transparent float + pill styling.
-  const atTop = isHome && !scrolled && !openMega && !searchOpen;
-  const overDarkHero = false;
-
   const results = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
@@ -96,16 +93,14 @@ export function Header() {
     <>
       <header
         className={cn(
-          "fixed inset-x-0 top-0 z-40 transition-all duration-300",
-          atTop
-            ? "border-b border-transparent bg-transparent py-4"
-            : "border-b border-ink-100 bg-ivory-50/95 py-2 backdrop-blur-md shadow-sm",
+          "fixed inset-x-0 top-0 z-40 h-20 border-b bg-ivory-100/85 backdrop-blur-md transition-shadow duration-300",
+          scrolled ? "border-ink-100 shadow-[0_8px_30px_-20px_rgba(10,9,8,0.5)]" : "border-ink-100/50",
         )}
         onMouseLeave={() => setOpenMega(null)}
       >
-        <div className="container-page flex items-center justify-between gap-4">
+        <div className="container-page flex h-full items-center justify-between gap-4">
           <div className="flex shrink-0 items-center">
-            <Logo variant="dark" size="sm" />
+            <Logo variant="dark" size="md" />
           </div>
 
           <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
@@ -140,14 +135,8 @@ export function Header() {
               })}
           </nav>
 
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 transition-all duration-300",
-              atTop
-                ? "rounded-full border border-ink-100 bg-ivory-50/85 py-1 pl-2 pr-1 shadow-[0_10px_30px_-12px_rgba(10,9,8,0.3)] backdrop-blur-md sm:pl-3"
-                : "",
-            )}
-          >
+          <div className="flex shrink-0 items-center gap-1 rounded-full border border-ink-100 bg-ivory-50/70 py-1 pl-2 pr-1 sm:pl-3">
+
             <button
               onClick={() => setSearchOpen(true)}
               aria-label="Search"
@@ -160,7 +149,7 @@ export function Header() {
             <span className="hidden h-4 w-px bg-ink-200 sm:block" />
 
             <Link
-              href="/auth/login"
+              href={profileHref}
               aria-label="Account"
               className="hidden items-center gap-2 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-ink-600 transition-colors hover:text-gold-600 sm:flex"
             >

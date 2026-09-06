@@ -303,14 +303,14 @@ export function PlayableSection() {
             {KEYS.map((k) => {
               const isActive = active.has(k.note);
               return (
-                <div key={k.note} className="relative">
+                <div key={k.note} className="relative flex-1 min-w-[34px]">
                   <button
                     onMouseDown={() => play(k.note, k.freq)}
                     onTouchStart={(e) => {
                       e.preventDefault();
                       play(k.note, k.freq);
                     }}
-                    className={`relative h-40 w-8 shrink-0 border-r border-ink-800 md:h-56 md:w-11 ${
+                    className={`relative h-40 w-full border-r border-ink-800 md:h-56 ${
                       isActive
                         ? "bg-gradient-to-b from-gold-200 to-gold-400"
                         : "bg-gradient-to-b from-ivory-50 to-ivory-100 hover:from-ivory-100 hover:to-gold-100"

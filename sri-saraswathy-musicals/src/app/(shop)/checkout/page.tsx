@@ -9,6 +9,7 @@ import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OrderCelebration } from "@/components/OrderCelebration";
 
 const steps = ["Address", "Delivery", "Payment", "Review"];
 
@@ -22,6 +23,7 @@ export default function CheckoutPage() {
   const [payment, setPayment] = useState<"upi" | "card" | "bank" | "cod">("upi");
   const [delivery, setDelivery] = useState<"standard" | "white-glove" | "express">("white-glove");
   const [placed, setPlaced] = useState(false);
+  const [orderId, setOrderId] = useState("");
 
   if (!mounted) return null;
 
@@ -44,19 +46,7 @@ export default function CheckoutPage() {
   }
 
   if (placed) {
-    return (
-      <div className="container-narrow py-24 text-center">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", duration: 0.6 }} className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-gold-500 text-ink-900">
-          <Check className="h-9 w-9" strokeWidth={3} />
-        </motion.div>
-        <h1 className="heading-serif mt-6 text-display-md text-ink-900">Order <em>placed.</em></h1>
-        <p className="mx-auto mt-3 max-w-md text-ink-500">Order #SSM-{Math.floor(Math.random() * 90000 + 10000)} has been confirmed. Our workshop will call you within 24 hours to schedule set-up and delivery.</p>
-        <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <Link href="/profile" className="btn-gold-solid">View orders</Link>
-          <Link href="/shop" className="btn-ghost">Continue shopping</Link>
-        </div>
-      </div>
-    );
+    return <OrderCelebration orderId={orderId} />;
   }
 
   return (
@@ -180,7 +170,12 @@ export default function CheckoutPage() {
               </button>
             ) : (
               <button
-                onClick={() => { clear(); setPlaced(true); window.scrollTo(0, 0); }}
+                onClick={() => {
+                  setOrderId(`Order #SSM-${Math.floor(Math.random() * 90000 + 10000)}`);
+                  clear();
+                  setPlaced(true);
+                  window.scrollTo(0, 0);
+                }}
                 className="btn-gold-solid"
               >
                 Place order · {formatINR(total)}

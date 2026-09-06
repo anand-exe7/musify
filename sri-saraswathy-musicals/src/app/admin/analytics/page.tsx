@@ -101,18 +101,20 @@ export default function AnalyticsPage() {
           <h1 className="text-2xl font-bold text-ink-900">POS Analytics</h1>
           <p className="mt-1 text-sm text-ink-500">Real-time store &amp; channel insights</p>
         </div>
-        <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
-          {PERIODS.map((p) => (
-            <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {tab !== "today" && (
+          <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
+            {PERIODS.map((p) => (
+              <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* custom range */}
-      {period === "custom" && (
+      {tab !== "today" && period === "custom" && (
         <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-gold-300 bg-gold-50/50 p-4">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">From</label>

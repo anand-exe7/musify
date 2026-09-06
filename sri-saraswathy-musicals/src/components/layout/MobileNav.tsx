@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ShoppingBag, Search, Heart, User } from "lucide-react";
 import { useCart } from "@/lib/store/cart";
+import { useAuth } from "@/lib/store/auth";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 
@@ -17,6 +18,7 @@ export function MobileNav() {
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const count = useCart((s) => s.items.reduce((n, i) => n + i.quantity, 0));
+  const loggedIn = useAuth((s) => s.loggedIn);
 
   useEffect(() => setMounted(true), []);
 
@@ -27,10 +29,11 @@ export function MobileNav() {
           const active = t.href === "/" ? pathname === "/" : pathname?.startsWith(t.href);
           const Icon = t.icon;
           const isCart = t.href === "/cart";
+          const href = t.href === "/profile" && !(mounted && loggedIn) ? "/auth/login" : t.href;
           return (
             <Link
               key={t.href}
-              href={t.href}
+              href={href}
               className={cn(
                 "relative flex flex-col items-center gap-1 py-3 text-[10px] uppercase tracking-[0.14em] transition-colors",
                 active ? "text-gold-600" : "text-ink-500",

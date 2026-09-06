@@ -1,50 +1,107 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { currentUser } from "@/lib/data/users";
 import { customerOrders } from "@/lib/data/invoices";
 import { getProductById } from "@/lib/data/products";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
+import { useAuth } from "@/lib/store/auth";
 import { User, Package, MapPin, Heart, LogOut, ChevronRight, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Tab = "orders" | "profile" | "addresses" | "wishlist";
 
 export default function ProfilePage() {
+  const router = useRouter();
+  const loggedIn = useAuth((s) => s.loggedIn);
+  const logout = useAuth((s) => s.logout);
+  const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<Tab>("orders");
 
-  const menu: { id: Tab; label: string; icon: any; count?: number }[] = [
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (mounted && !loggedIn) router.replace("/auth/login");
+  }, [mounted, loggedIn, router]);
+
+  // Wait for the persisted session to hydrate before deciding what to show,
+  // so a signed-in visitor is never flashed back to the login screen.
+  if (!mounted || !loggedIn) return null;
+
+  const signOut = () => {
+    logout();
+    router.push("/auth/login");
+  };
+
+  const menu: { id: Tab; label: string; icon: typeof Package; count?: number }[] = [
     { id: "orders", label: "My orders", icon: Package, count: customerOrders.length },
     { id: "profile", label: "Profile", icon: User },
     { id: "addresses", label: "Addresses", icon: MapPin, count: 2 },
     { id: "wishlist", label: "Wishlist", icon: Heart, count: 4 },
   ];
 
+  const stats = [
+    { label: "Orders", value: customerOrders.length },
+    { label: "Wishlist", value: 4 },
+    { label: "Addresses", value: 2 },
+  ];
+
   return (
     <div className="container-page py-8 md:py-12">
       {/* Header card */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-        className="mb-8 flex flex-col items-start justify-between gap-4 border border-ink-100 bg-gradient-to-br from-ink-900 to-ink-800 p-6 text-ivory-100 md:flex-row md:items-center md:p-8">
-        <div className="flex items-center gap-5">
-          <div className="grid h-16 w-16 place-items-center rounded-full bg-gold-500 font-display text-2xl text-ink-900 md:h-20 md:w-20 md:text-3xl">
-            {currentUser.name.split(" ").map(s => s[0]).join("")}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="relative mb-6 overflow-hidden border border-ink-100 bg-gradient-to-br from-ink-900 via-ink-900 to-ink-800 text-ivory-100"
+      >
+        {/* faint staff-line motif */}
+        <svg aria-hidden viewBox="0 0 1400 120" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 top-1/2 h-24 w-full -translate-y-1/2 text-gold-400/10">
+          {[16, 40, 64, 88, 112].map((y) => (
+            <line key={y} x1="0" y1={y} x2="1400" y2={y} stroke="currentColor" strokeWidth="1.5" />
+          ))}
+        </svg>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(60% 120% at 85% 0%, rgba(201,162,75,0.16) 0%, transparent 60%)" }}
+        />
+
+        <div className="relative flex flex-col items-start justify-between gap-6 p-6 md:flex-row md:items-center md:p-8">
+          <div className="flex items-center gap-5">
+            <div className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 font-display text-2xl text-ink-900 ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-20 md:w-20 md:text-3xl">
+              {currentUser.name.split(" ").map((s) => s[0]).join("")}
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-gold-400">Welcome back</p>
+              <p className="heading-serif mt-1 text-2xl text-ivory-50 md:text-3xl">{currentUser.name}</p>
+              <p className="mt-1 text-xs text-ivory-100/60">{currentUser.email}</p>
+              <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300">
+                Patron · since March 2023
+              </span>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.24em] text-gold-400">Welcome back</p>
-            <p className="heading-serif mt-1 text-2xl text-ivory-100 md:text-3xl">{currentUser.name}</p>
-            <p className="mt-1 text-xs text-ivory-100/60">{currentUser.email}</p>
+          <div className="flex items-center gap-3">
+            <Link href="/admin" className="btn-gold-solid">
+              <Settings className="h-3.5 w-3.5" />
+              Admin panel
+            </Link>
+            <button onClick={signOut} className="text-xs uppercase tracking-[0.18em] text-ivory-100/60 transition-colors hover:text-gold-400">
+              <LogOut className="mr-1 inline h-3 w-3" /> Sign out
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Link href="/admin" className="btn-gold-solid">
-            <Settings className="h-3.5 w-3.5" />
-            Admin panel
-          </Link>
-          <Link href="/auth/login" className="text-xs uppercase tracking-[0.18em] text-ivory-100/60 hover:text-gold-400">
-            <LogOut className="mr-1 inline h-3 w-3" /> Sign out
-          </Link>
+
+        {/* stats strip */}
+        <div className="relative grid grid-cols-3 border-t border-ivory-100/10">
+          {stats.map((s) => (
+            <div key={s.label} className="border-r border-ivory-100/10 px-6 py-4 last:border-r-0">
+              <p className="tabular font-display text-2xl text-gold-300 md:text-3xl">{s.value}</p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-ivory-100/50">{s.label}</p>
+            </div>
+          ))}
         </div>
       </motion.div>
 
@@ -57,7 +114,7 @@ export default function ProfilePage() {
             return (
               <button
                 key={m.id}
-                onClick={() => setTab(m.id as Tab)}
+                onClick={() => setTab(m.id)}
                 className={cn(
                   "flex shrink-0 items-center justify-between gap-3 border px-4 py-3 text-left text-sm transition-all md:border-transparent",
                   active
@@ -81,8 +138,8 @@ export default function ProfilePage() {
             <div className="space-y-4">
               <h2 className="heading-serif text-2xl text-ink-900">Your orders</h2>
               {customerOrders.map((o, i) => (
-                <motion.div key={o.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: i * 0.08 }}
-                  className="border border-ink-100 bg-ivory-50 p-5">
+                <motion.div key={o.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: i * 0.06 }}
+                  className="border border-ink-100 bg-ivory-50 p-5 transition-colors hover:border-gold-200">
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-100 pb-4">
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-ink-400">Order #{o.id.toUpperCase()}</p>
@@ -186,7 +243,7 @@ export default function ProfilePage() {
 
 function ProfileRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-ink-100 bg-ivory-50 p-4">
+    <div className="border border-ink-100 bg-ivory-50 p-4 transition-colors hover:border-gold-200">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-400">{label}</p>
       <p className="mt-2 text-sm text-ink-900">{value}</p>
     </div>

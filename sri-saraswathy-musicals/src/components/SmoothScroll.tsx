@@ -1,13 +1,23 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import Lenis from "lenis";
 
 /**
  * App-wide smooth scrolling via Lenis.
  * Renders nothing — just drives the native scroll with easing.
- * Respects prefers-reduced-motion.
+ *
+ * The Lenis instance is created ONCE for the whole session and reused across
+ * client-side navigations. (Previously it was destroyed and rebuilt — along
+ * with its requestAnimationFrame loop — on every route change, which made
+ * page-to-page transitions feel laggy.) On /admin it is paused, since the
+ * dashboard has its own scrolling panels.
  */
 export function SmoothScroll() {
+  const pathname = usePathname();
+  const lenisRef = useRef<Lenis | null>(null);
+
+  // Create the instance a single time.
   useEffect(() => {
     if (
       typeof window !== "undefined" &&
@@ -17,11 +27,12 @@ export function SmoothScroll() {
     }
 
     const lenis = new Lenis({
-      duration: 1.15,
+      duration: 1.1,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       smoothWheel: true,
       touchMultiplier: 1.6,
     });
+    lenisRef.current = lenis;
 
     let raf = 0;
     const loop = (time: number) => {
@@ -50,8 +61,20 @@ export function SmoothScroll() {
       cancelAnimationFrame(raf);
       document.removeEventListener("click", onClick);
       lenis.destroy();
+      lenisRef.current = null;
     };
   }, []);
+
+  // Pause smooth scroll on the dashboard; resume + reset to top elsewhere.
+  useEffect(() => {
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    if (pathname?.startsWith("/admin")) {
+      lenis.stop();
+    } else {
+      lenis.start();
+    }
+  }, [pathname]);
 
   return null;
 }

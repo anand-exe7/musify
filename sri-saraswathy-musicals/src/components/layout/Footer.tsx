@@ -69,10 +69,12 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-16 flex flex-col items-start justify-between gap-4 border-t border-ivory-100/10 pt-8 text-xs uppercase tracking-[0.18em] text-ivory-100/50 md:flex-row md:items-center">
-          <p>© 1978 — 2026 · Sri Saraswathy Musicals</p>
-          <p className="text-gold-400">Est. Chennai · GST 33AAACS1234R1Z9</p>
-          <p>Made with care in Tamil Nadu</p>
+        <div className="mt-16 grid gap-3 border-t border-ivory-100/10 pt-8 text-[11px] uppercase tracking-[0.18em] text-ivory-100/50 md:grid-cols-3 md:items-center">
+          <p className="md:justify-self-start">Sri Saraswathy Musicals</p>
+          <p className="text-gold-400 md:justify-self-center md:text-center">
+            Powered by Cenexa Systems · © 2026
+          </p>
+          <p className="md:justify-self-end md:text-right">Tradition · Craft · Resonance</p>
         </div>
       </div>
     </footer>

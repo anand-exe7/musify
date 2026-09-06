@@ -71,14 +71,21 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 export function AdminSidebar({
   mobileOpen,
   setMobileOpen,
+  collapsed,
 }: {
   mobileOpen: boolean;
   setMobileOpen: (v: boolean) => void;
+  collapsed?: boolean;
 }) {
   return (
     <>
       {/* Desktop */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-ink-100 bg-ivory-50 lg:flex">
+      <aside
+        className={cn(
+          "sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-ink-100 bg-ivory-50 lg:flex",
+          collapsed && "lg:hidden",
+        )}
+      >
         <Brand />
         <div className="mt-2 flex-1 overflow-y-auto pb-6">
           <NavList />

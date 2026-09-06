@@ -124,10 +124,10 @@ export default function OrdersPage() {
 
       {/* Table */}
       <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-              <th className="px-5 py-4">Invoice No</th><th>Customer</th><th>Phone</th><th>Bill Type</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="text-right">Actions</th>
+              <th className="px-5 py-4">Invoice No</th><th>Customer</th><th>Phone</th><th>Bill Type</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="px-5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-50">
@@ -143,7 +143,7 @@ export default function OrdersPage() {
                 <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
                 <td className="text-ink-600">{fmtDate(b.createdAt)}</td>
                 <td><span className="rounded bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase text-success">{b.status}</span></td>
-                <td className="text-right"><button onClick={() => setConfirmId(b.id)} className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10"><Trash2 className="h-4 w-4" /></button></td>
+                <td className="px-5"><div className="flex justify-end"><button onClick={() => setConfirmId(b.id)} className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10"><Trash2 className="h-4 w-4" /></button></div></td>
               </tr>
             ))}
             {rows.length === 0 && (

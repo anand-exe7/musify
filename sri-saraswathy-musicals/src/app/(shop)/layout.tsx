@@ -6,7 +6,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   return (
     <>
       <Header />
-      <main className="min-h-screen pt-16 pb-16 md:pb-0">{children}</main>
+      <main className="min-h-screen pt-20 pb-16 md:pb-0">{children}</main>
       <Footer />
       <MobileNav />
     </>

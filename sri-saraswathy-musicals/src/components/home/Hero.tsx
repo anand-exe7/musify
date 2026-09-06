@@ -79,7 +79,7 @@ export function Hero() {
       ref={sectionRef}
       onMouseMove={handleMouse}
       onMouseLeave={resetMouse}
-      className="relative -mt-16 w-full overflow-hidden bg-ivory-100 text-ink-900"
+      className="relative -mt-20 w-full overflow-hidden bg-ivory-100 text-ink-900"
     >
       {/* Warm wash — richer cream with a soft gold glow behind the figure */}
       <div
@@ -259,7 +259,7 @@ export function Hero() {
               className="inline-block whitespace-nowrap font-sans font-black uppercase leading-none"
               style={{
                 y: wordScrollY,
-                fontSize: "clamp(3.75rem, 14.5vw, 15rem)",
+                fontSize: "clamp(2.5rem, 13vw, 15rem)",
                 letterSpacing: "-0.045em",
                 color: "transparent",
                 backgroundImage:
@@ -274,22 +274,26 @@ export function Hero() {
             </motion.span>
           </motion.div>
 
-          {/* Drummer — mouse layer wraps scroll layer */}
-          <motion.div
-            style={{ x: drumX, y: drumMY, rotate: drumRot }}
-            className="relative z-10 flex w-[150%] max-w-[620px] shrink-0 justify-center will-change-transform lg:w-[64%] lg:max-w-[1040px]"
-          >
-            <motion.div style={{ y: imgY }} className="w-full">
-              <Image
-                src="/cutout_image_image.png"
-                alt="Musician at a professional drum kit"
-                width={1366}
-                height={768}
-                priority
-                className="h-auto w-full object-contain drop-shadow-[0_36px_48px_rgba(10,9,8,0.2)]"
-              />
+          {/* Drummer — nudged right on desktop; mouse layer wraps scroll layer */}
+          <div className="relative z-10 flex w-[150%] max-w-[620px] shrink-0 justify-center lg:w-[62%] lg:max-w-[1000px] lg:translate-x-[7%]">
+            <motion.div
+              style={{ x: drumX, y: drumMY, rotate: drumRot }}
+              className="relative flex w-full justify-center will-change-transform"
+            >
+              <motion.div style={{ y: imgY }} className="w-full">
+                <Image
+                  src="/cutout_image_image.png"
+                  alt="Musician at a professional drum kit"
+                  width={1366}
+                  height={768}
+                  quality={95}
+                  priority
+                  sizes="(max-width: 1024px) 90vw, 62vw"
+                  className="h-auto w-full object-contain drop-shadow-[0_36px_48px_rgba(10,9,8,0.2)]"
+                />
+              </motion.div>
             </motion.div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Featured product card — mouse tilt + hover lift */}
@@ -365,36 +369,11 @@ export function Hero() {
         </div>
       </div>
 
-      {/* Progressive blur — gradual frost behind the floating header */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-30 h-24">
+      {/* Soft handoff into the next section — gentle blur only at the very bottom */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-30 hidden h-20 lg:block">
         {[
-          { blur: 0.5, from: 0, to: 30 },
-          { blur: 1.5, from: 18, to: 55 },
-          { blur: 4, from: 40, to: 80 },
-          { blur: 10, from: 65, to: 100 },
-        ].map((l, i) => (
-          <div
-            key={i}
-            className="absolute inset-0"
-            style={{
-              backdropFilter: `blur(${l.blur}px)`,
-              WebkitBackdropFilter: `blur(${l.blur}px)`,
-              maskImage: `linear-gradient(to top, transparent ${l.from}%, #000 ${l.to}%)`,
-              WebkitMaskImage: `linear-gradient(to top, transparent ${l.from}%, #000 ${l.to}%)`,
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Progressive blur — gradual handoff into the next section */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-40 hidden h-44 lg:block">
-        {[
-          { blur: 0.5, from: 0, to: 22 },
-          { blur: 1.5, from: 12, to: 40 },
-          { blur: 3, from: 28, to: 56 },
-          { blur: 6, from: 44, to: 72 },
-          { blur: 12, from: 62, to: 90 },
-          { blur: 24, from: 78, to: 100 },
+          { blur: 1, from: 0, to: 55 },
+          { blur: 4, from: 45, to: 100 },
         ].map((l, i) => (
           <div
             key={i}
@@ -408,6 +387,17 @@ export function Hero() {
           />
         ))}
       </div>
+      {/* Colour fade so the figure melts into the page ground (no hard seam).
+          A tall, multi-stop gradient eases the warm hero cream all the way into
+          the page ivory instead of dropping to it in a short, visible band. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-64 md:h-80"
+        style={{
+          background:
+            "linear-gradient(to bottom, rgba(250,246,236,0) 0%, rgba(249,245,235,0.28) 28%, rgba(249,245,236,0.6) 52%, rgba(250,246,236,0.86) 74%, #FAF6EC 100%)",
+        }}
+      />
     </section>
   );
 }
