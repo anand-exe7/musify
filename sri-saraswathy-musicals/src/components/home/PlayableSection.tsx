@@ -49,6 +49,17 @@ const DRUMS: { id: DrumId; label: string; key: string; accent?: boolean }[] = [
   { id: "tabla-lo", label: "Tabla · Dha", key: ",", accent: true },
 ];
 
+// Horizontal position (%) of a key within the keyboard, so a played-note
+// label floats up over the key that was pressed instead of a random spot.
+function noteLeftPct(note: string): number {
+  const n = KEYS.length;
+  const white = KEYS.findIndex((k) => k.note === note);
+  if (white >= 0) return ((white + 0.5) / n) * 100;
+  const sharpParent = KEYS.findIndex((k) => k.sharp === note);
+  if (sharpParent >= 0) return ((sharpParent + 1) / n) * 100;
+  return 50;
+}
+
 export function PlayableSection() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [active, setActive] = useState<Set<string>>(new Set());
@@ -346,14 +357,14 @@ export function PlayableSection() {
             })}
           </div>
 
-          {/* Note ripples */}
-          <div className="pointer-events-none absolute inset-x-0 -top-6 h-10 overflow-hidden">
+          {/* Note ripples — float up over the key that was played */}
+          <div className="pointer-events-none absolute inset-x-4 top-12 z-20 md:inset-x-6 md:top-16">
             {ripples.map((r) => (
               <span
                 key={r.id}
-                className="absolute -top-2 font-serif italic text-gold-500"
+                className="absolute top-0 whitespace-nowrap font-serif italic text-sm text-gold-400 drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)] md:text-base"
                 style={{
-                  left: `${Math.random() * 90 + 5}%`,
+                  left: `${Math.min(94, Math.max(6, noteLeftPct(r.note)))}%`,
                   animation: "float-up 900ms ease-out forwards",
                 }}
               >
@@ -445,9 +456,9 @@ export function PlayableSection() {
 
       <style jsx>{`
         @keyframes float-up {
-          0% { transform: translateY(0); opacity: 0; }
+          0% { transform: translate(-50%, 6px); opacity: 0; }
           20% { opacity: 1; }
-          100% { transform: translateY(-40px); opacity: 0; }
+          100% { transform: translate(-50%, -46px); opacity: 0; }
         }
       `}</style>
     </section>
