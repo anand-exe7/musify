@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Instrument_Serif, Inter } from "next/font/google";
 import "./globals.css";
 import { SmoothScroll } from "@/components/SmoothScroll";
+import { Splash } from "@/components/Splash";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -41,6 +42,7 @@ export default function RootLayout({
     <html lang="en" className={`${fraunces.variable} ${instrumentSerif.variable} ${inter.variable}`}>
       <body className="min-h-screen bg-ivory-50 text-ink-900 antialiased">
         <SmoothScroll />
+        <Splash />
         {children}
       </body>
     </html>

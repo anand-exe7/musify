@@ -263,11 +263,11 @@ export function Hero() {
                 letterSpacing: "-0.045em",
                 color: "transparent",
                 backgroundImage:
-                  "linear-gradient(180deg, rgba(90,74,56,0.42) 0%, rgba(138,122,101,0.30) 55%, rgba(138,122,101,0.16) 100%)",
+                  "linear-gradient(180deg, rgba(64,49,34,0.72) 0%, rgba(104,86,62,0.56) 55%, rgba(120,102,78,0.40) 100%)",
                 WebkitBackgroundClip: "text",
                 backgroundClip: "text",
-                WebkitTextStroke: "1px rgba(90,74,56,0.12)",
-                filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.45))",
+                WebkitTextStroke: "1px rgba(64,49,34,0.22)",
+                filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.5))",
               }}
             >
               Saraswathy
