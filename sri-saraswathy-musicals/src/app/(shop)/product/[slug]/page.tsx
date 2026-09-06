@@ -163,18 +163,18 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
             )}
           </div>
 
-          {/* Quantity + Add to cart */}
-          <div className="mt-6 flex items-center gap-3">
-            <div className="flex items-center border border-ink-200">
-              <button onClick={() => setQty(Math.max(1, qty - 1))} className="grid h-12 w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Decrease">
+          {/* Quantity + Add to cart — matched 48px-tall boxes */}
+          <div className="mt-6 flex items-stretch gap-3">
+            <div className="flex h-12 shrink-0 items-center border border-ink-200">
+              <button onClick={() => setQty(Math.max(1, qty - 1))} className="grid h-full w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Decrease">
                 <Minus className="h-3.5 w-3.5" />
               </button>
               <span className="tabular w-10 text-center font-medium">{qty}</span>
-              <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="grid h-12 w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Increase">
+              <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="grid h-full w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Increase">
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
-            <button onClick={handleAdd} disabled={product.stock === 0} className="btn-gold-solid flex-1 disabled:cursor-not-allowed disabled:opacity-50">
+            <button onClick={handleAdd} disabled={product.stock === 0} className="btn-gold-solid h-12 flex-1 py-0 disabled:cursor-not-allowed disabled:opacity-50">
               <ShoppingBag className="h-4 w-4" />
               Add to cart
             </button>
@@ -198,12 +198,12 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
       {/* Details — description / specs / shipping */}
       <div className="mt-16 border-t border-ink-100 pt-10">
-        <div className="mb-0 flex gap-2">
+        <div className="mb-0 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar sm:mx-0 sm:px-0">
           {(["description", "specs", "shipping"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`relative rounded-t-lg px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] transition-colors ${tab === t ? "bg-ink-900 text-gold-300" : "text-ink-400 hover:bg-ivory-100 hover:text-ink-700"}`}
+              className={`relative shrink-0 whitespace-nowrap rounded-t-lg px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors sm:px-5 sm:text-xs sm:tracking-[0.2em] ${tab === t ? "bg-ink-900 text-gold-300" : "text-ink-400 hover:bg-ivory-100 hover:text-ink-700"}`}
             >
               {t === "description" ? "Description" : t === "specs" ? "Specifications" : "Shipping"}
             </button>

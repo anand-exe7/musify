@@ -98,12 +98,12 @@ export function Header() {
         )}
         onMouseLeave={() => setOpenMega(null)}
       >
-        <div className="container-page flex h-full items-center justify-between gap-4">
-          <div className="flex shrink-0 items-center">
+        <div className="container-page flex h-full items-center gap-4">
+          <div className="flex flex-1 items-center">
             <Logo variant="dark" size="md" />
           </div>
 
-          <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
+          <nav className="hidden shrink-0 items-center justify-center gap-1 lg:flex">
               {nav.map((l) => {
                 const active = isActive(l.href);
                 return (
@@ -135,6 +135,7 @@ export function Header() {
               })}
           </nav>
 
+          <div className="flex flex-1 items-center justify-end">
           <div className="flex shrink-0 items-center gap-1 rounded-full border border-ink-100 bg-ivory-50/70 py-1 pl-2 pr-1 sm:pl-3">
 
             <button
@@ -178,6 +179,7 @@ export function Header() {
             >
               {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
+          </div>
           </div>
         </div>
 
