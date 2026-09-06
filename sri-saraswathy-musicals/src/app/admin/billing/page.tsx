@@ -245,38 +245,44 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Rows */}
+            {/* Rows — stack on mobile, single line on desktop */}
             <div className="space-y-3">
               {rows.map((r) => (
-                <div key={r.id} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                <div
+                  key={r.id}
+                  className="flex flex-col gap-2 rounded-xl border border-ink-100 p-2.5 sm:flex-row sm:items-center sm:border-0 sm:p-0"
+                >
                   <input
                     value={r.name}
                     onChange={(e) => setRow(r.id, { name: e.target.value })}
                     placeholder="Item name / description…"
-                    className={cn(fieldCls, "flex-1")}
+                    className={cn(fieldCls, "w-full sm:min-w-0 sm:flex-1")}
                   />
-                  <div className="relative w-28 shrink-0">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
-                    <input
-                      type="number"
-                      value={r.price || ""}
-                      onChange={(e) => setRow(r.id, { price: Number(e.target.value) })}
-                      placeholder="Price"
-                      className={cn(fieldCls, "pl-7")}
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1 rounded-xl border border-ink-200 bg-ivory-50 px-1">
-                    <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
-                      <Minus className="h-3.5 w-3.5" />
+                  <div className="flex items-center gap-2 sm:shrink-0">
+                    <div className="relative flex-1 sm:w-28 sm:flex-none">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={r.price || ""}
+                        onChange={(e) => setRow(r.id, { price: Number(e.target.value) })}
+                        placeholder="Price"
+                        className={cn(fieldCls, "pl-7")}
+                      />
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1 rounded-xl border border-ink-200 bg-ivory-50 px-1">
+                      <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} aria-label="Decrease quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="w-6 text-center text-sm font-semibold tabular-nums">{r.qty}</span>
+                      <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} aria-label="Increase quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                      <Trash2 className="h-4 w-4" />
                     </button>
-                    <span className="w-6 text-center text-sm font-semibold tabular-nums">{r.qty}</span>
-                    <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
                   </div>
-                  <button onClick={() => removeRow(r.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
               ))}
             </div>
