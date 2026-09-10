@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -11,14 +12,20 @@ import {
   Ticket,
   Truck,
   Users,
+  Wrench,
+  MessageSquare,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRepair, alertLevel } from "@/lib/store/repair";
+import { useInquiry } from "@/lib/store/inquiry";
 
 const items = [
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
   { href: "/admin/analytics", label: "POS Analytics", icon: BarChart3 },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
+  { href: "/admin/service", label: "Service / Repairs", icon: Wrench },
+  { href: "/admin/inquiries", label: "Inquiries", icon: MessageSquare },
   { href: "/admin/inventory", label: "Inventory", icon: Package },
   { href: "/admin/categories", label: "Categories", icon: Tags },
   { href: "/admin/coupons", label: "Coupons", icon: Ticket },
@@ -42,11 +49,31 @@ function Brand() {
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const tickets = useRepair((s) => s.tickets);
+  const inquiries = useInquiry((s) => s.inquiries);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const repairAlerts = mounted
+    ? tickets.filter((t) => {
+        const lv = alertLevel(t);
+        return lv === "overdue" || lv === "due-soon";
+      }).length
+    : 0;
+  const newInquiries = mounted ? inquiries.filter((i) => i.status === "new").length : 0;
+
+  const badgeFor = (href: string): { n: number; danger?: boolean } | null => {
+    if (href === "/admin/service" && repairAlerts > 0) return { n: repairAlerts, danger: true };
+    if (href === "/admin/inquiries" && newInquiries > 0) return { n: newInquiries };
+    return null;
+  };
+
   return (
     <nav className="flex flex-col gap-1 px-3">
       {items.map((i) => {
         const active = pathname?.startsWith(i.href);
         const Icon = i.icon;
+        const badge = badgeFor(i.href);
         return (
           <Link
             key={i.href}
@@ -60,7 +87,21 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
             )}
           >
             <Icon className="h-[18px] w-[18px]" strokeWidth={active ? 2.2 : 1.8} />
-            <span>{i.label}</span>
+            <span className="flex-1">{i.label}</span>
+            {badge && (
+              <span
+                className={cn(
+                  "grid h-5 min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[10px] font-bold",
+                  badge.danger
+                    ? "bg-danger text-white"
+                    : active
+                      ? "bg-gold-500 text-ink-900"
+                      : "bg-gold-500 text-ink-900",
+                )}
+              >
+                {badge.n}
+              </span>
+            )}
           </Link>
         );
       })}
