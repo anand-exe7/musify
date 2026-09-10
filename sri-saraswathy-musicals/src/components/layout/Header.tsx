@@ -23,6 +23,7 @@ const nav: NavItem[] = [
   { href: "/shop", label: "Shop", mega: "shop" },
   { href: "/#featured", label: "Featured" },
   { href: "/#play", label: "Play" },
+  { href: "/inquiry", label: "Inquiry" },
   { href: "/#visit", label: "Visit" },
 ];
 

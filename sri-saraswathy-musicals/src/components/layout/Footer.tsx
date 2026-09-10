@@ -30,7 +30,7 @@ const cols = [
       { href: "#", label: "Repair & tuning" },
       { href: "#", label: "Trade-in" },
       { href: "#", label: "Warranty" },
-      { href: "#", label: "Contact" },
+      { href: "/inquiry", label: "Contact" },
     ],
   },
 ];
