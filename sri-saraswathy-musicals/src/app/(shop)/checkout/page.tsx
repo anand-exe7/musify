@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useCart } from "@/lib/store/cart";
+import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
+import { useShallow } from "zustand/react/shallow";
 import { getProductById } from "@/lib/data/products";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
@@ -17,6 +19,10 @@ export default function CheckoutPage() {
   const router = useRouter();
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
+  const shipState = useCart((s) => s.shipState);
+  const setShipState = useCart((s) => s.setShipState);
+  const homeState = useGst((s) => s.homeState);
+  const gstLabels = useGst(useShallow((s) => ({ cgst: s.cgstLabel, sgst: s.sgstLabel, igst: s.igstLabel })));
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const [step, setStep] = useState(0);
@@ -29,10 +35,10 @@ export default function CheckoutPage() {
 
   const cartItems = items.map((i) => ({ ...i, product: getProductById(i.productId) })).filter((i) => i.product);
   const subtotal = cartItems.reduce((n, i) => n + (i.product?.price ?? 0) * i.quantity, 0);
-  const gstTotal = cartItems.reduce((n, i) => {
-    const p = i.product!;
-    return n + (p.price * i.quantity * p.gstRate) / 100;
-  }, 0);
+  const gstLines = cartItems.map((i) => ({ amount: (i.product?.price ?? 0) * i.quantity, rate: i.product?.gstRate ?? 0 }));
+  const intra = isIntraState(shipState, homeState);
+  const gst = gstBreakup(gstLines, intra);
+  const gstTotal = gst.total;
   const shipCost = delivery === "express" ? 500 : delivery === "white-glove" ? 0 : subtotal > 5000 ? 0 : 200;
   const total = subtotal + gstTotal + shipCost;
 
@@ -83,8 +89,24 @@ export default function CheckoutPage() {
                 <div className="md:col-span-2"><Field label="Address line 1" defaultValue="12 Adyar Main Road" /></div>
                 <div className="md:col-span-2"><Field label="Address line 2 (optional)" defaultValue="Near LB Road Metro" /></div>
                 <Field label="City" defaultValue="Chennai" />
-                <Field label="State" defaultValue="Tamil Nadu" />
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">State · place of supply</span>
+                  <select
+                    value={shipState}
+                    onChange={(e) => setShipState(e.target.value)}
+                    className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
+                  >
+                    {IN_STATES.map((s) => (
+                      <option key={s} value={s}>{s}{s === homeState ? " (in-state)" : ""}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
+              <p className="mt-3 text-xs text-ink-500">
+                {intra
+                  ? `Supply within ${homeState} — taxed as ${gstLabels.cgst} + ${gstLabels.sgst}.`
+                  : `Supply outside ${homeState} — taxed as ${gstLabels.igst}.`}
+              </p>
             </motion.div>
           )}
 
@@ -190,7 +212,14 @@ export default function CheckoutPage() {
             <h3 className="heading-serif text-lg text-ink-900">Summary</h3>
             <div className="mt-4 space-y-2 text-sm">
               <Row label="Subtotal" value={formatINR(subtotal)} />
-              <Row label="GST" value={formatINR(gstTotal)} />
+              {intra ? (
+                <>
+                  <Row label={gstLabels.cgst} value={formatINR(gst.cgst)} />
+                  <Row label={gstLabels.sgst} value={formatINR(gst.sgst)} />
+                </>
+              ) : (
+                <Row label={gstLabels.igst} value={formatINR(gst.igst)} />
+              )}
               <Row label="Shipping" value={shipCost === 0 ? "Free" : formatINR(shipCost)} />
             </div>
             <div className="mt-4 flex items-end justify-between border-t border-ink-100 pt-4">

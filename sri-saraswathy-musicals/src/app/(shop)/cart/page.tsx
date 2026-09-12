@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useCart } from "@/lib/store/cart";
+import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
+import { useShallow } from "zustand/react/shallow";
 import { getProductById } from "@/lib/data/products";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
-import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check } from "lucide-react";
+import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -75,6 +77,11 @@ export default function CartPage() {
   const updateQuantity = useCart((s) => s.updateQuantity);
   const removeItem = useCart((s) => s.removeItem);
   const clear = useCart((s) => s.clear);
+  const shipState = useCart((s) => s.shipState);
+  const setShipState = useCart((s) => s.setShipState);
+  const homeState = useGst((s) => s.homeState);
+  const posEnabled = useGst((s) => s.placeOfSupplyEnabled);
+  const gstLabels = useGst(useShallow((s) => ({ cgst: s.cgstLabel, sgst: s.sgstLabel, igst: s.igstLabel })));
   const [mounted, setMounted] = useState(false);
   const [code, setCode] = useState("");
   const [coupon, setCoupon] = useState<(Coupon & { code: string }) | null>(null);
@@ -89,10 +96,10 @@ export default function CartPage() {
     .filter((i) => i.product);
 
   const subtotal = cartItems.reduce((n, i) => n + (i.product?.price ?? 0) * i.quantity, 0);
-  const gstTotal = cartItems.reduce((n, i) => {
-    const p = i.product!;
-    return n + (p.price * i.quantity * p.gstRate) / 100;
-  }, 0);
+  const gstLines = cartItems.map((i) => ({ amount: (i.product?.price ?? 0) * i.quantity, rate: i.product?.gstRate ?? 0 }));
+  const intra = isIntraState(shipState, homeState);
+  const gst = gstBreakup(gstLines, intra);
+  const gstTotal = gst.total;
   const shipping = subtotal > 5000 || subtotal === 0 ? 0 : 200;
   const couponActive = coupon && (!coupon.min || subtotal >= coupon.min);
   const discount = couponActive
@@ -206,10 +213,51 @@ export default function CartPage() {
                 <span className="text-ink-500">Subtotal</span>
                 <span className="tabular text-ink-900">{formatINR(subtotal)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-ink-500">GST (avg)</span>
-                <span className="tabular text-ink-900">{formatINR(gstTotal)}</span>
-              </div>
+
+              {/* Place of supply */}
+              {posEnabled && (
+                <div className="rounded-md border border-ink-100 bg-ivory-100/60 p-3">
+                  <label className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-700">
+                    <MapPin className="h-3 w-3" /> Delivery state · place of supply
+                  </label>
+                  <select
+                    value={shipState}
+                    onChange={(e) => setShipState(e.target.value)}
+                    className="w-full border border-ink-200 bg-ivory-50 px-3 py-2 text-sm text-ink-900 focus:border-gold-500 focus:outline-none"
+                  >
+                    {IN_STATES.map((s) => (
+                      <option key={s} value={s}>{s}{s === homeState ? " (in-state)" : ""}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[11px] text-ink-400">
+                    {intra
+                      ? `Within ${homeState} → ${gstLabels.cgst} + ${gstLabels.sgst}`
+                      : `Outside ${homeState} → ${gstLabels.igst}`}
+                  </p>
+                </div>
+              )}
+
+              {(() => {
+                const effRate = subtotal > 0 ? Math.round((gstTotal / subtotal) * 100) : 0;
+                return intra ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-ink-500">{gstLabels.cgst} <span className="text-ink-400">({effRate / 2}%)</span></span>
+                      <span className="tabular text-ink-900">{formatINR(gst.cgst)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-ink-500">{gstLabels.sgst} <span className="text-ink-400">({effRate / 2}%)</span></span>
+                      <span className="tabular text-ink-900">{formatINR(gst.sgst)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between">
+                    <span className="text-ink-500">{gstLabels.igst} <span className="text-ink-400">({effRate}%)</span></span>
+                    <span className="tabular text-ink-900">{formatINR(gst.igst)}</span>
+                  </div>
+                );
+              })()}
+
               <div className="flex justify-between">
                 <span className="text-ink-500">Shipping</span>
                 <span className="tabular text-ink-900">{shipping === 0 ? "Free" : formatINR(shipping)}</span>

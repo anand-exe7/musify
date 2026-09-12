@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Wrench, Plus, Search, AlertTriangle, Clock, CheckCircle2, IndianRupee,
+  Wrench, Plus, Search, AlertTriangle,
   ExternalLink, Trash2, MessageCircle, ChevronRight,
 } from "lucide-react";
 import {
@@ -25,6 +25,19 @@ function fmtDate(iso: string) {
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
+}
+
+function KpiCell({ label, value, sub, dot, tone }: { label: string; value: string; sub?: string; dot: string; tone?: string }) {
+  return (
+    <div className="rounded-xl border border-ink-100 bg-ivory-50 px-4 py-3">
+      <div className="flex items-center gap-1.5">
+        <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">{label}</p>
+      </div>
+      <p className={cn("mt-1.5 text-xl font-bold tabular-nums md:text-2xl", tone ?? "text-ink-900")}>{value}</p>
+      {sub && <p className="text-[11px] text-ink-400">{sub}</p>}
+    </div>
+  );
 }
 
 function Stat({ label, value, hint, accent, icon }: { label: string; value: string; hint?: string; accent?: "gold" | "green" | "red" | "ink"; icon?: React.ReactNode }) {
@@ -108,9 +121,7 @@ export default function ServicePage() {
     window.open(waLink(t.phone, repairIntakeMessage(t)), "_blank", "noopener,noreferrer");
   };
 
-  const chip = (active: boolean) =>
-    cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all",
-      active ? "bg-ink-900 text-ivory-50" : "bg-ivory-50 text-ink-500 ring-1 ring-ink-100 hover:text-ink-900");
+  const selCls = "w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-700 focus:border-gold-500 focus:outline-none";
 
   return (
     <div className="p-5 md:p-8">
@@ -196,44 +207,45 @@ export default function ServicePage() {
 
       {tab === "tickets" ? (
         <>
-          {/* KPIs */}
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <Stat label="Open Tickets" value={String(kpi.active)} hint="Not yet completed" icon={<Wrench className="h-4 w-4" />} />
-            <Stat label="Overdue" value={String(kpi.overdue)} accent="red" hint="Past deadline" icon={<AlertTriangle className="h-4 w-4" />} />
-            <Stat label="Due Soon" value={String(kpi.dueSoon)} accent="gold" hint="Within 2 days" icon={<Clock className="h-4 w-4" />} />
-            <Stat label="Completed (mo)" value={String(kpi.completedMonth)} accent="green" hint="This month" icon={<CheckCircle2 className="h-4 w-4" />} />
-            <Stat label="Repair Revenue" value={formatINR(kpi.revenue)} accent="green" hint="Completed, incl GST" icon={<IndianRupee className="h-4 w-4" />} />
+          {/* KPI strip */}
+          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+            <KpiCell label="Open" value={String(kpi.active)} sub="in workshop" dot="bg-ink-400" />
+            <KpiCell label="Overdue" value={String(kpi.overdue)} sub="past deadline" dot="bg-danger" tone="text-danger" />
+            <KpiCell label="Due Soon" value={String(kpi.dueSoon)} sub="within 2 days" dot="bg-warning" tone="text-[#8a6a1f]" />
+            <KpiCell label="Completed" value={String(kpi.completedMonth)} sub="this month" dot="bg-success" tone="text-success" />
+            <KpiCell label="Revenue" value={formatINR(kpi.revenue)} sub="incl GST" dot="bg-gold-500" tone="text-gold-600" />
           </div>
 
-          {/* Filters */}
-          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => setStatusF("all")} className={chip(statusF === "all")}>All</button>
-              <button onClick={() => setStatusF("active")} className={chip(statusF === "active")}>Active</button>
-              {REPAIR_STATUS.map((s) => (
-                <button key={s.key} onClick={() => setStatusF(s.key)} className={chip(statusF === s.key)}>{s.label}</button>
-              ))}
+          {/* Toolbar — one clean row */}
+          <div className="mb-3 flex flex-col gap-2.5 lg:flex-row lg:items-center">
+            <div className="relative lg:flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticket, name, phone, instrument…" className="w-full rounded-xl border border-ink-200 bg-ivory-50 py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
             </div>
-          </div>
-
-          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
-              {(["all", "Branch 1", "Branch 2"] as BranchFilter[]).map((b) => (
-                <button key={b} onClick={() => setBranchF(b)} className={chip(branchF === b)}>{b === "all" ? "All" : b}</button>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticket, name, phone, item…" className="w-full rounded-xl border border-ink-200 bg-ivory-50 py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none sm:w-72" />
-              </div>
-              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:outline-none">
-                <option value="deadline">By Deadline</option>
-                <option value="new">Newest</option>
-                <option value="priority">By Priority</option>
+            <div className="grid grid-cols-3 gap-2 lg:flex lg:w-auto">
+              <select value={statusF} onChange={(e) => setStatusF(e.target.value as StatusFilter)} className={selCls}>
+                <option value="all">All statuses</option>
+                <option value="active">Active only</option>
+                {REPAIR_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+              <select value={branchF} onChange={(e) => setBranchF(e.target.value as BranchFilter)} className={selCls}>
+                <option value="all">All branches</option>
+                <option value="Branch 1">Branch 1</option>
+                <option value="Branch 2">Branch 2</option>
+              </select>
+              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className={selCls}>
+                <option value="deadline">Sort · Deadline</option>
+                <option value="new">Sort · Newest</option>
+                <option value="priority">Sort · Priority</option>
               </select>
             </div>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between px-0.5">
+            <p className="text-xs text-ink-500">{rows.length} ticket{rows.length === 1 ? "" : "s"}{statusF === "active" ? " · active" : ""}</p>
+            {(statusF !== "all" || branchF !== "all" || query.trim()) && (
+              <button onClick={() => { setStatusF("all"); setBranchF("all"); setQuery(""); }} className="text-xs font-semibold text-ink-500 transition-colors hover:text-gold-600">Clear filters</button>
+            )}
           </div>
 
           {/* Table */}
