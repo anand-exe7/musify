@@ -1,6 +1,0 @@
-{
-  // Windows + VS Code fix: stops `next dev` from popping open a separate
-  // black console window when it spawns its dev-server child process.
-  // (Keeps the whole dev server inside the integrated terminal.)
-  "terminal.integrated.windowsEnableConpty": false
-}
