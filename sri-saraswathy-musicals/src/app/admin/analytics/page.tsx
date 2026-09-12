@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { usePOS, filterBills, productStock, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
+import { useGst, extractGst } from "@/lib/store/gst";
 import { formatINR, cn } from "@/lib/utils";
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -38,6 +39,7 @@ export default function AnalyticsPage() {
   const bills = usePOS((s) => s.bills);
   const invProducts = usePOS((s) => s.invProducts);
   const coupons = usePOS((s) => s.coupons);
+  const gstRate = useGst((s) => s.standardRate);
 
   const [tab, setTab] = useState<(typeof TABS)[number]>("revenue");
   const [period, setPeriod] = useState<Period>("all");
@@ -53,23 +55,32 @@ export default function AnalyticsPage() {
     [bills, period, branch, channel, custom],
   );
 
+  // Net-of-GST helpers: sale values are treated as GST-inclusive, so revenue
+  // is the taxable value (sale − GST) and GST is the tax collected.
+  const netOf = (gross: number) => extractGst(Math.max(0, gross), gstRate).net;
+  const gstOf = (gross: number) => extractGst(Math.max(0, gross), gstRate).gst;
+  const billGoods = (b: (typeof scoped)[number]) => Math.max(0, b.subtotal - b.discount);
+
   const m = useMemo(() => {
-    const totalRevenue = scoped.reduce((n, b) => n + b.total, 0);
+    // Revenue = product sale value net of GST (excludes delivery & tax).
+    const totalRevenue = scoped.reduce((n, b) => n + netOf(billGoods(b)), 0);
+    const gstCollected = scoped.reduce((n, b) => n + gstOf(billGoods(b)), 0);
     const offline = scoped.filter((b) => b.source === "offline");
     const online = scoped.filter((b) => b.source === "online");
     const items = scoped.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
     const revByItem = new Map<string, number>();
     const qtyByItem = new Map<string, number>();
     scoped.forEach((b) => b.items.forEach((i) => {
-      revByItem.set(i.name, (revByItem.get(i.name) || 0) + i.price * i.qty);
+      revByItem.set(i.name, (revByItem.get(i.name) || 0) + netOf(i.price * i.qty));
       qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
     }));
     const topItems = [...revByItem.entries()].sort((a, b) => b[1] - a[1]);
     return {
       totalRevenue,
+      gstCollected,
       count: scoped.length,
-      offlineRev: offline.reduce((n, b) => n + b.total, 0),
-      onlineRev: online.reduce((n, b) => n + b.total, 0),
+      offlineRev: offline.reduce((n, b) => n + netOf(billGoods(b)), 0),
+      onlineRev: online.reduce((n, b) => n + netOf(billGoods(b)), 0),
       offlineCount: offline.length,
       onlineCount: online.length,
       items,
@@ -79,15 +90,15 @@ export default function AnalyticsPage() {
       qtyByItem,
       revByItem,
     };
-  }, [scoped]);
+  }, [scoped, gstRate]);
 
-  // revenue trend by month (respects branch + channel, ignores period so the year reads fully)
+  // net revenue trend by month (respects branch + channel, ignores period so the year reads fully)
   const monthly = useMemo(() => {
     const base = filterBills(bills, { period: "all", branch, source: channel });
     const totals = new Array(12).fill(0);
-    base.forEach((b) => { totals[new Date(b.createdAt).getMonth()] += b.total; });
+    base.forEach((b) => { totals[new Date(b.createdAt).getMonth()] += netOf(Math.max(0, b.subtotal - b.discount)); });
     return totals;
-  }, [bills, branch, channel]);
+  }, [bills, branch, channel, gstRate]);
   const maxMonth = Math.max(...monthly, 1);
   const yearTotal = monthly.reduce((a, b) => a + b, 0);
 
@@ -161,16 +172,16 @@ export default function AnalyticsPage() {
       {tab === "revenue" && (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Total Revenue" value={formatINR(m.totalRevenue)} hint="POS + online combined" accent="green" />
+            <Stat label="Net Revenue" value={formatINR(m.totalRevenue)} hint="Ex-GST · sale − tax" accent="green" />
+            <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint={`Output tax @ ${gstRate}%`} accent="gold" />
             <Stat label="Completed Bills" value={String(m.count)} hint="in current view" />
-            <Stat label="Offline Bills" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} walk-in`} accent="gold" />
-            <Stat label="Online Bills" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} Razorpay`} accent="green" />
+            <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat label="Offline Net Rev" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} walk-in`} accent="gold" />
+            <Stat label="Online Net Rev" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} Razorpay`} accent="green" />
             <Stat label="Total Items Sold" value={`${m.items} pcs`} />
-            <Stat label="Avg Order Value" value={formatINR(m.aov)} />
             <Stat label="Top Product" value={m.topProduct} />
-            <Stat label="Offline / Online" value={`${m.offlineCount} / ${m.onlineCount}`} hint="bill count" />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
@@ -178,7 +189,7 @@ export default function AnalyticsPage() {
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-ink-900">Revenue Trend · 2026</p>
+                  <p className="text-sm font-bold text-ink-900">Net Revenue Trend · 2026 <span className="font-normal text-ink-400">(ex-GST)</span></p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
                 </div>
                 <span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold text-gold-700">Avg {formatINR(Math.round(yearTotal / 12))}/mo</span>
@@ -229,7 +240,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* ── TODAY'S SALES ── */}
-      {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} />}
+      {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} rate={gstRate} />}
 
       {/* ── PRODUCTS ── */}
       {tab === "products" && (
@@ -272,18 +283,20 @@ export default function AnalyticsPage() {
 }
 
 /* ── Today tab ── */
-function TodayTab({ bills, branch, channel, query, setQuery }: { bills: ReturnType<typeof usePOS.getState>["bills"]; branch: BranchFilter; channel: Source | "all"; query: string; setQuery: (v: string) => void; }) {
+function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: ReturnType<typeof usePOS.getState>["bills"]; branch: BranchFilter; channel: Source | "all"; query: string; setQuery: (v: string) => void; rate: number; }) {
   const today = useMemo(() => filterBills(bills, { period: "today", branch, source: channel }), [bills, branch, channel]);
-  const rev = today.reduce((n, b) => n + b.total, 0);
+  const goods = (b: (typeof today)[number]) => Math.max(0, b.subtotal - b.discount);
+  const rev = today.reduce((n, b) => n + extractGst(goods(b), rate).net, 0);
+  const gstColl = today.reduce((n, b) => n + extractGst(goods(b), rate).gst, 0);
   const items = today.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
   const filtered = today.filter((b) => b.phone.includes(query.trim()));
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Today's Revenue" value={formatINR(rev)} hint="Completed today" accent="green" />
+        <Stat label="Today's Net Revenue" value={formatINR(rev)} hint="Ex-GST · today" accent="green" />
+        <Stat label="Today's GST" value={formatINR(gstColl)} hint={`Output tax @ ${rate}%`} accent="gold" />
         <Stat label="Today's Bills" value={String(today.length)} hint="Completed today" />
         <Stat label="Today's Items Sold" value={`${items} pcs`} hint="Quantity sold today" />
-        <Stat label="Today's Avg Order" value={formatINR(today.length ? Math.round(rev / today.length) : 0)} hint="Per invoice today" accent="gold" />
       </div>
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <Card>
@@ -307,7 +320,7 @@ function TodayTab({ bills, branch, channel, query, setQuery }: { bills: ReturnTy
           )}
         </Card>
         <div className="space-y-4">
-          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split</p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online"] as const).map((s) => { const r = today.filter((b) => b.source === s).reduce((n, b) => n + b.total, 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s}</span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
+          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split <span className="font-normal text-ink-400">(net)</span></p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online"] as const).map((s) => { const r = today.filter((b) => b.source === s).reduce((n, b) => n + extractGst(goods(b), rate).net, 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s}</span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
           <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Top Items</p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No items sold today.</p> : <p className="text-sm text-ink-500">{items} pcs across {today.length} bills</p>}</Card>
         </div>
       </div>
