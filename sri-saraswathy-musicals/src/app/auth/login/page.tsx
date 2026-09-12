@@ -1,11 +1,9 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
+import { Suspense } from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
-import { useAuth } from "@/lib/store/auth";
+import { useSearchParams } from "next/navigation";
 
 function GoogleGlyph() {
   return (
@@ -18,24 +16,19 @@ function GoogleGlyph() {
   );
 }
 
-export default function LoginPage() {
-  const router = useRouter();
-  const loginUser = useAuth((s) => s.login);
-  const [showPw, setShowPw] = useState(false);
-  const [pw, setPw] = useState("");
-  const [loading, setLoading] = useState(false);
+const ERRORS: Record<string, string> = {
+  not_configured: "Google sign-in isn't set up yet. Add your Google OAuth credentials to .env.local.",
+  state: "Your sign-in link expired or didn't match. Please try again.",
+  oauth: "Google sign-in was cancelled or failed. Please try again.",
+  callback: "We couldn't complete sign-in. Please try again.",
+  unverified: "Your Google email isn't verified. Verify it with Google, then try again.",
+};
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    loginUser();
-    setTimeout(() => router.push("/profile"), 650);
-  };
-
-  const continueWithGoogle = () => {
-    loginUser();
-    router.push("/profile");
-  };
+function LoginInner() {
+  const params = useSearchParams();
+  const redirect = params.get("redirect") || "/profile";
+  const error = params.get("error");
+  const googleHref = `/api/auth/google?redirect=${encodeURIComponent(redirect)}`;
 
   return (
     <div className="container-narrow grid gap-10 md:grid-cols-2 md:gap-16">
@@ -61,7 +54,7 @@ export default function LoginPage() {
             The shop is <em>open.</em>
           </h1>
           <p className="mt-4 max-w-sm text-ivory-100/80">
-            Sign in to see your orders, saved pieces, and to speak to a luthier about an instrument on your wishlist.
+            Sign in with Google to see your orders, saved pieces, and to speak to a luthier about an instrument on your wishlist.
           </p>
         </div>
 
@@ -73,77 +66,50 @@ export default function LoginPage() {
         </div>
       </motion.div>
 
-      {/* Right — form */}
+      {/* Right — Google-only sign in */}
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.08 }}
-        className="border border-ink-100 bg-ivory-50 p-8 md:p-10"
+        className="flex flex-col justify-center border border-ink-100 bg-ivory-50 p-8 md:p-10"
       >
         <p className="eyebrow">Sign in</p>
         <h2 className="heading-serif mt-3 text-3xl text-ink-900">
           Enter the <em>house.</em>
         </h2>
-        <form onSubmit={submit} className="mt-8 space-y-5">
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Email or phone</span>
-            <input
-              type="text"
-              defaultValue="arjun.rao@gmail.com"
-              required
-              className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 focus:border-gold-500 focus:outline-none"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Password</span>
-            <div className="relative">
-              <input
-                type={showPw ? "text" : "password"}
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                placeholder="Enter your password"
-                required
-                className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 pr-11 text-sm text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPw((v) => !v)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 transition-colors hover:text-gold-600"
-              >
-                {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </label>
-          <label className="flex items-center gap-2 text-sm text-ink-600">
-            <input type="checkbox" className="h-4 w-4 accent-gold-500" defaultChecked />
-            Keep me signed in
-          </label>
-          <button type="submit" disabled={loading} className="btn-gold-solid w-full">
-            {loading ? "Signing in…" : (<>Sign in <ArrowRight className="h-3.5 w-3.5" /></>)}
-          </button>
-        </form>
+        <p className="mt-3 text-sm text-ink-500">
+          We use Google to sign you in — no password to remember. Your account is created automatically the first time.
+        </p>
 
-        <div className="my-8 divider-gold text-[10px] uppercase tracking-widest text-ink-400">or</div>
+        {error && (
+          <p className="mt-6 border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+            {ERRORS[error] ?? "Something went wrong signing you in. Please try again."}
+          </p>
+        )}
 
-        <button type="button" onClick={continueWithGoogle} className="btn-ghost w-full">
+        <a href={googleHref} className="btn-gold-solid mt-8 w-full justify-center">
           <GoogleGlyph />
           Continue with Google
-        </button>
+        </a>
 
-        <p className="mt-8 text-center text-sm text-ink-500">
-          New here?{" "}
-          <Link href="/auth/signup" className="text-gold-600 underline underline-offset-4 hover:text-gold-700">
-            Create an account
-          </Link>
+        <p className="mt-6 text-center text-xs text-ink-400">
+          By continuing you agree to our{" "}
+          <Link href="#" className="text-gold-600 underline underline-offset-2">Terms</Link> and{" "}
+          <Link href="#" className="text-gold-600 underline underline-offset-2">Privacy Policy</Link>.
         </p>
-        <p className="mt-4 text-center text-[10px] uppercase tracking-widest text-ink-400">
-          Staff & branches?{" "}
-          <Link href="/admin" className="text-gold-600 hover:underline">
-            Admin panel →
-          </Link>
+
+        <p className="mt-8 text-center text-[10px] uppercase tracking-widest text-ink-400">
+          Staff &amp; branches sign in the same way — admin access is granted to authorised accounts.
         </p>
       </motion.div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="container-narrow py-24 text-center text-ink-400">Loading…</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }

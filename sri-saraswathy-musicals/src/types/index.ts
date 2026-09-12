@@ -43,6 +43,12 @@ export interface Order {
   id: string;
   date: string;
   status: "delivered" | "shipped" | "processing" | "cancelled";
+  userId?: string | null;
+  customerName?: string;
+  email?: string;
+  phone?: string;
+  paymentMethod?: string;
+  paymentId?: string;
   items: { productId: string; quantity: number; price: number }[];
   subtotal: number;
   gst: number;
@@ -74,6 +80,10 @@ export interface User {
   role: "admin" | "branch1-manager" | "branch2-manager" | "cashier" | "customer";
   branch?: "Branch 1" | "Branch 2";
   active: boolean;
+  /** Authoritative admin flag — grants access to the `/admin` area. */
+  isAdmin: boolean;
+  googleId?: string | null;
+  avatar?: string | null;
   lastLogin: string;
   permissions: {
     billing: boolean;

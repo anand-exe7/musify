@@ -13,6 +13,13 @@ export async function getOrder(id: string): Promise<Order | undefined> {
   return r ? row<Order>(r) : undefined;
 }
 
+/** Orders placed by a specific signed-in customer, newest first. */
+export async function getOrdersByUser(userId: string): Promise<Order[]> {
+  return rows<Order>(
+    await db.select().from(orders).where(eq(orders.userId, userId)).orderBy(desc(orders.date)),
+  );
+}
+
 export async function createOrder(o: Order): Promise<Order> {
   const [r] = await db.insert(orders).values(o).returning();
   return row<Order>(r);

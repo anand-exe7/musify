@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useCart } from "@/lib/store/cart";
+import { useAuth } from "@/lib/store/auth";
 import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
 import { useShallow } from "zustand/react/shallow";
 import { useProducts } from "@/lib/client/catalog";
@@ -27,12 +28,34 @@ export default function CheckoutPage() {
   useEffect(() => setMounted(true), []);
   const { products, loading: productsLoading } = useProducts();
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
   const [payment, setPayment] = useState<"upi" | "card" | "bank" | "cod">("upi");
   const [delivery, setDelivery] = useState<"standard" | "white-glove" | "express">("white-glove");
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [addr, setAddr] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    pincode: "600020",
+    line1: "12 Adyar Main Road",
+    line2: "Near LB Road Metro",
+    city: "Chennai",
+  });
+  const setAddrField = (k: keyof typeof addr) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setAddr((a) => ({ ...a, [k]: e.target.value }));
+
+  // Prefill name/email from the signed-in account once it hydrates.
+  useEffect(() => {
+    if (!user) return;
+    setAddr((a) => ({
+      ...a,
+      name: a.name || user.name,
+      email: a.email || user.email,
+    }));
+  }, [user]);
 
   if (!mounted || productsLoading) {
     return <div className="container-narrow py-32 text-center text-ink-400">Loading checkout…</div>;
@@ -60,36 +83,120 @@ export default function CheckoutPage() {
     return <OrderCelebration orderId={orderId} />;
   }
 
-  const placeOrder = async () => {
-    if (placing) return;
-    setPlacing(true);
-    const id = `ORD${Date.now().toString().slice(-8)}`;
-    const order = {
-      id,
-      date: new Date().toISOString().slice(0, 10),
-      status: "processing" as const,
-      items: cartItems.map((i) => ({ productId: i.productId, quantity: i.quantity, price: i.product!.price })),
-      subtotal,
-      gst: gstTotal,
-      shipping: shipCost,
-      total,
-      address: `Delivery to ${shipState}`,
-    };
-    try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(order),
-      });
-      if (!res.ok) throw new Error("save failed");
-    } catch {
-      alert("We couldn't save your order to the server, but you can continue. Please contact us if it doesn't appear in your profile.");
-    }
+  const finalize = (id: string) => {
     setOrderId(`Order #${id}`);
     clear();
     setPlaced(true);
     window.scrollTo(0, 0);
     setPlacing(false);
+  };
+
+  // Lazily inject Razorpay's hosted checkout script (only when needed).
+  const loadRazorpay = () =>
+    new Promise<boolean>((resolve) => {
+      if (typeof window === "undefined") return resolve(false);
+      if ((window as unknown as { Razorpay?: unknown }).Razorpay) return resolve(true);
+      const s = document.createElement("script");
+      s.src = "https://checkout.razorpay.com/v1/checkout.js";
+      s.onload = () => resolve(true);
+      s.onerror = () => resolve(false);
+      document.body.appendChild(s);
+    });
+
+  const placeOrder = async () => {
+    if (placing) return;
+    setPlacing(true);
+
+    const payload = {
+      items: cartItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      delivery,
+      payment,
+      shipState,
+      customerName: addr.name,
+      phone: addr.phone,
+      email: addr.email,
+      address: `${addr.name}, ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city} ${addr.pincode} · ${shipState}`,
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
+    try {
+      const res = await fetch("/api/checkout/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          window.location.href = "/auth/login?redirect=%2Fcheckout";
+          return;
+        }
+        throw new Error(data?.error || "Checkout failed");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "We couldn't start your checkout. Please try again.");
+      setPlacing(false);
+      return;
+    }
+
+    // Pay on delivery — the order is already saved server-side.
+    if (data.mode === "cod") {
+      finalize(data.orderId);
+      return;
+    }
+
+    // Online payment — open Razorpay's checkout, then verify the signature.
+    const ready = await loadRazorpay();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const RZP = (window as unknown as { Razorpay?: any }).Razorpay;
+    if (!ready || !RZP) {
+      alert("Couldn't load the payment window. Please check your connection and try again.");
+      setPlacing(false);
+      return;
+    }
+
+    const rzp = new RZP({
+      key: data.key,
+      amount: data.amount,
+      currency: data.currency,
+      order_id: data.razorpayOrderId,
+      name: "Sri Saraswathy Musicals",
+      description: "Instrument order",
+      prefill: { name: data.customerName, email: data.email, contact: data.phone },
+      theme: { color: "#C9A24B" },
+      modal: { ondismiss: () => setPlacing(false) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handler: async (resp: any) => {
+        try {
+          const vr = await fetch("/api/checkout/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              draftToken: data.draftToken,
+              razorpay_order_id: resp.razorpay_order_id,
+              razorpay_payment_id: resp.razorpay_payment_id,
+              razorpay_signature: resp.razorpay_signature,
+            }),
+          });
+          const vd = await vr.json().catch(() => ({}));
+          if (!vr.ok) throw new Error(vd?.error || "Payment verification failed");
+          finalize(vd.orderId);
+        } catch (err) {
+          alert(
+            err instanceof Error
+              ? err.message
+              : "Payment couldn't be verified. If you were charged, contact us and we'll sort it out.",
+          );
+          setPlacing(false);
+        }
+      },
+    });
+    rzp.on("payment.failed", () => {
+      alert("Payment failed. Please try another method.");
+      setPlacing(false);
+    });
+    rzp.open();
   };
 
   return (
@@ -119,13 +226,13 @@ export default function CheckoutPage() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Delivery address</h2>
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <Field label="Full name" defaultValue="Arjun Rao" />
-                <Field label="Phone" defaultValue="+91 98876 54321" />
-                <Field label="Email" type="email" defaultValue="arjun.rao@gmail.com" />
-                <Field label="Pincode" defaultValue="600020" />
-                <div className="md:col-span-2"><Field label="Address line 1" defaultValue="12 Adyar Main Road" /></div>
-                <div className="md:col-span-2"><Field label="Address line 2 (optional)" defaultValue="Near LB Road Metro" /></div>
-                <Field label="City" defaultValue="Chennai" />
+                <Field label="Full name" value={addr.name} onChange={setAddrField("name")} />
+                <Field label="Phone" value={addr.phone} onChange={setAddrField("phone")} />
+                <Field label="Email" type="email" value={addr.email} onChange={setAddrField("email")} />
+                <Field label="Pincode" value={addr.pincode} onChange={setAddrField("pincode")} />
+                <div className="md:col-span-2"><Field label="Address line 1" value={addr.line1} onChange={setAddrField("line1")} /></div>
+                <div className="md:col-span-2"><Field label="Address line 2 (optional)" value={addr.line2} onChange={setAddrField("line2")} /></div>
+                <Field label="City" value={addr.city} onChange={setAddrField("city")} />
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">State · place of supply</span>
                   <select
@@ -206,7 +313,7 @@ export default function CheckoutPage() {
                 ))}
               </div>
               <div className="mt-6 space-y-2 text-sm">
-                <p className="text-ink-500">Delivering to <span className="text-ink-900">Arjun Rao, 12 Adyar Main Road, Chennai 600020</span></p>
+                <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
                 <p className="text-ink-500">Delivery <span className="text-ink-900">{delivery}</span></p>
                 <p className="text-ink-500">Payment <span className="text-ink-900 uppercase">{payment}</span></p>
               </div>

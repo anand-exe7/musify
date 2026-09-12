@@ -37,7 +37,8 @@ export function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
   const count = useCart((s) => s.items.reduce((n, i) => n + i.quantity, 0));
   const loggedIn = useAuth((s) => s.loggedIn);
-  const profileHref = mounted && loggedIn ? "/profile" : "/auth/login";
+  const authHydrated = useAuth((s) => s.hydrated);
+  const profileHref = authHydrated && loggedIn ? "/profile" : "/auth/login";
   const { categories } = useCategories();
   const { products } = useProducts();
 

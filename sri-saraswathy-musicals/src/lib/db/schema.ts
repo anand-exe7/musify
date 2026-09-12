@@ -71,6 +71,11 @@ export const users = pgTable("users", {
   role: text("role").notNull(),
   branch: text("branch"),
   active: boolean("active").notNull().default(true),
+  /** Authoritative admin flag — `true` grants access to the `/admin` area. */
+  isAdmin: boolean("is_admin").notNull().default(false),
+  /** Google account subject id (OAuth `sub`), set the first time they sign in. */
+  googleId: text("google_id"),
+  avatar: text("avatar"),
   lastLogin: text("last_login").notNull().default(""),
   permissions: jsonb("permissions")
     .$type<{ billing: boolean; inventory: boolean; analytics: boolean; users: boolean }>()
@@ -94,6 +99,14 @@ export const orders = pgTable("orders", {
   id: text("id").primaryKey(),
   date: text("date").notNull(),
   status: text("status").notNull(),
+  /** The signed-in customer who placed the order (users.id). */
+  userId: text("user_id"),
+  customerName: text("customer_name").notNull().default(""),
+  email: text("email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  /** Payment provider linkage (Razorpay) — empty for cash-on-delivery. */
+  paymentMethod: text("payment_method").notNull().default(""),
+  paymentId: text("payment_id").notNull().default(""),
   items: jsonb("items")
     .$type<{ productId: string; quantity: number; price: number }[]>()
     .notNull()

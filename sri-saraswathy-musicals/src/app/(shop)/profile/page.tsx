@@ -15,9 +15,10 @@ type Tab = "orders" | "profile" | "addresses" | "wishlist";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const loggedIn = useAuth((s) => s.loggedIn);
+  const user = useAuth((s) => s.user);
+  const isAdmin = useAuth((s) => s.isAdmin);
+  const hydrated = useAuth((s) => s.hydrated);
   const logout = useAuth((s) => s.logout);
-  const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<Tab>("orders");
   const { products } = useProducts();
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
@@ -25,15 +26,19 @@ export default function ProfilePage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
-  useEffect(() => setMounted(true), []);
+  // Fallback guard — the server proxy already blocks anonymous access, but if
+  // the session turns out empty once hydrated, send them to sign in.
   useEffect(() => {
-    if (mounted && !loggedIn) router.replace("/auth/login");
-  }, [mounted, loggedIn, router]);
+    if (hydrated && !user) router.replace("/auth/login?redirect=%2Fprofile");
+  }, [hydrated, user, router]);
+
   useEffect(() => {
+    if (!user) return;
     let alive = true;
+    setDataLoading(true);
     Promise.all([
-      fetch("/api/users/c001").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch("/api/orders").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`/api/users/${user.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/orders/mine").then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]).then(([u, o]) => {
       if (!alive) return;
       setMe(u);
@@ -43,17 +48,19 @@ export default function ProfilePage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [user]);
 
-  // Wait for the persisted session to hydrate before deciding what to show,
-  // so a signed-in visitor is never flashed back to the login screen.
-  if (!mounted || !loggedIn) return null;
+  // Wait for the session to hydrate before deciding what to show, so a signed-in
+  // visitor is never flashed back to the login screen.
+  if (!hydrated || !user) return null;
   if (dataLoading) {
     return <div className="container-page py-32 text-center text-ink-400">Loading your account…</div>;
   }
-  if (!me) {
-    return <div className="container-page py-32 text-center text-ink-400">Couldn&rsquo;t load your profile. Please try again.</div>;
-  }
+
+  const displayName = me?.name ?? user.name;
+  const displayEmail = me?.email ?? user.email;
+  const displayPhone = me?.phone || "Not on file";
+  const displayLastLogin = me?.lastLogin || "—";
 
   const signOut = () => {
     logout();
@@ -97,22 +104,24 @@ export default function ProfilePage() {
         <div className="relative flex flex-col items-start justify-between gap-6 p-6 md:flex-row md:items-center md:p-8">
           <div className="flex items-center gap-5">
             <div className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 font-display text-2xl text-ink-900 ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-20 md:w-20 md:text-3xl">
-              {me.name.split(" ").map((s) => s[0]).join("")}
+              {displayName.split(" ").map((s) => s[0]).join("").slice(0, 2)}
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-[0.24em] text-gold-400">Welcome back</p>
-              <p className="heading-serif mt-1 text-2xl text-ivory-50 md:text-3xl">{me.name}</p>
-              <p className="mt-1 text-xs text-ivory-100/60">{me.email}</p>
+              <p className="heading-serif mt-1 text-2xl text-ivory-50 md:text-3xl">{displayName}</p>
+              <p className="mt-1 text-xs text-ivory-100/60">{displayEmail}</p>
               <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300">
                 Patron · since March 2023
               </span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/admin" className="btn-gold-solid">
-              <Settings className="h-3.5 w-3.5" />
-              Admin panel
-            </Link>
+            {isAdmin && (
+              <Link href="/admin" className="btn-gold-solid">
+                <Settings className="h-3.5 w-3.5" />
+                Admin panel
+              </Link>
+            )}
             <button onClick={signOut} className="text-xs uppercase tracking-[0.18em] text-ivory-100/60 transition-colors hover:text-gold-400">
               <LogOut className="mr-1 inline h-3 w-3" /> Sign out
             </button>
@@ -219,10 +228,10 @@ export default function ProfilePage() {
             <div>
               <h2 className="heading-serif text-2xl text-ink-900">Your profile</h2>
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <ProfileRow label="Full name" value={me.name} />
-                <ProfileRow label="Email" value={me.email} />
-                <ProfileRow label="Phone" value={me.phone} />
-                <ProfileRow label="Last login" value={me.lastLogin} />
+                <ProfileRow label="Full name" value={displayName} />
+                <ProfileRow label="Email" value={displayEmail} />
+                <ProfileRow label="Phone" value={displayPhone} />
+                <ProfileRow label="Last login" value={displayLastLogin} />
                 <ProfileRow label="Member since" value="March 2023" />
                 <ProfileRow label="Account status" value="Active · Verified" />
               </div>

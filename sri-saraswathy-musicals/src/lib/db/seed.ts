@@ -368,7 +368,9 @@ async function main() {
   await db.insert(users).values(
     [...staffUsers, currentUser].map((u) => ({
       id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role,
-      branch: u.branch ?? null, active: u.active, lastLogin: u.lastLogin, permissions: u.permissions,
+      branch: u.branch ?? null, active: u.active, isAdmin: u.isAdmin,
+      googleId: u.googleId ?? null, avatar: u.avatar ?? null,
+      lastLogin: u.lastLogin, permissions: u.permissions,
     })),
   );
 
