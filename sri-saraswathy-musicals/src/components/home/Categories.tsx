@@ -2,10 +2,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { categories } from "@/lib/data/categories";
+import { useCategories } from "@/lib/client/catalog";
 import { ArrowUpRight } from "lucide-react";
 
 export function Categories() {
+  const { categories } = useCategories();
   return (
     <section id="categories" className="py-20 md:py-28">
       <div className="container-page">

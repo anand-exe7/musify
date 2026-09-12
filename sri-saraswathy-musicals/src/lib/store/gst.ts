@@ -1,6 +1,5 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 /* ─────────────────────────────  States  ───────────────────────────── */
 
@@ -61,7 +60,9 @@ interface GstState {
   standardRate: number;
   /** Show the place-of-supply chooser to customers. */
   placeOfSupplyEnabled: boolean;
-  set: (patch: Partial<Omit<GstState, "set" | "reset">>) => void;
+  hydrated: boolean;
+  hydrate: () => Promise<void>;
+  set: (patch: Partial<Omit<GstState, "set" | "reset" | "hydrate" | "hydrated">>) => void;
   reset: () => void;
 }
 
@@ -74,13 +75,47 @@ const DEFAULTS = {
   placeOfSupplyEnabled: true,
 };
 
-export const useGst = create<GstState>()(
-  persist(
-    (set) => ({
-      ...DEFAULTS,
-      set: (patch) => set(patch),
-      reset: () => set(DEFAULTS),
-    }),
-    { name: "ssm-gst-v1" },
-  ),
-);
+type GstConfig = typeof DEFAULTS;
+
+/** Persist config to the backend; on failure, warn and re-hydrate to resync. */
+async function persistGst(patch: Partial<GstConfig>, hydrate: () => Promise<void>) {
+  try {
+    const res = await fetch("/api/settings/gst", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error("save failed");
+  } catch {
+    alert("Couldn't save GST settings. Reverting to the saved values.");
+    hydrate();
+  }
+}
+
+export const useGst = create<GstState>()((set, get) => ({
+  ...DEFAULTS,
+  hydrated: false,
+  hydrate: async () => {
+    try {
+      const res = await fetch("/api/settings/gst");
+      if (!res.ok) return;
+      const data = (await res.json()) as GstConfig;
+      set({ ...data, hydrated: true });
+    } catch {
+      /* leave defaults in place */
+    }
+  },
+  // Optimistic: apply locally now, persist in the background.
+  set: (patch) => {
+    set(patch);
+    void persistGst(patch, get().hydrate);
+  },
+  reset: () => {
+    set(DEFAULTS);
+    void persistGst(DEFAULTS, get().hydrate);
+  },
+}));
+
+if (typeof window !== "undefined") {
+  void useGst.getState().hydrate();
+}

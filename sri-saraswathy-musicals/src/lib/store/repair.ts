@@ -1,6 +1,5 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import type { Branch } from "@/lib/store/pos";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
@@ -154,157 +153,28 @@ export function genRepairId(): string {
   return `RPR-2026-${s}`;
 }
 
-/* ─────────────────────────────  Seeds  ───────────────────────────── */
-
-function iso(d: string) {
-  return new Date(d).toISOString();
-}
-
-// Seeded relative to the app's "today" (2026-09-11) so the deadline alerts,
-// dashboard and report all have realistic, live-looking data.
-function seedTickets(): RepairTicket[] {
-  return [
-    {
-      id: "RPR-2026-K7QM9", createdAt: iso("2026-09-02T10:15:00"), updatedAt: iso("2026-09-08T16:00:00"),
-      customerName: "Bala Music Academy", phone: "9784562309", email: "office@balamusic.in",
-      productName: "Saraswathi Veena", category: "Indian Classical", brand: "Kanailal", serial: "VN-2291",
-      refInvoice: "INV-2026-QNXVYKMC",
-      problem: "Two frets loose, buzzing on lower octave. Needs re-waxing and bridge levelling.",
-      accessories: "Soft case, tuning key",
-      status: "in-progress", priority: "high", branch: "Branch 1", technician: "Ravi Shankar",
-      deadline: iso("2026-09-09T18:00:00"), // OVERDUE
-      estimate: 3500, finalCost: 0, advance: 1000, gstRate: 18,
-      events: [
-        { at: iso("2026-09-02T10:15:00"), label: "Ticket raised · received at Branch 1" },
-        { at: iso("2026-09-03T11:00:00"), label: "Status → Diagnosing" },
-        { at: iso("2026-09-05T15:30:00"), label: "Status → In Progress · assigned to Ravi Shankar" },
-      ],
-      whatsappSentAt: iso("2026-09-02T10:20:00"),
-    },
-    {
-      id: "RPR-2026-M3XT2", createdAt: iso("2026-09-06T12:40:00"), updatedAt: iso("2026-09-09T09:10:00"),
-      customerName: "Vignesh Kumar", phone: "7894561238",
-      productName: "Yamaha P-125 Digital Piano", category: "Keyboards", brand: "Yamaha", serial: "YP-88431",
-      problem: "Middle C key sticking, no sound from left speaker.",
-      accessories: "Sustain pedal, power adapter",
-      status: "awaiting-parts", priority: "normal", branch: "Branch 2", technician: "Karthik M",
-      deadline: iso("2026-09-12T18:00:00"), // due-soon (tomorrow)
-      estimate: 4200, finalCost: 0, advance: 0, gstRate: 18,
-      events: [
-        { at: iso("2026-09-06T12:40:00"), label: "Ticket raised · received at Branch 2" },
-        { at: iso("2026-09-07T10:00:00"), label: "Status → Diagnosing" },
-        { at: iso("2026-09-09T09:10:00"), label: "Status → Awaiting Parts · speaker unit ordered" },
-      ],
-    },
-    {
-      id: "RPR-2026-P9WL4", createdAt: iso("2026-09-08T14:05:00"), updatedAt: iso("2026-09-10T14:05:00"),
-      customerName: "Meera Nair", phone: "7904199050",
-      productName: "Cremona Violin 4/4", category: "Strings", brand: "Cremona", serial: "CV-4471",
-      problem: "Sound-post collapsed, one fine tuner stripped. Full re-string requested.",
-      accessories: "Bow, rosin, hard case",
-      status: "diagnosing", priority: "urgent", branch: "Branch 1", technician: "Deepa Iyer",
-      deadline: iso("2026-09-13T18:00:00"), // due-soon
-      estimate: 2800, finalCost: 0, advance: 500, gstRate: 18,
-      events: [
-        { at: iso("2026-09-08T14:05:00"), label: "Ticket raised · received at Branch 1" },
-        { at: iso("2026-09-10T14:05:00"), label: "Status → Diagnosing · assigned to Deepa Iyer" },
-      ],
-      whatsappSentAt: iso("2026-09-08T14:12:00"),
-    },
-    {
-      id: "RPR-2026-T5RB8", createdAt: iso("2026-09-10T11:20:00"), updatedAt: iso("2026-09-10T11:20:00"),
-      customerName: "Chennai Music College", phone: "9840012345", email: "hod@cmc.edu.in",
-      productName: "Concert Tabla Set", category: "Percussion", brand: "Bina",
-      problem: "Dayan skin torn, needs re-heading and syahi touch-up on both drums.",
-      accessories: "Cushion ring set",
-      status: "received", priority: "normal", branch: "Branch 2", technician: "Unassigned",
-      deadline: iso("2026-09-20T18:00:00"), // on-track
-      estimate: 5500, finalCost: 0, advance: 0, gstRate: 18,
-      events: [{ at: iso("2026-09-10T11:20:00"), label: "Ticket raised · received at Branch 2" }],
-    },
-    {
-      id: "RPR-2026-C2HN6", createdAt: iso("2026-09-09T16:30:00"), updatedAt: iso("2026-09-11T09:00:00"),
-      customerName: "Rajiv Menon", phone: "7904199050",
-      productName: "Selmer Tenor Saxophone", category: "Wind", brand: "Selmer", serial: "SX-7781",
-      problem: "Sticky G# pad, bent key guard. Full pad seal check.",
-      status: "ready", priority: "high", branch: "Branch 1", technician: "Ravi Shankar",
-      deadline: iso("2026-09-14T18:00:00"),
-      estimate: 6500, finalCost: 6800, advance: 2000, gstRate: 18,
-      events: [
-        { at: iso("2026-09-04T16:30:00"), label: "Ticket raised · received at Branch 1" },
-        { at: iso("2026-09-06T10:00:00"), label: "Status → In Progress" },
-        { at: iso("2026-09-11T09:00:00"), label: "Status → Ready · final cost ₹6,800 · ready for pickup" },
-      ],
-      whatsappSentAt: iso("2026-09-11T09:05:00"),
-    },
-    {
-      id: "RPR-2026-A8FD1", createdAt: iso("2026-08-20T10:00:00"), updatedAt: iso("2026-08-28T17:00:00"),
-      customerName: "Priya Ramesh", phone: "9784562309",
-      productName: "Female Tanpura (4-string)", category: "Indian Classical", brand: "Miraj", serial: "TP-3312",
-      problem: "Jawari worn out, gourd hairline crack sealed.",
-      status: "completed", priority: "normal", branch: "Branch 1", technician: "Deepa Iyer",
-      deadline: iso("2026-08-27T18:00:00"),
-      estimate: 4000, finalCost: 4500, advance: 5310, gstRate: 18,
-      completedAt: iso("2026-08-28T17:00:00"), invoiceNo: "SVC/26-27/0007",
-      events: [
-        { at: iso("2026-08-20T10:00:00"), label: "Ticket raised · received at Branch 1" },
-        { at: iso("2026-08-23T12:00:00"), label: "Status → In Progress" },
-        { at: iso("2026-08-27T15:00:00"), label: "Status → Ready" },
-        { at: iso("2026-08-28T17:00:00"), label: "Status → Completed · invoice SVC/26-27/0007 · paid in full" },
-      ],
-      whatsappSentAt: iso("2026-08-28T17:05:00"),
-    },
-    {
-      id: "RPR-2026-B4KP3", createdAt: iso("2026-08-12T13:10:00"), updatedAt: iso("2026-08-19T16:00:00"),
-      customerName: "Sruthi Layers", phone: "9840012345",
-      productName: "Roland RD-2000 Stage Piano", category: "Keyboards", brand: "Roland", serial: "RD-9921",
-      problem: "Pitch-bend lever unresponsive, firmware reflash requested.",
-      status: "completed", priority: "high", branch: "Branch 2", technician: "Karthik M",
-      deadline: iso("2026-08-18T18:00:00"),
-      estimate: 3200, finalCost: 3200, advance: 3776, gstRate: 18,
-      completedAt: iso("2026-08-19T16:00:00"), invoiceNo: "SVC/26-27/0006",
-      events: [
-        { at: iso("2026-08-12T13:10:00"), label: "Ticket raised · received at Branch 2" },
-        { at: iso("2026-08-15T11:00:00"), label: "Status → In Progress" },
-        { at: iso("2026-08-19T16:00:00"), label: "Status → Completed · invoice SVC/26-27/0006" },
-      ],
-    },
-    {
-      id: "RPR-2026-D6JQ7", createdAt: iso("2026-09-01T09:45:00"), updatedAt: iso("2026-09-07T18:00:00"),
-      customerName: "Anand Rao", phone: "7894561238",
-      productName: "Kanailal Sitar", category: "Indian Classical", brand: "Kanailal", serial: "ST-1180",
-      problem: "Main bridge (jawari) buzzing, two tarab pegs slipping.",
-      status: "completed", priority: "normal", branch: "Branch 2", technician: "Suresh Babu",
-      deadline: iso("2026-09-07T18:00:00"),
-      estimate: 5000, finalCost: 5200, advance: 6136, gstRate: 18,
-      completedAt: iso("2026-09-07T18:00:00"), invoiceNo: "SVC/26-27/0008",
-      events: [
-        { at: iso("2026-09-01T09:45:00"), label: "Ticket raised · received at Branch 2" },
-        { at: iso("2026-09-04T14:00:00"), label: "Status → In Progress" },
-        { at: iso("2026-09-07T18:00:00"), label: "Status → Completed · invoice SVC/26-27/0008" },
-      ],
-    },
-    {
-      id: "RPR-2026-E1MZ5", createdAt: iso("2026-09-05T15:00:00"), updatedAt: iso("2026-09-06T10:00:00"),
-      customerName: "Lakshmi Venkat", phone: "9884012345",
-      productName: "Fender Stratocaster", category: "Strings", brand: "Fender", serial: "FS-6620",
-      problem: "Output jack crackling — customer withdrew, will service elsewhere.",
-      status: "cancelled", priority: "low", branch: "Branch 1", technician: "Unassigned",
-      deadline: iso("2026-09-15T18:00:00"),
-      estimate: 1800, finalCost: 0, advance: 0, gstRate: 18,
-      events: [
-        { at: iso("2026-09-05T15:00:00"), label: "Ticket raised · received at Branch 1" },
-        { at: iso("2026-09-06T10:00:00"), label: "Status → Cancelled · customer withdrew" },
-      ],
-    },
-  ];
-}
-
 /* ─────────────────────────────  Store  ───────────────────────────── */
+
+const now = () => new Date().toISOString();
+
+async function send(url: string, method: string, body: unknown, onError: () => void) {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error("save failed");
+  } catch {
+    alert("Couldn't save the repair change. Reverting to the saved values.");
+    onError();
+  }
+}
 
 interface RepairState {
   tickets: RepairTicket[];
-  invoiceSeq: number; // next service-invoice serial
+  hydrated: boolean;
+  hydrate: () => Promise<void>;
   addTicket: (t: RepairTicket) => void;
   updateTicket: (id: string, patch: Partial<RepairTicket>, eventLabel?: string) => void;
   deleteTicket: (id: string) => void;
@@ -313,43 +183,66 @@ interface RepairState {
   resetDemo: () => void;
 }
 
-export const useRepair = create<RepairState>()(
-  persist(
-    (set, get) => ({
-      tickets: seedTickets(),
-      invoiceSeq: 9,
-      addTicket: (t) => set((s) => ({ tickets: [t, ...s.tickets] })),
-      updateTicket: (id, patch, eventLabel) =>
-        set((s) => ({
-          tickets: s.tickets.map((t) =>
-            t.id === id
-              ? {
-                  ...t,
-                  ...patch,
-                  updatedAt: new Date().toISOString(),
-                  events: eventLabel
-                    ? [...t.events, { at: new Date().toISOString(), label: eventLabel }]
-                    : t.events,
-                }
-              : t,
-          ),
-        })),
-      deleteTicket: (id) => set((s) => ({ tickets: s.tickets.filter((t) => t.id !== id) })),
-      logEvent: (id, label) =>
-        set((s) => ({
-          tickets: s.tickets.map((t) =>
-            t.id === id
-              ? { ...t, updatedAt: new Date().toISOString(), events: [...t.events, { at: new Date().toISOString(), label }] }
-              : t,
-          ),
-        })),
-      nextInvoiceNo: () => {
-        const seq = get().invoiceSeq;
-        set({ invoiceSeq: seq + 1 });
-        return `SVC/26-27/${String(seq).padStart(4, "0")}`;
-      },
-      resetDemo: () => set({ tickets: seedTickets(), invoiceSeq: 9 }),
-    }),
-    { name: "ssm-repair-v1" },
-  ),
-);
+export const useRepair = create<RepairState>()((set, get) => ({
+  tickets: [],
+  hydrated: false,
+  hydrate: async () => {
+    try {
+      const res = await fetch("/api/repair");
+      if (!res.ok) return;
+      set({ tickets: (await res.json()) as RepairTicket[], hydrated: true });
+    } catch {
+      /* keep empty */
+    }
+  },
+  addTicket: (t) => {
+    set((s) => ({ tickets: [t, ...s.tickets] }));
+    void send("/api/repair", "POST", t, get().hydrate);
+  },
+  updateTicket: (id, patch, eventLabel) => {
+    set((s) => ({
+      tickets: s.tickets.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              ...patch,
+              updatedAt: now(),
+              events: eventLabel ? [...t.events, { at: now(), label: eventLabel }] : t.events,
+            }
+          : t,
+      ),
+    }));
+    void send(`/api/repair/${id}`, "PATCH", { patch, eventLabel }, get().hydrate);
+  },
+  deleteTicket: (id) => {
+    set((s) => ({ tickets: s.tickets.filter((t) => t.id !== id) }));
+    void send(`/api/repair/${id}`, "DELETE", null, get().hydrate);
+  },
+  logEvent: (id, label) => {
+    set((s) => ({
+      tickets: s.tickets.map((t) =>
+        t.id === id ? { ...t, updatedAt: now(), events: [...t.events, { at: now(), label }] } : t,
+      ),
+    }));
+    void send(`/api/repair/${id}`, "PATCH", { patch: {}, eventLabel: label }, get().hydrate);
+  },
+  // Derive the next service-invoice serial from the tickets in memory, so the
+  // number stays sequential across reloads without an async round-trip. The
+  // seed data ends at 0008, so the first generated number is 0009.
+  nextInvoiceNo: () => {
+    const serials = get()
+      .tickets.map((t) => t.invoiceNo)
+      .filter((n): n is string => !!n)
+      .map((n) => {
+        const m = n.match(/SVC\/26-27\/(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+      });
+    const next = Math.max(8, ...serials) + 1;
+    return `SVC/26-27/${String(next).padStart(4, "0")}`;
+  },
+  resetDemo: () => void get().hydrate(),
+}));
+
+if (typeof window !== "undefined") {
+  void useRepair.getState().hydrate();
+}

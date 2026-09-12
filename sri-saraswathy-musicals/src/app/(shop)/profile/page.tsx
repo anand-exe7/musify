@@ -1,14 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { currentUser } from "@/lib/data/users";
-import { customerOrders } from "@/lib/data/invoices";
-import { getProductById } from "@/lib/data/products";
+import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { useAuth } from "@/lib/store/auth";
+import type { Order, User as UserType } from "@/types";
 import { User, Package, MapPin, Heart, LogOut, ChevronRight, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,15 +19,41 @@ export default function ProfilePage() {
   const logout = useAuth((s) => s.logout);
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<Tab>("orders");
+  const { products } = useProducts();
+  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const [me, setMe] = useState<UserType | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     if (mounted && !loggedIn) router.replace("/auth/login");
   }, [mounted, loggedIn, router]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      fetch("/api/users/c001").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/orders").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+    ]).then(([u, o]) => {
+      if (!alive) return;
+      setMe(u);
+      setOrders(o);
+      setDataLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Wait for the persisted session to hydrate before deciding what to show,
   // so a signed-in visitor is never flashed back to the login screen.
   if (!mounted || !loggedIn) return null;
+  if (dataLoading) {
+    return <div className="container-page py-32 text-center text-ink-400">Loading your account…</div>;
+  }
+  if (!me) {
+    return <div className="container-page py-32 text-center text-ink-400">Couldn&rsquo;t load your profile. Please try again.</div>;
+  }
 
   const signOut = () => {
     logout();
@@ -36,14 +61,14 @@ export default function ProfilePage() {
   };
 
   const menu: { id: Tab; label: string; icon: typeof Package; count?: number }[] = [
-    { id: "orders", label: "My orders", icon: Package, count: customerOrders.length },
+    { id: "orders", label: "My orders", icon: Package, count: orders.length },
     { id: "profile", label: "Profile", icon: User },
     { id: "addresses", label: "Addresses", icon: MapPin, count: 2 },
     { id: "wishlist", label: "Wishlist", icon: Heart, count: 4 },
   ];
 
   const stats = [
-    { label: "Orders", value: customerOrders.length },
+    { label: "Orders", value: orders.length },
     { label: "Wishlist", value: 4 },
     { label: "Addresses", value: 2 },
   ];
@@ -72,12 +97,12 @@ export default function ProfilePage() {
         <div className="relative flex flex-col items-start justify-between gap-6 p-6 md:flex-row md:items-center md:p-8">
           <div className="flex items-center gap-5">
             <div className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 font-display text-2xl text-ink-900 ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-20 md:w-20 md:text-3xl">
-              {currentUser.name.split(" ").map((s) => s[0]).join("")}
+              {me.name.split(" ").map((s) => s[0]).join("")}
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-[0.24em] text-gold-400">Welcome back</p>
-              <p className="heading-serif mt-1 text-2xl text-ivory-50 md:text-3xl">{currentUser.name}</p>
-              <p className="mt-1 text-xs text-ivory-100/60">{currentUser.email}</p>
+              <p className="heading-serif mt-1 text-2xl text-ivory-50 md:text-3xl">{me.name}</p>
+              <p className="mt-1 text-xs text-ivory-100/60">{me.email}</p>
               <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300">
                 Patron · since March 2023
               </span>
@@ -137,7 +162,12 @@ export default function ProfilePage() {
           {tab === "orders" && (
             <div className="space-y-4">
               <h2 className="heading-serif text-2xl text-ink-900">Your orders</h2>
-              {customerOrders.map((o, i) => (
+              {orders.length === 0 && (
+                <p className="border border-dashed border-ink-200 p-8 text-center text-sm text-ink-500">
+                  No orders yet. Your placed orders will appear here.
+                </p>
+              )}
+              {orders.map((o, i) => (
                 <motion.div key={o.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: i * 0.06 }}
                   className="border border-ink-100 bg-ivory-50 p-5 transition-colors hover:border-gold-200">
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-100 pb-4">
@@ -155,7 +185,7 @@ export default function ProfilePage() {
                   </div>
                   <div className="mt-4 space-y-3">
                     {o.items.map((item) => {
-                      const p = getProductById(item.productId);
+                      const p = byId.get(item.productId);
                       if (!p) return null;
                       return (
                         <Link href={`/product/${p.slug}`} key={item.productId} className="flex items-center gap-4 py-2">
@@ -189,10 +219,10 @@ export default function ProfilePage() {
             <div>
               <h2 className="heading-serif text-2xl text-ink-900">Your profile</h2>
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <ProfileRow label="Full name" value={currentUser.name} />
-                <ProfileRow label="Email" value={currentUser.email} />
-                <ProfileRow label="Phone" value={currentUser.phone} />
-                <ProfileRow label="Last login" value={currentUser.lastLogin} />
+                <ProfileRow label="Full name" value={me.name} />
+                <ProfileRow label="Email" value={me.email} />
+                <ProfileRow label="Phone" value={me.phone} />
+                <ProfileRow label="Last login" value={me.lastLogin} />
                 <ProfileRow label="Member since" value="March 2023" />
                 <ProfileRow label="Account status" value="Active · Verified" />
               </div>

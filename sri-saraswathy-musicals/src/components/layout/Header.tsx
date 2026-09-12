@@ -8,8 +8,7 @@ import { Search, User, ShoppingBag, Menu, X, ChevronDown } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { useCart } from "@/lib/store/cart";
 import { useAuth } from "@/lib/store/auth";
-import { categories } from "@/lib/data/categories";
-import { products } from "@/lib/data/products";
+import { useCategories, useProducts } from "@/lib/client/catalog";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -39,6 +38,8 @@ export function Header() {
   const count = useCart((s) => s.items.reduce((n, i) => n + i.quantity, 0));
   const loggedIn = useAuth((s) => s.loggedIn);
   const profileHref = mounted && loggedIn ? "/profile" : "/auth/login";
+  const { categories } = useCategories();
+  const { products } = useProducts();
 
   useEffect(() => {
     setMounted(true);

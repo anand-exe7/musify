@@ -92,12 +92,31 @@ export default async function Page() {
 }
 ```
 
-## Wiring the frontend (next step)
+## Frontend wiring (done)
 
-Today the storefront/admin pages still hydrate from the static `src/lib/data/*`
-files and persist their working state to `localStorage` via the Zustand stores.
-The query layer returns the exact same TypeScript shapes those pages already use,
-so switching a page to the database is a drop-in: replace the static import with
-a `fetch('/api/…')` (client) or a direct query call (server component). This
-migration is intentionally not done yet, so the UI keeps working before the DB
-is connected.
+The storefront and admin now read/write through the database:
+
+- **Catalog reads** (products, categories) use a shared client hook,
+  `@/lib/client/catalog` (`useProducts`, `useCategories`, `useProduct`), which
+  fetches `/api/products` + `/api/categories` once and caches in memory. Used by
+  the home page, header, shop, product, cart, checkout and profile.
+- **Zustand stores** (`repair`, `inquiry`, `pos`, `staff`, `gst`, `settings`) no
+  longer seed from constants or `persist` to `localStorage`. Each starts empty,
+  **self-hydrates** from its `/api/*` endpoint on first client import (guarded by
+  `typeof window`), and exposes a `hydrated` flag. Their action names/signatures
+  are unchanged, so components did not have to change.
+- **Mutations are optimistic**: the action updates local state immediately, then
+  persists to the API in the background. On a failed write it alerts and
+  re-hydrates from the server to resync (chosen over awaited writes so the many
+  existing call sites didn't need to become async).
+- **Checkout** persists a real order to `POST /api/orders`; the **profile** page
+  reads the customer (`/api/users/c001`) and their orders (`/api/orders`).
+- **Kept on `localStorage`**: `cart` and `auth` — per-visitor session state, not
+  server data.
+- **Kept static (config/demo, not DB entities)**: the business profile in
+  `src/lib/data/business.ts` (GSTIN, branch addresses, WhatsApp) and the demo
+  analytics arrays (`salesLast30Days`, `categorySales`) used by the sales chart.
+
+The service-invoice serial (`nextInvoiceNo`) is derived from the repair tickets
+in memory so it stays sequential without an async call. The atomic server
+counter at `POST /api/repair/next-invoice` remains available if you prefer it.

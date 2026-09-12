@@ -1,12 +1,12 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useCart } from "@/lib/store/cart";
 import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
 import { useShallow } from "zustand/react/shallow";
-import { getProductById } from "@/lib/data/products";
+import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock } from "lucide-react";
@@ -25,15 +25,20 @@ export default function CheckoutPage() {
   const gstLabels = useGst(useShallow((s) => ({ cgst: s.cgstLabel, sgst: s.sgstLabel, igst: s.igstLabel })));
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const { products, loading: productsLoading } = useProducts();
+  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const [step, setStep] = useState(0);
   const [payment, setPayment] = useState<"upi" | "card" | "bank" | "cod">("upi");
   const [delivery, setDelivery] = useState<"standard" | "white-glove" | "express">("white-glove");
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
+  const [placing, setPlacing] = useState(false);
 
-  if (!mounted) return null;
+  if (!mounted || productsLoading) {
+    return <div className="container-narrow py-32 text-center text-ink-400">Loading checkout…</div>;
+  }
 
-  const cartItems = items.map((i) => ({ ...i, product: getProductById(i.productId) })).filter((i) => i.product);
+  const cartItems = items.map((i) => ({ ...i, product: byId.get(i.productId) })).filter((i) => i.product);
   const subtotal = cartItems.reduce((n, i) => n + (i.product?.price ?? 0) * i.quantity, 0);
   const gstLines = cartItems.map((i) => ({ amount: (i.product?.price ?? 0) * i.quantity, rate: i.product?.gstRate ?? 0 }));
   const intra = isIntraState(shipState, homeState);
@@ -54,6 +59,38 @@ export default function CheckoutPage() {
   if (placed) {
     return <OrderCelebration orderId={orderId} />;
   }
+
+  const placeOrder = async () => {
+    if (placing) return;
+    setPlacing(true);
+    const id = `ORD${Date.now().toString().slice(-8)}`;
+    const order = {
+      id,
+      date: new Date().toISOString().slice(0, 10),
+      status: "processing" as const,
+      items: cartItems.map((i) => ({ productId: i.productId, quantity: i.quantity, price: i.product!.price })),
+      subtotal,
+      gst: gstTotal,
+      shipping: shipCost,
+      total,
+      address: `Delivery to ${shipState}`,
+    };
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(order),
+      });
+      if (!res.ok) throw new Error("save failed");
+    } catch {
+      alert("We couldn't save your order to the server, but you can continue. Please contact us if it doesn't appear in your profile.");
+    }
+    setOrderId(`Order #${id}`);
+    clear();
+    setPlaced(true);
+    window.scrollTo(0, 0);
+    setPlacing(false);
+  };
 
   return (
     <div className="container-page py-8 md:py-12">
@@ -192,15 +229,11 @@ export default function CheckoutPage() {
               </button>
             ) : (
               <button
-                onClick={() => {
-                  setOrderId(`Order #SSM-${Math.floor(Math.random() * 90000 + 10000)}`);
-                  clear();
-                  setPlaced(true);
-                  window.scrollTo(0, 0);
-                }}
-                className="btn-gold-solid"
+                onClick={placeOrder}
+                disabled={placing}
+                className="btn-gold-solid disabled:opacity-60"
               >
-                Place order · {formatINR(total)}
+                {placing ? "Placing…" : `Place order · ${formatINR(total)}`}
               </button>
             )}
           </div>

@@ -1,6 +1,5 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 export interface Zone {
   id: string;
@@ -9,36 +8,76 @@ export interface Zone {
   eta: string;
 }
 
-interface SettingsState {
+type Scalars = {
   freeThreshold: number;
   standardCharge: number;
   expressCharge: number;
   storePickup: boolean;
+};
+
+interface SettingsState extends Scalars {
   zones: Zone[];
-  set: (patch: Partial<Omit<SettingsState, "set" | "addZone" | "updateZone" | "removeZone" | "zones">>) => void;
+  hydrated: boolean;
+  hydrate: () => Promise<void>;
+  set: (patch: Partial<Scalars>) => void;
   addZone: (z: Zone) => void;
   updateZone: (id: string, patch: Partial<Zone>) => void;
   removeZone: (id: string) => void;
 }
 
-export const useSettings = create<SettingsState>()(
-  persist(
-    (set) => ({
-      freeThreshold: 25000,
-      standardCharge: 250,
-      expressCharge: 600,
-      storePickup: true,
-      zones: [
-        { id: "z1", name: "Chennai (within 15 km)", charge: 0, eta: "Same day" },
-        { id: "z2", name: "Bengaluru (within 15 km)", charge: 0, eta: "Same day" },
-        { id: "z3", name: "Tamil Nadu · Karnataka", charge: 250, eta: "2–3 days" },
-        { id: "z4", name: "Rest of India", charge: 600, eta: "4–7 days" },
-      ],
-      set: (patch) => set(patch),
-      addZone: (z) => set((s) => ({ zones: [...s.zones, z] })),
-      updateZone: (id, patch) => set((s) => ({ zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) })),
-      removeZone: (id) => set((s) => ({ zones: s.zones.filter((z) => z.id !== id) })),
-    }),
-    { name: "ssm-settings-v1" },
-  ),
-);
+const DEFAULTS: Scalars = {
+  freeThreshold: 25000,
+  standardCharge: 250,
+  expressCharge: 600,
+  storePickup: true,
+};
+
+async function send(url: string, method: string, body: unknown, onError: () => void) {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error("save failed");
+  } catch {
+    alert("Couldn't save delivery settings. Reverting to the saved values.");
+    onError();
+  }
+}
+
+export const useSettings = create<SettingsState>()((set, get) => ({
+  ...DEFAULTS,
+  zones: [],
+  hydrated: false,
+  hydrate: async () => {
+    try {
+      const res = await fetch("/api/settings/delivery");
+      if (!res.ok) return;
+      const data = (await res.json()) as Scalars & { zones: Zone[] };
+      set({ ...data, hydrated: true });
+    } catch {
+      /* keep defaults */
+    }
+  },
+  set: (patch) => {
+    set(patch);
+    void send("/api/settings/delivery", "PATCH", patch, get().hydrate);
+  },
+  addZone: (z) => {
+    set((s) => ({ zones: [...s.zones, z] }));
+    void send("/api/settings/delivery/zones", "POST", z, get().hydrate);
+  },
+  updateZone: (id, patch) => {
+    set((s) => ({ zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) }));
+    void send(`/api/settings/delivery/zones/${id}`, "PATCH", patch, get().hydrate);
+  },
+  removeZone: (id) => {
+    set((s) => ({ zones: s.zones.filter((z) => z.id !== id) }));
+    void send(`/api/settings/delivery/zones/${id}`, "DELETE", null, get().hydrate);
+  },
+}));
+
+if (typeof window !== "undefined") {
+  void useSettings.getState().hydrate();
+}

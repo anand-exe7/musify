@@ -1,6 +1,5 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -41,54 +40,59 @@ export function genInquiryId(): string {
   return `INQ-${s}`;
 }
 
-/* ─────────────────────────────  Seeds  ───────────────────────────── */
-
-function seed(): Inquiry[] {
-  return [
-    {
-      id: "INQ-7GK2P", createdAt: new Date("2026-09-10T18:22:00").toISOString(),
-      name: "Anjali Suresh", phone: "9840567123", email: "anjali.s@gmail.com",
-      topic: "Product enquiry", productInterest: "Saraswathi Veena",
-      message: "Looking for a concert-grade veena for my daughter's arangetram. Do you have Kanailal in stock at Chennai?",
-      status: "new", branch: "Branch 1",
-    },
-    {
-      id: "INQ-3MZ9Q", createdAt: new Date("2026-09-09T11:05:00").toISOString(),
-      name: "David Fernandes", phone: "9995012388", email: "",
-      topic: "Repair & service", productInterest: "Acoustic guitar",
-      message: "My Taylor guitar has a lifting bridge. Can you look at it and give an estimate?",
-      status: "contacted", branch: "Any",
-    },
-    {
-      id: "INQ-P1LN4", createdAt: new Date("2026-09-06T15:40:00").toISOString(),
-      name: "St. Thomas School (Music Dept)", phone: "9884321000", email: "music@stthomas.edu.in",
-      topic: "Bulk / institutional order", productInterest: "20 recorders + 5 keyboards",
-      message: "We need a quote for our new music lab — 20 recorders and 5 entry-level keyboards. GST invoice required.",
-      status: "resolved", branch: "Branch 2",
-    },
-  ];
-}
-
 /* ─────────────────────────────  Store  ───────────────────────────── */
+
+async function send(url: string, method: string, body: unknown, onError: () => void) {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error("save failed");
+  } catch {
+    alert("Couldn't save the inquiry change. Reverting.");
+    onError();
+  }
+}
 
 interface InquiryState {
   inquiries: Inquiry[];
+  hydrated: boolean;
+  hydrate: () => Promise<void>;
   addInquiry: (i: Inquiry) => void;
   updateInquiry: (id: string, patch: Partial<Inquiry>) => void;
   deleteInquiry: (id: string) => void;
   resetDemo: () => void;
 }
 
-export const useInquiry = create<InquiryState>()(
-  persist(
-    (set) => ({
-      inquiries: seed(),
-      addInquiry: (i) => set((s) => ({ inquiries: [i, ...s.inquiries] })),
-      updateInquiry: (id, patch) =>
-        set((s) => ({ inquiries: s.inquiries.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
-      deleteInquiry: (id) => set((s) => ({ inquiries: s.inquiries.filter((x) => x.id !== id) })),
-      resetDemo: () => set({ inquiries: seed() }),
-    }),
-    { name: "ssm-inquiry-v1" },
-  ),
-);
+export const useInquiry = create<InquiryState>()((set, get) => ({
+  inquiries: [],
+  hydrated: false,
+  hydrate: async () => {
+    try {
+      const res = await fetch("/api/inquiries");
+      if (!res.ok) return;
+      set({ inquiries: (await res.json()) as Inquiry[], hydrated: true });
+    } catch {
+      /* keep empty */
+    }
+  },
+  addInquiry: (i) => {
+    set((s) => ({ inquiries: [i, ...s.inquiries] }));
+    void send("/api/inquiries", "POST", i, get().hydrate);
+  },
+  updateInquiry: (id, patch) => {
+    set((s) => ({ inquiries: s.inquiries.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+    void send(`/api/inquiries/${id}`, "PATCH", patch, get().hydrate);
+  },
+  deleteInquiry: (id) => {
+    set((s) => ({ inquiries: s.inquiries.filter((x) => x.id !== id) }));
+    void send(`/api/inquiries/${id}`, "DELETE", null, get().hydrate);
+  },
+  resetDemo: () => void get().hydrate(),
+}));
+
+if (typeof window !== "undefined") {
+  void useInquiry.getState().hydrate();
+}

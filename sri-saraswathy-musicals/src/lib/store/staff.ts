@@ -1,6 +1,5 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 export type StaffRole = "Admin" | "Manager" | "Cashier" | "Staff";
 
@@ -13,27 +12,52 @@ export interface Staff {
   branch?: string;
 }
 
-const seed: Staff[] = [
-  { id: "s1", name: "Cenexa Systems", email: "cenexasystems@gmail.com", role: "Admin", active: true },
-  { id: "s2", name: "R. Krishnan Naidu", email: "ravi@sarasvathymusicals.com", role: "Admin", active: true },
-  { id: "s3", name: "Lakshmi Menon", email: "lakshmi.b1@sarasvathymusicals.com", role: "Manager", active: true, branch: "Branch 1" },
-  { id: "s4", name: "Suresh Iyer", email: "suresh.b2@sarasvathymusicals.com", role: "Manager", active: true, branch: "Branch 2" },
-  { id: "s5", name: "Priya Sundaram", email: "priya.cash@sarasvathymusicals.com", role: "Cashier", active: true, branch: "Branch 1" },
-];
+async function patchStaff(id: string, patch: Partial<Staff>, onError: () => void) {
+  try {
+    const res = await fetch(`/api/staff/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error("save failed");
+  } catch {
+    alert("Couldn't save staff change. Reverting.");
+    onError();
+  }
+}
 
 interface StaffState {
   staff: Staff[];
+  hydrated: boolean;
+  hydrate: () => Promise<void>;
   setRole: (id: string, role: StaffRole) => void;
   toggleActive: (id: string) => void;
 }
 
-export const useStaff = create<StaffState>()(
-  persist(
-    (set) => ({
-      staff: seed,
-      setRole: (id, role) => set((s) => ({ staff: s.staff.map((u) => (u.id === id ? { ...u, role } : u)) })),
-      toggleActive: (id) => set((s) => ({ staff: s.staff.map((u) => (u.id === id ? { ...u, active: !u.active } : u)) })),
-    }),
-    { name: "ssm-staff-v1" },
-  ),
-);
+export const useStaff = create<StaffState>()((set, get) => ({
+  staff: [],
+  hydrated: false,
+  hydrate: async () => {
+    try {
+      const res = await fetch("/api/staff");
+      if (!res.ok) return;
+      set({ staff: (await res.json()) as Staff[], hydrated: true });
+    } catch {
+      /* keep empty */
+    }
+  },
+  setRole: (id, role) => {
+    set((s) => ({ staff: s.staff.map((u) => (u.id === id ? { ...u, role } : u)) }));
+    void patchStaff(id, { role }, get().hydrate);
+  },
+  toggleActive: (id) => {
+    const current = get().staff.find((u) => u.id === id);
+    const next = !current?.active;
+    set((s) => ({ staff: s.staff.map((u) => (u.id === id ? { ...u, active: next } : u)) }));
+    void patchStaff(id, { active: next }, get().hydrate);
+  },
+}));
+
+if (typeof window !== "undefined") {
+  void useStaff.getState().hydrate();
+}

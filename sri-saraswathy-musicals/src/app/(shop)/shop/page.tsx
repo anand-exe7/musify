@@ -2,8 +2,7 @@
 import { useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ProductCard } from "@/components/shop/ProductCard";
-import { products } from "@/lib/data/products";
-import { categories } from "@/lib/data/categories";
+import { useProducts, useCategories } from "@/lib/client/catalog";
 import { SlidersHorizontal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +11,8 @@ type SortKey = "featured" | "price-asc" | "price-desc" | "name" | "rating";
 function ShopContent() {
   const params = useSearchParams();
   const router = useRouter();
+  const { products, loading } = useProducts();
+  const { categories } = useCategories();
   const activeCategory = params.get("category") || "all";
   const [sort, setSort] = useState<SortKey>("featured");
   const [priceMax, setPriceMax] = useState<number>(2000000);
@@ -32,7 +33,7 @@ function ShopContent() {
       default: list.sort((a, b) => Number(b.featured || false) - Number(a.featured || false));
     }
     return list;
-  }, [activeCategory, sort, origin, priceMax]);
+  }, [products, activeCategory, sort, origin, priceMax]);
 
   const setCategory = (id: string) => {
     const q = new URLSearchParams(params.toString());
@@ -139,7 +140,11 @@ function ShopContent() {
         ))}
       </div>
 
-      {filtered.length === 0 && (
+      {loading && (
+        <div className="py-20 text-center text-ink-400">Loading instruments…</div>
+      )}
+
+      {!loading && filtered.length === 0 && (
         <div className="border border-dashed border-ink-200 py-20 text-center">
           <p className="heading-serif text-xl text-ink-500">No instruments match this filter.</p>
           <button onClick={() => { setOrigin("all"); setPriceMax(2000000); setCategory("all"); }} className="mt-4 btn-ghost">

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useCart } from "@/lib/store/cart";
 import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
 import { useShallow } from "zustand/react/shallow";
-import { getProductById } from "@/lib/data/products";
+import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin } from "lucide-react";
@@ -87,12 +87,16 @@ export default function CartPage() {
   const [coupon, setCoupon] = useState<(Coupon & { code: string }) | null>(null);
   const [error, setError] = useState("");
   const [celebrate, setCelebrate] = useState(false);
+  const { products, loading: productsLoading } = useProducts();
+  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   useEffect(() => setMounted(true), []);
 
-  if (!mounted) return null;
+  if (!mounted || productsLoading) {
+    return <div className="container-narrow py-32 text-center text-ink-400">Loading your cart…</div>;
+  }
 
   const cartItems = items
-    .map((i) => ({ ...i, product: getProductById(i.productId) }))
+    .map((i) => ({ ...i, product: byId.get(i.productId) }))
     .filter((i) => i.product);
 
   const subtotal = cartItems.reduce((n, i) => n + (i.product?.price ?? 0) * i.quantity, 0);
