@@ -10,6 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
+import { BUSINESS } from "@/lib/data/business";
 import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
@@ -30,6 +31,7 @@ export default function CheckoutPage() {
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
+  const [branch, setBranch] = useState<"Branch 1" | "Branch 2">("Branch 1");
   const [payment, setPayment] = useState<"upi" | "card" | "bank" | "cod">("upi");
   const [delivery, setDelivery] = useState<"standard" | "white-glove" | "express">("white-glove");
   const [placed, setPlaced] = useState(false);
@@ -84,7 +86,7 @@ export default function CheckoutPage() {
   }
 
   const finalize = (id: string) => {
-    setOrderId(`Order #${id}`);
+    setOrderId(id);
     clear();
     setPlaced(true);
     window.scrollTo(0, 0);
@@ -112,6 +114,7 @@ export default function CheckoutPage() {
       delivery,
       payment,
       shipState,
+      branch,
       customerName: addr.name,
       phone: addr.phone,
       email: addr.email,
@@ -245,6 +248,19 @@ export default function CheckoutPage() {
                     ))}
                   </select>
                 </label>
+                <label className="block md:col-span-2">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Fulfilling branch</span>
+                  <select
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value as "Branch 1" | "Branch 2")}
+                    className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
+                  >
+                    {BUSINESS.branches.map((b) => (
+                      <option key={b.key} value={b.key}>{b.key} — {b.city} · {b.area}</option>
+                    ))}
+                  </select>
+                  <span className="mt-1.5 block text-[11px] text-ink-500">Your order is billed and dispatched from this store.</span>
+                </label>
               </div>
               <p className="mt-3 text-xs text-ink-500">
                 {intra
@@ -315,6 +331,7 @@ export default function CheckoutPage() {
               <div className="mt-6 space-y-2 text-sm">
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
                 <p className="text-ink-500">Delivery <span className="text-ink-900">{delivery}</span></p>
+                <p className="text-ink-500">Branch <span className="text-ink-900">{branch}</span></p>
                 <p className="text-ink-500">Payment <span className="text-ink-900 uppercase">{payment}</span></p>
               </div>
             </motion.div>

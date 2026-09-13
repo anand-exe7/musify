@@ -213,7 +213,15 @@ export default function ProfilePage() {
                     })}
                   </div>
                   <div className="mt-4 flex items-end justify-between border-t border-ink-100 pt-4">
-                    <div className="text-xs text-ink-500">Delivered to {o.address}</div>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs text-ink-500">Delivered to {o.address}</p>
+                      <Link
+                        href={`/invoice/${o.id}`}
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-gold-600 hover:text-gold-700"
+                      >
+                        View invoice <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                     <div className="text-right">
                       <p className="text-[10px] uppercase tracking-widest text-ink-400">Total</p>
                       <p className="tabular font-display text-lg text-ink-900">{formatINR(o.total)}</p>

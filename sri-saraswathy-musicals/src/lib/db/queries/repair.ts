@@ -1,10 +1,9 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { repairTickets, counters } from "@/lib/db/schema";
+import { repairTickets } from "@/lib/db/schema";
 import type { RepairTicket } from "@/lib/store/repair";
 import { row, rows, definedOnly } from "./_util";
-
-const SEQ_KEY = "service_invoice_seq";
+import { genDocId } from "@/lib/ids";
 
 export async function getTickets(): Promise<RepairTicket[]> {
   return rows<RepairTicket>(await db.select().from(repairTickets).orderBy(desc(repairTickets.createdAt)));
@@ -46,19 +45,18 @@ export async function deleteTicket(id: string): Promise<boolean> {
 }
 
 /**
- * Atomically claim the next service-invoice serial, e.g. `SVC/26-27/0009`.
- * Uses an upsert with `value = counters.value + 1` so concurrent callers can't
- * collide on the same number.
+ * Generate the next service-invoice number, e.g. `SER-2026-7QK3M`. Checks the
+ * DB for a free code before returning it, retrying on the rare clash.
  */
 export async function nextServiceInvoiceNo(): Promise<string> {
-  const [r] = await db
-    .insert(counters)
-    .values({ key: SEQ_KEY, value: 10 }) // seed starts at 9 → first claim returns 9, stores 10
-    .onConflictDoUpdate({
-      target: counters.key,
-      set: { value: sql`${counters.value} + 1` },
-    })
-    .returning({ value: counters.value });
-  const seq = r.value - 1;
-  return `SVC/26-27/${String(seq).padStart(4, "0")}`;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = genDocId("SER");
+    const [existing] = await db
+      .select({ id: repairTickets.id })
+      .from(repairTickets)
+      .where(eq(repairTickets.invoiceNo, candidate))
+      .limit(1);
+    if (!existing) return candidate;
+  }
+  throw new Error("Could not generate a unique service invoice number");
 }

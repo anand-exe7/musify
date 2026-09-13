@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { genDocId } from "@/lib/ids";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -270,8 +271,5 @@ export function filterBills(
 }
 
 export function genInvoiceId(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let s = "";
-  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `INV-2026-${s}`;
+  return genDocId("INV");
 }

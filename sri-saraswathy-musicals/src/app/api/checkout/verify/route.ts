@@ -3,8 +3,9 @@ import { handle, created, HttpError, readJson } from "@/lib/api/http";
 import { requireUser } from "@/lib/auth/server";
 import { verifyDraft } from "@/lib/checkout/draft";
 import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
-import { createOrder } from "@/lib/db/queries/orders";
+import { createOrder, nextOrderId } from "@/lib/db/queries/orders";
 import { sendOrderConfirmation } from "@/lib/email/resend";
+import { recordOrderInvoice } from "@/lib/billing/ledger";
 import type { Order } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +16,6 @@ interface VerifyBody {
   razorpay_payment_id: string;
   razorpay_signature: string;
 }
-
-const newOrderId = () => `ORD${Date.now().toString().slice(-8)}`;
 
 /** Finalise a Razorpay payment: verify the signature against the signed draft,
  *  then persist the order and email the customer. */
@@ -38,7 +37,7 @@ export function POST(request: NextRequest) {
     if (!valid) throw new HttpError(400, "Payment could not be verified.");
 
     const order: Order = {
-      id: newOrderId(),
+      id: await nextOrderId(),
       date: new Date().toISOString().slice(0, 10),
       status: "processing",
       userId: draft.userId,
@@ -47,6 +46,8 @@ export function POST(request: NextRequest) {
       phone: draft.phone,
       paymentMethod: "razorpay",
       paymentId: body.razorpay_payment_id,
+      shipState: draft.shipState,
+      branch: draft.branch,
       items: draft.items,
       subtotal: draft.subtotal,
       gst: draft.gst,
@@ -55,6 +56,7 @@ export function POST(request: NextRequest) {
       address: draft.address,
     };
     const saved = await createOrder(order);
+    await recordOrderInvoice(saved);
     await sendOrderConfirmation(saved, draft.email);
     return created({ orderId: saved.id });
   });

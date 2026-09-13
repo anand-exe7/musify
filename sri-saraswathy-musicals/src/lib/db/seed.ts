@@ -66,10 +66,10 @@ function inventoryFromCatalog() {
 
 const repairSeed = [
   {
-    id: "RPR-2026-K7QM9", createdAt: iso("2026-09-02T10:15:00"), updatedAt: iso("2026-09-08T16:00:00"),
+    id: "REP-2026-K7QM9", createdAt: iso("2026-09-02T10:15:00"), updatedAt: iso("2026-09-08T16:00:00"),
     customerName: "Bala Music Academy", phone: "9784562309", email: "office@balamusic.in",
     productName: "Saraswathi Veena", category: "Indian Classical", brand: "Kanailal", serial: "VN-2291",
-    refInvoice: "INV-2026-QNXVYKMC",
+    refInvoice: "INV-2026-7QN42",
     problem: "Two frets loose, buzzing on lower octave. Needs re-waxing and bridge levelling.",
     accessories: "Soft case, tuning key",
     status: "in-progress", priority: "high", branch: "Branch 1", technician: "Ravi Shankar",
@@ -83,7 +83,7 @@ const repairSeed = [
     whatsappSentAt: iso("2026-09-02T10:20:00"), completedAt: null, invoiceNo: null,
   },
   {
-    id: "RPR-2026-M3XT2", createdAt: iso("2026-09-06T12:40:00"), updatedAt: iso("2026-09-09T09:10:00"),
+    id: "REP-2026-M3XT2", createdAt: iso("2026-09-06T12:40:00"), updatedAt: iso("2026-09-09T09:10:00"),
     customerName: "Vignesh Kumar", phone: "7894561238", email: null,
     productName: "Yamaha P-125 Digital Piano", category: "Keyboards", brand: "Yamaha", serial: "YP-88431",
     refInvoice: null,
@@ -100,7 +100,7 @@ const repairSeed = [
     whatsappSentAt: null, completedAt: null, invoiceNo: null,
   },
   {
-    id: "RPR-2026-P9WL4", createdAt: iso("2026-09-08T14:05:00"), updatedAt: iso("2026-09-10T14:05:00"),
+    id: "REP-2026-P9WL4", createdAt: iso("2026-09-08T14:05:00"), updatedAt: iso("2026-09-10T14:05:00"),
     customerName: "Meera Nair", phone: "7904199050", email: null,
     productName: "Cremona Violin 4/4", category: "Strings", brand: "Cremona", serial: "CV-4471",
     refInvoice: null,
@@ -116,7 +116,7 @@ const repairSeed = [
     whatsappSentAt: iso("2026-09-08T14:12:00"), completedAt: null, invoiceNo: null,
   },
   {
-    id: "RPR-2026-T5RB8", createdAt: iso("2026-09-10T11:20:00"), updatedAt: iso("2026-09-10T11:20:00"),
+    id: "REP-2026-T5RB8", createdAt: iso("2026-09-10T11:20:00"), updatedAt: iso("2026-09-10T11:20:00"),
     customerName: "Chennai Music College", phone: "9840012345", email: "hod@cmc.edu.in",
     productName: "Concert Tabla Set", category: "Percussion", brand: "Bina", serial: null,
     refInvoice: null,
@@ -129,7 +129,7 @@ const repairSeed = [
     whatsappSentAt: null, completedAt: null, invoiceNo: null,
   },
   {
-    id: "RPR-2026-C2HN6", createdAt: iso("2026-09-09T16:30:00"), updatedAt: iso("2026-09-11T09:00:00"),
+    id: "REP-2026-C2HN6", createdAt: iso("2026-09-09T16:30:00"), updatedAt: iso("2026-09-11T09:00:00"),
     customerName: "Rajiv Menon", phone: "7904199050", email: null,
     productName: "Selmer Tenor Saxophone", category: "Wind", brand: "Selmer", serial: "SX-7781",
     refInvoice: null,
@@ -146,7 +146,7 @@ const repairSeed = [
     whatsappSentAt: iso("2026-09-11T09:05:00"), completedAt: null, invoiceNo: null,
   },
   {
-    id: "RPR-2026-A8FD1", createdAt: iso("2026-08-20T10:00:00"), updatedAt: iso("2026-08-28T17:00:00"),
+    id: "REP-2026-A8FD1", createdAt: iso("2026-08-20T10:00:00"), updatedAt: iso("2026-08-28T17:00:00"),
     customerName: "Priya Ramesh", phone: "9784562309", email: null,
     productName: "Female Tanpura (4-string)", category: "Indian Classical", brand: "Miraj", serial: "TP-3312",
     refInvoice: null,
@@ -155,17 +155,17 @@ const repairSeed = [
     status: "completed", priority: "normal", branch: "Branch 1", technician: "Deepa Iyer",
     deadline: iso("2026-08-27T18:00:00"),
     estimate: 4000, finalCost: 4500, advance: 5310, gstRate: 18,
-    completedAt: iso("2026-08-28T17:00:00"), invoiceNo: "SVC/26-27/0007",
+    completedAt: iso("2026-08-28T17:00:00"), invoiceNo: "SER-2026-J4T7Q",
     events: [
       { at: iso("2026-08-20T10:00:00"), label: "Ticket raised · received at Branch 1" },
       { at: iso("2026-08-23T12:00:00"), label: "Status → In Progress" },
       { at: iso("2026-08-27T15:00:00"), label: "Status → Ready" },
-      { at: iso("2026-08-28T17:00:00"), label: "Status → Completed · invoice SVC/26-27/0007 · paid in full" },
+      { at: iso("2026-08-28T17:00:00"), label: "Status → Completed · invoice SER-2026-J4T7Q · paid in full" },
     ],
     whatsappSentAt: iso("2026-08-28T17:05:00"),
   },
   {
-    id: "RPR-2026-B4KP3", createdAt: iso("2026-08-12T13:10:00"), updatedAt: iso("2026-08-19T16:00:00"),
+    id: "REP-2026-B4KP3", createdAt: iso("2026-08-12T13:10:00"), updatedAt: iso("2026-08-19T16:00:00"),
     customerName: "Sruthi Layers", phone: "9840012345", email: null,
     productName: "Roland RD-2000 Stage Piano", category: "Keyboards", brand: "Roland", serial: "RD-9921",
     refInvoice: null,
@@ -174,16 +174,16 @@ const repairSeed = [
     status: "completed", priority: "high", branch: "Branch 2", technician: "Karthik M",
     deadline: iso("2026-08-18T18:00:00"),
     estimate: 3200, finalCost: 3200, advance: 3776, gstRate: 18,
-    completedAt: iso("2026-08-19T16:00:00"), invoiceNo: "SVC/26-27/0006",
+    completedAt: iso("2026-08-19T16:00:00"), invoiceNo: "SER-2026-D8M2X",
     events: [
       { at: iso("2026-08-12T13:10:00"), label: "Ticket raised · received at Branch 2" },
       { at: iso("2026-08-15T11:00:00"), label: "Status → In Progress" },
-      { at: iso("2026-08-19T16:00:00"), label: "Status → Completed · invoice SVC/26-27/0006" },
+      { at: iso("2026-08-19T16:00:00"), label: "Status → Completed · invoice SER-2026-D8M2X" },
     ],
     whatsappSentAt: null,
   },
   {
-    id: "RPR-2026-D6JQ7", createdAt: iso("2026-09-01T09:45:00"), updatedAt: iso("2026-09-07T18:00:00"),
+    id: "REP-2026-D6JQ7", createdAt: iso("2026-09-01T09:45:00"), updatedAt: iso("2026-09-07T18:00:00"),
     customerName: "Anand Rao", phone: "7894561238", email: null,
     productName: "Kanailal Sitar", category: "Indian Classical", brand: "Kanailal", serial: "ST-1180",
     refInvoice: null,
@@ -192,16 +192,16 @@ const repairSeed = [
     status: "completed", priority: "normal", branch: "Branch 2", technician: "Suresh Babu",
     deadline: iso("2026-09-07T18:00:00"),
     estimate: 5000, finalCost: 5200, advance: 6136, gstRate: 18,
-    completedAt: iso("2026-09-07T18:00:00"), invoiceNo: "SVC/26-27/0008",
+    completedAt: iso("2026-09-07T18:00:00"), invoiceNo: "SER-2026-R6V9L",
     events: [
       { at: iso("2026-09-01T09:45:00"), label: "Ticket raised · received at Branch 2" },
       { at: iso("2026-09-04T14:00:00"), label: "Status → In Progress" },
-      { at: iso("2026-09-07T18:00:00"), label: "Status → Completed · invoice SVC/26-27/0008" },
+      { at: iso("2026-09-07T18:00:00"), label: "Status → Completed · invoice SER-2026-R6V9L" },
     ],
     whatsappSentAt: null,
   },
   {
-    id: "RPR-2026-E1MZ5", createdAt: iso("2026-09-05T15:00:00"), updatedAt: iso("2026-09-06T10:00:00"),
+    id: "REP-2026-E1MZ5", createdAt: iso("2026-09-05T15:00:00"), updatedAt: iso("2026-09-06T10:00:00"),
     customerName: "Lakshmi Venkat", phone: "9884012345", email: null,
     productName: "Fender Stratocaster", category: "Strings", brand: "Fender", serial: "FS-6620",
     refInvoice: null,
@@ -220,21 +220,21 @@ const repairSeed = [
 
 const inquirySeed = [
   {
-    id: "INQ-7GK2P", createdAt: iso("2026-09-10T18:22:00"),
+    id: "INQ-2026-7GK2P", createdAt: iso("2026-09-10T18:22:00"),
     name: "Anjali Suresh", phone: "9840567123", email: "anjali.s@gmail.com",
     topic: "Product enquiry", productInterest: "Saraswathi Veena",
     message: "Looking for a concert-grade veena for my daughter's arangetram. Do you have Kanailal in stock at Chennai?",
     status: "new", branch: "Branch 1",
   },
   {
-    id: "INQ-3MZ9Q", createdAt: iso("2026-09-09T11:05:00"),
+    id: "INQ-2026-3MZ9Q", createdAt: iso("2026-09-09T11:05:00"),
     name: "David Fernandes", phone: "9995012388", email: "",
     topic: "Repair & service", productInterest: "Acoustic guitar",
     message: "My Taylor guitar has a lifting bridge. Can you look at it and give an estimate?",
     status: "contacted", branch: "Any",
   },
   {
-    id: "INQ-P1LN4", createdAt: iso("2026-09-06T15:40:00"),
+    id: "INQ-2026-P1LN4", createdAt: iso("2026-09-06T15:40:00"),
     name: "St. Thomas School (Music Dept)", phone: "9884321000", email: "music@stthomas.edu.in",
     topic: "Bulk / institutional order", productInterest: "20 recorders + 5 keyboards",
     message: "We need a quote for our new music lab — 20 recorders and 5 entry-level keyboards. GST invoice required.",
@@ -244,43 +244,43 @@ const inquirySeed = [
 
 const posBillSeed = [
   {
-    id: "INV-2026-QNXVYKMC", createdAt: iso("2026-08-28T11:20:00"), customerName: "Bala Music Academy", phone: "9784562309",
+    id: "INV-2026-Q3XV9", createdAt: iso("2026-08-28T11:20:00"), customerName: "Bala Music Academy", phone: "9784562309",
     source: "online", branch: "Branch 1",
     items: [{ name: "Saraswathi Veena", price: 42500, qty: 1 }, { name: "Bansuri Set (5 keys)", price: 8500, qty: 1 }],
     subtotal: 51000, coupon: "VIP20", discount: 10200, delivery: 250, total: 41050, status: "completed", payment: "Razorpay",
   },
   {
-    id: "INV-2026-3H6EGZ", createdAt: iso("2026-08-23T15:10:00"), customerName: "Vignesh Kumar", phone: "7894561238",
+    id: "INV-2026-3H6EG", createdAt: iso("2026-08-23T15:10:00"), customerName: "Vignesh Kumar", phone: "7894561238",
     source: "offline", branch: "Branch 2",
     items: [{ name: "Concert Tabla Set", price: 18500, qty: 1 }], subtotal: 18500, coupon: "LUXURY15", discount: 1500, delivery: 100, total: 17100, status: "completed", payment: "Cash",
   },
   {
-    id: "INV-2026-X47P6K2V", createdAt: iso("2026-08-23T12:05:00"), customerName: "Chennai Music College", phone: "9784562309",
+    id: "INV-2026-X47P6", createdAt: iso("2026-08-23T12:05:00"), customerName: "Chennai Music College", phone: "9784562309",
     source: "online", branch: "Branch 1",
     items: [{ name: "Kanailal Sitar", price: 68000, qty: 1 }], subtotal: 68000, coupon: "SARASWATHY10", discount: 6800, delivery: 250, total: 61450, status: "completed", payment: "Razorpay",
   },
   {
-    id: "INV-2026-BZ964Y", createdAt: iso("2026-08-23T10:00:00"), customerName: "Meera Nair", phone: "7904199050",
+    id: "INV-2026-BZ964", createdAt: iso("2026-08-23T10:00:00"), customerName: "Meera Nair", phone: "7904199050",
     source: "offline", branch: "Branch 1",
     items: [{ name: "3-Reed Scale-Changer Harmonium", price: 34500, qty: 1 }], subtotal: 34500, coupon: null, discount: 0, delivery: 0, total: 34500, status: "completed", payment: "Card",
   },
   {
-    id: "INV-2026-32D49J", createdAt: iso("2026-07-19T16:40:00"), customerName: "Rajiv Menon", phone: "7904199050",
+    id: "INV-2026-32D49", createdAt: iso("2026-07-19T16:40:00"), customerName: "Rajiv Menon", phone: "7904199050",
     source: "offline", branch: "Branch 2",
     items: [{ name: "Classical Mridangam", price: 14500, qty: 1 }, { name: "Bansuri Set (5 keys)", price: 8500, qty: 1 }], subtotal: 23000, coupon: "SARASWATHY10", discount: 2300, delivery: 0, total: 20700, status: "completed", payment: "UPI",
   },
   {
-    id: "INV-2026-T3H53C", createdAt: iso("2026-07-11T13:15:00"), customerName: "Priya Ramesh", phone: "7904199050",
+    id: "INV-2026-T3H53", createdAt: iso("2026-07-11T13:15:00"), customerName: "Priya Ramesh", phone: "7904199050",
     source: "offline", branch: "Branch 1",
     items: [{ name: "Female Tanpura (4-string)", price: 22000, qty: 1 }], subtotal: 22000, coupon: null, discount: 0, delivery: 0, total: 22000, status: "completed", payment: "Cash",
   },
   {
-    id: "INV-2026-3F443RAN", createdAt: iso("2026-06-22T18:30:00"), customerName: "Anand Rao", phone: "9784562309",
+    id: "INV-2026-3F44R", createdAt: iso("2026-06-22T18:30:00"), customerName: "Anand Rao", phone: "9784562309",
     source: "online", branch: "Branch 2",
     items: [{ name: "Yamaha C3X Grand", price: 249000, qty: 1 }], subtotal: 249000, coupon: null, discount: 0, delivery: 250, total: 249250, status: "completed", payment: "Razorpay",
   },
   {
-    id: "INV-2026-9KLM2P", createdAt: iso("2026-05-14T14:05:00"), customerName: "Sruthi Layers", phone: "9840012345",
+    id: "INV-2026-9KLM2", createdAt: iso("2026-05-14T14:05:00"), customerName: "Sruthi Layers", phone: "9840012345",
     source: "online", branch: "Branch 1",
     items: [{ name: "Selmer Mark VI Tenor", price: 189000, qty: 1 }], subtotal: 189000, coupon: null, discount: 0, delivery: 250, total: 189250, status: "completed", payment: "Razorpay",
   },
@@ -396,7 +396,6 @@ async function main() {
   await db.insert(gstSettings).values({ id: "default" });
   await db.insert(deliverySettings).values({ id: "default" });
   await db.insert(deliveryZones).values(zoneSeed);
-  await db.insert(counters).values({ key: "service_invoice_seq", value: 9 });
 
   console.log("✓ Seed complete.");
 }

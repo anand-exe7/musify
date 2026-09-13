@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { usePOS, filterBills, productStock, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
+import { useAllSales } from "@/lib/client/sales";
 import { useGst, extractGst } from "@/lib/store/gst";
 import { formatINR, cn } from "@/lib/utils";
 
@@ -36,7 +37,7 @@ function Stat({ label, value, hint, accent }: { label: string; value: string; hi
 }
 
 export default function AnalyticsPage() {
-  const bills = usePOS((s) => s.bills);
+  const { sales: bills } = useAllSales();
   const invProducts = usePOS((s) => s.invProducts);
   const coupons = usePOS((s) => s.coupons);
   const gstRate = useGst((s) => s.standardRate);
@@ -109,8 +110,8 @@ export default function AnalyticsPage() {
       {/* Header + period */}
       <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink-900">POS Analytics</h1>
-          <p className="mt-1 text-sm text-ink-500">Real-time store &amp; channel insights</p>
+          <h1 className="text-2xl font-bold text-ink-900">Analytics</h1>
+          <p className="mt-1 text-sm text-ink-500">Real-time insights across in-store POS and online storefront orders</p>
         </div>
         {tab !== "today" && (
           <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
@@ -151,7 +152,7 @@ export default function AnalyticsPage() {
       {/* Channel + branch filters */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          {([["all", "All Channels"], ["offline", "Offline (POS)"], ["online", "Online (Razorpay)"]] as const).map(([k, label]) => (
+          {([["all", "All Channels"], ["offline", "In-store (POS)"], ["online", "Online (Storefront)"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setChannel(k)} className={cn(pill, channel === k ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
               {k !== "all" && <span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle", k === "offline" ? "bg-gold-400" : "bg-success")} />}
               {label}
@@ -178,8 +179,8 @@ export default function AnalyticsPage() {
             <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Offline Net Rev" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} walk-in`} accent="gold" />
-            <Stat label="Online Net Rev" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} Razorpay`} accent="green" />
+            <Stat label="In-store Net Rev" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
+            <Stat label="Online Net Rev" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
             <Stat label="Total Items Sold" value={`${m.items} pcs`} />
             <Stat label="Top Product" value={m.topProduct} />
           </div>
@@ -210,7 +211,7 @@ export default function AnalyticsPage() {
             <div className="space-y-4">
               <Card>
                 <p className="mb-4 text-sm font-bold text-ink-900">Order Source</p>
-                {([["Offline", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"]] as const).map(([label, rev, cnt, color]) => (
+                {([["In-store", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"]] as const).map(([label, rev, cnt, color]) => (
                   <div key={label} className="mb-4 last:mb-0">
                     <div className="mb-1 flex items-center justify-between text-xs">
                       <span className="font-semibold uppercase tracking-wider text-ink-500">{label} · {cnt}</span>

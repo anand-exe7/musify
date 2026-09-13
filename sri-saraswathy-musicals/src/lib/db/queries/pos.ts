@@ -10,6 +10,11 @@ export async function getBills(): Promise<Bill[]> {
   return rows<Bill>(await db.select().from(posBills).orderBy(desc(posBills.createdAt)));
 }
 
+export async function getBill(id: string): Promise<Bill | undefined> {
+  const [r] = await db.select().from(posBills).where(eq(posBills.id, id)).limit(1);
+  return r ? row<Bill>(r) : undefined;
+}
+
 export async function createBill(b: Bill): Promise<Bill> {
   const [r] = await db.insert(posBills).values(b).returning();
   return row<Bill>(r);

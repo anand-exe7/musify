@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { genDocId } from "@/lib/ids";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -15,7 +16,7 @@ export const INQUIRY_TOPICS = [
 ];
 
 export interface Inquiry {
-  id: string; // INQ-XXXX
+  id: string; // INQ-2026-XXXXX
   createdAt: string; // ISO
   name: string;
   phone: string; // WhatsApp
@@ -34,10 +35,7 @@ export const INQUIRY_STATUS_META: Record<InquiryStatus, { label: string; tone: s
 };
 
 export function genInquiryId(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let s = "";
-  for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `INQ-${s}`;
+  return genDocId("INQ");
 }
 
 /* ─────────────────────────────  Store  ───────────────────────────── */

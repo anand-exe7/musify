@@ -3,25 +3,27 @@ import { handle, ok, created, HttpError, readJson } from "@/lib/api/http";
 import { requireUser } from "@/lib/auth/server";
 import { priceOrder, type DeliveryMethod } from "@/lib/checkout/pricing";
 import { signDraft } from "@/lib/checkout/draft";
-import { createOrder } from "@/lib/db/queries/orders";
+import { createOrder, nextOrderId } from "@/lib/db/queries/orders";
 import { createRazorpayOrder, razorpayConfigured, razorpayKeyId } from "@/lib/payments/razorpay";
 import { sendOrderConfirmation } from "@/lib/email/resend";
+import { recordOrderInvoice } from "@/lib/billing/ledger";
 import type { Order } from "@/types";
 
 export const dynamic = "force-dynamic";
+
+type Branch = "Branch 1" | "Branch 2";
 
 interface CreateBody {
   items: { productId: string; quantity: number }[];
   delivery: DeliveryMethod;
   payment: "upi" | "card" | "bank" | "cod";
   shipState?: string;
+  branch?: Branch;
   customerName?: string;
   phone?: string;
   email?: string;
   address?: string;
 }
-
-const newOrderId = () => `ORD${Date.now().toString().slice(-8)}`;
 
 /**
  * Start checkout. Prices the cart server-side, then:
@@ -39,10 +41,11 @@ export function POST(request: NextRequest) {
     const email = (body.email || user.email || "").trim();
     const phone = (body.phone || "").trim();
     const address = (body.address || (body.shipState ? `Delivery to ${body.shipState}` : "")).trim();
+    const branch: Branch = body.branch === "Branch 2" ? "Branch 2" : "Branch 1";
 
     if (body.payment === "cod") {
       const order: Order = {
-        id: newOrderId(),
+        id: await nextOrderId(),
         date: new Date().toISOString().slice(0, 10),
         status: "processing",
         userId: user.id,
@@ -51,6 +54,8 @@ export function POST(request: NextRequest) {
         phone,
         paymentMethod: "cod",
         paymentId: "",
+        shipState: (body.shipState || "").trim(),
+        branch,
         items: priced.items,
         subtotal: priced.subtotal,
         gst: priced.gst,
@@ -59,6 +64,7 @@ export function POST(request: NextRequest) {
         address,
       };
       const saved = await createOrder(order);
+      await recordOrderInvoice(saved);
       await sendOrderConfirmation(saved, email);
       return created({ mode: "cod", orderId: saved.id });
     }
@@ -75,6 +81,8 @@ export function POST(request: NextRequest) {
       email,
       phone,
       address,
+      shipState: (body.shipState || "").trim(),
+      branch,
       razorpayOrderId: rp.id,
     });
 

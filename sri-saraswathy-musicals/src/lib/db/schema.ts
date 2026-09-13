@@ -107,6 +107,10 @@ export const orders = pgTable("orders", {
   /** Payment provider linkage (Razorpay) — empty for cash-on-delivery. */
   paymentMethod: text("payment_method").notNull().default(""),
   paymentId: text("payment_id").notNull().default(""),
+  /** Buyer's place of supply (state) — drives the CGST/SGST vs IGST split. */
+  shipState: text("ship_state").notNull().default(""),
+  /** Fulfilling branch the customer chose at checkout. */
+  branch: text("branch").notNull().default("Branch 1"),
   items: jsonb("items")
     .$type<{ productId: string; quantity: number; price: number }[]>()
     .notNull()
@@ -132,9 +136,15 @@ export const invoices = pgTable("invoices", {
   subtotal: integer("subtotal").notNull().default(0),
   cgst: integer("cgst").notNull().default(0),
   sgst: integer("sgst").notNull().default(0),
+  /** Inter-state tax (used for online orders shipped outside the home state). */
+  igst: integer("igst").notNull().default(0),
   total: integer("total").notNull().default(0),
   paymentMode: text("payment_mode").notNull(),
   status: text("status").notNull(),
+  /** Where the sale originated: "web" (storefront), "pos" (counter), or "manual". */
+  source: text("source").notNull().default("manual"),
+  /** Link back to the source order/bill id. */
+  refId: text("ref_id").notNull().default(""),
 });
 
 export const vendors = pgTable("vendors", {

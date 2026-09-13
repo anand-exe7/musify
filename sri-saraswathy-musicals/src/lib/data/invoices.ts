@@ -2,8 +2,8 @@ import type { Invoice, Vendor, Order } from "@/types";
 
 export const invoices: Invoice[] = [
   {
-    id: "i001",
-    number: "SSM/26-27/0142",
+    id: "INV-2026-7QN42",
+    number: "INV-2026-7QN42",
     date: "2026-09-05",
     customer: "Bala Music Academy",
     branch: "Branch 1",
@@ -19,8 +19,8 @@ export const invoices: Invoice[] = [
     status: "paid",
   },
   {
-    id: "i002",
-    number: "SSM/26-27/0141",
+    id: "INV-2026-3KD91",
+    number: "INV-2026-3KD91",
     date: "2026-09-04",
     customer: "Vignesh Kumar",
     branch: "Branch 1",
@@ -35,8 +35,8 @@ export const invoices: Invoice[] = [
     status: "paid",
   },
   {
-    id: "i003",
-    number: "SSM/26-27/0140",
+    id: "INV-2026-M5R8T",
+    number: "INV-2026-M5R8T",
     date: "2026-09-04",
     customer: "Chennai Music College",
     branch: "Branch 2",
@@ -52,8 +52,8 @@ export const invoices: Invoice[] = [
     status: "pending",
   },
   {
-    id: "i004",
-    number: "SSM/26-27/0139",
+    id: "INV-2026-P2XN6",
+    number: "INV-2026-P2XN6",
     date: "2026-09-03",
     customer: "Meera Nair",
     branch: "Branch 1",
@@ -68,8 +68,8 @@ export const invoices: Invoice[] = [
     status: "paid",
   },
   {
-    id: "i005",
-    number: "SSM/26-27/0138",
+    id: "INV-2026-H9VC3",
+    number: "INV-2026-H9VC3",
     date: "2026-09-03",
     customer: "Rajiv Menon",
     branch: "Branch 2",
@@ -84,8 +84,8 @@ export const invoices: Invoice[] = [
     status: "paid",
   },
   {
-    id: "i006",
-    number: "SSM/26-27/0137",
+    id: "INV-2026-Y4LW2",
+    number: "INV-2026-Y4LW2",
     date: "2026-09-02",
     customer: "Priya Ramesh",
     branch: "Branch 1",
@@ -100,8 +100,8 @@ export const invoices: Invoice[] = [
     status: "paid",
   },
   {
-    id: "i007",
-    number: "SSM/26-27/0136",
+    id: "INV-2026-B7F2Q",
+    number: "INV-2026-B7F2Q",
     date: "2026-09-02",
     customer: "Anand Rao",
     branch: "Branch 2",

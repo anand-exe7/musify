@@ -1,9 +1,11 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { usePOS, inPeriod, type Period, type Source } from "@/lib/store/pos";
+import { usePOS } from "@/lib/store/pos";
+import { inPeriod, type Period, type Source } from "@/lib/store/pos";
+import { useAllSales } from "@/lib/client/sales";
 import { formatINR, cn } from "@/lib/utils";
-import { ShoppingCart, Trash2, Download, ExternalLink } from "lucide-react";
+import { ShoppingCart, Trash2, Download, ExternalLink, Eye } from "lucide-react";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -11,7 +13,7 @@ function fmtDate(iso: string) {
 }
 
 export default function OrdersPage() {
-  const bills = usePOS((s) => s.bills);
+  const { sales, loading } = useAllSales();
   const deleteBill = usePOS((s) => s.deleteBill);
 
   const [type, setType] = useState<Source | "all">("all");
@@ -22,7 +24,7 @@ export default function OrdersPage() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const rows = useMemo(() => {
-    let list = bills.filter(
+    let list = sales.filter(
       (b) =>
         (type === "all" || b.source === type) &&
         inPeriod(b.createdAt, date, new Date(), custom) &&
@@ -38,7 +40,7 @@ export default function OrdersPage() {
       return a.total - b.total;
     });
     return list;
-  }, [bills, type, date, custom, query, sort]);
+  }, [sales, type, date, custom, query, sort]);
 
   const exportCSV = () => {
     const head = ["Invoice", "Customer", "Phone", "Type", "Branch", "Coupon", "Discount", "Delivery", "Total", "Date", "Status"];
@@ -61,7 +63,7 @@ export default function OrdersPage() {
       {confirmId && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setConfirmId(null)}>
           <div className="w-full max-w-sm rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-ink-900">Delete invoice?</h3>
+            <h3 className="text-lg font-bold text-ink-900">Delete POS bill?</h3>
             <p className="mt-2 text-sm text-ink-500">{confirmId} will be removed and its revenue/coupon impact will disappear from Analytics. This cannot be undone.</p>
             <div className="mt-5 flex gap-2">
               <button onClick={() => setConfirmId(null)} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
@@ -72,7 +74,10 @@ export default function OrdersPage() {
       )}
 
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink-900">Order Management</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-ink-900">Order Management</h1>
+          <p className="mt-1 text-sm text-ink-500">Online storefront orders and in-store POS bills together — one view.</p>
+        </div>
         <Link href="/admin/billing" className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800">
           <ShoppingCart className="h-4 w-4" /> Open POS
         </Link>
@@ -84,7 +89,7 @@ export default function OrdersPage() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-12 text-[10px] font-bold uppercase tracking-wider text-ink-400">Type</span>
-              {([["all", "All Bills"], ["offline", "Offline"], ["online", "Online"]] as const).map(([k, l]) => (
+              {([["all", "All Orders"], ["offline", "In-store (POS)"], ["online", "Online"]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setType(k)} className={chip(type === k)}>{l}</button>
               ))}
             </div>
@@ -108,7 +113,7 @@ export default function OrdersPage() {
 
       {/* Result bar */}
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm text-ink-500">{rows.length} result(s)</p>
+        <p className="text-sm text-ink-500">{loading ? "Loading orders…" : `${rows.length} result(s)`}</p>
         <div className="flex items-center gap-3">
           <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:outline-none">
             <option value="new">Newest First</option>
@@ -127,26 +132,42 @@ export default function OrdersPage() {
         <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-              <th className="px-5 py-4">Invoice No</th><th>Customer</th><th>Phone</th><th>Bill Type</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="px-5 text-right">Actions</th>
+              <th className="px-5 py-4">Order</th><th>Customer</th><th>Phone</th><th>Type</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="px-5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-50">
             {rows.map((b) => (
               <tr key={b.id} className="text-ink-800">
-                <td className="px-5 py-4"><span className="inline-flex items-center gap-1 font-semibold text-ink-900">{b.id}<ExternalLink className="h-3 w-3 text-ink-300" /></span></td>
+                <td className="px-5 py-4"><span className="inline-flex items-center gap-1 font-semibold text-ink-900">{b.id.toUpperCase()}</span></td>
                 <td className="font-medium">{b.customerName}</td>
                 <td className="text-ink-600">{b.phone || "—"}</td>
-                <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", b.source === "online" ? "bg-success/15 text-success" : "bg-gold-100 text-gold-700")}>{b.source}</span></td>
+                <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", b.source === "online" ? "bg-success/15 text-success" : "bg-gold-100 text-gold-700")}>{b.source === "online" ? "Online" : "In-store"}</span></td>
                 <td className="text-gold-600">{b.coupon || "—"}</td>
                 <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
                 <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
                 <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
                 <td className="text-ink-600">{fmtDate(b.createdAt)}</td>
                 <td><span className="rounded bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase text-success">{b.status}</span></td>
-                <td className="px-5"><div className="flex justify-end"><button onClick={() => setConfirmId(b.id)} className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10"><Trash2 className="h-4 w-4" /></button></div></td>
+                <td className="px-5">
+                  <div className="flex items-center justify-end gap-1">
+                    <Link
+                      href={`/invoice/${b.id}`}
+                      target="_blank"
+                      title="View order bill"
+                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600"
+                    >
+                      <Eye className="h-3.5 w-3.5" /> Bill <ExternalLink className="h-3 w-3 text-ink-300" />
+                    </Link>
+                    {b.source === "offline" && (
+                      <button onClick={() => setConfirmId(b.id)} title="Delete POS bill" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
-            {rows.length === 0 && (
+            {!loading && rows.length === 0 && (
               <tr><td colSpan={11} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
             )}
           </tbody>

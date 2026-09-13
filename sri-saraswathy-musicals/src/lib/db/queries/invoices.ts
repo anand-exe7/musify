@@ -13,6 +13,12 @@ export async function getInvoice(id: string): Promise<Invoice | undefined> {
   return r ? row<Invoice>(r) : undefined;
 }
 
+/** Look up the ledger invoice recorded for a given order/bill id (see `refId`). */
+export async function getInvoiceByRefId(refId: string): Promise<Invoice | undefined> {
+  const [r] = await db.select().from(invoices).where(eq(invoices.refId, refId)).limit(1);
+  return r ? row<Invoice>(r) : undefined;
+}
+
 export async function createInvoice(inv: Invoice): Promise<Invoice> {
   const [r] = await db.insert(invoices).values(inv).returning();
   return row<Invoice>(r);

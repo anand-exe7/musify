@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "ship_state" text DEFAULT '' NOT NULL;

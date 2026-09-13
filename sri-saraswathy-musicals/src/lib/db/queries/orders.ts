@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
 import type { Order } from "@/types";
 import { row, rows, definedOnly } from "./_util";
+import { genDocId } from "@/lib/ids";
 
 export async function getOrders(): Promise<Order[]> {
   return rows<Order>(await db.select().from(orders).orderBy(desc(orders.date)));
@@ -18,6 +19,17 @@ export async function getOrdersByUser(userId: string): Promise<Order[]> {
   return rows<Order>(
     await db.select().from(orders).where(eq(orders.userId, userId)).orderBy(desc(orders.date)),
   );
+}
+
+/** Generate the next order id, e.g. `ORD-2026-7QK3M`. Checks the DB for a free
+ *  code before returning it, retrying on the rare clash. */
+export async function nextOrderId(): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = genDocId("ORD");
+    const [existing] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, candidate)).limit(1);
+    if (!existing) return candidate;
+  }
+  throw new Error("Could not generate a unique order id");
 }
 
 export async function createOrder(o: Order): Promise<Order> {

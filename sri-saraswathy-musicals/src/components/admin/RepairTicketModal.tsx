@@ -194,7 +194,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
               </div>
               <div className="md:col-span-2">
                 <label className={label}>Original Purchase Invoice (optional)</label>
-                <input value={d.refInvoice ?? ""} onChange={(e) => set({ refInvoice: e.target.value })} className={field} placeholder="e.g. INV-2026-XXXX" />
+                <input value={d.refInvoice ?? ""} onChange={(e) => set({ refInvoice: e.target.value })} className={field} placeholder="e.g. INV-2026-XXXXX" />
               </div>
             </div>
           </section>

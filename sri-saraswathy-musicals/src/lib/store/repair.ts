@@ -1,6 +1,7 @@
 "use client";
 import { create } from "zustand";
 import type { Branch } from "@/lib/store/pos";
+import { genDocId } from "@/lib/ids";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -21,7 +22,7 @@ export interface RepairEvent {
 }
 
 export interface RepairTicket {
-  id: string; // RPR-2026-XXXX
+  id: string; // REP-2026-XXXXX
   createdAt: string; // ISO
   updatedAt: string; // ISO
   // Customer
@@ -147,10 +148,7 @@ export function turnaroundDays(t: RepairTicket): number | null {
 }
 
 export function genRepairId(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let s = "";
-  for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `RPR-2026-${s}`;
+  return genDocId("REP");
 }
 
 /* ─────────────────────────────  Store  ───────────────────────────── */
@@ -179,7 +177,7 @@ interface RepairState {
   updateTicket: (id: string, patch: Partial<RepairTicket>, eventLabel?: string) => void;
   deleteTicket: (id: string) => void;
   logEvent: (id: string, label: string) => void;
-  nextInvoiceNo: () => string;
+  nextInvoiceNo: () => Promise<string>;
   resetDemo: () => void;
 }
 
@@ -226,19 +224,14 @@ export const useRepair = create<RepairState>()((set, get) => ({
     }));
     void send(`/api/repair/${id}`, "PATCH", { patch: {}, eventLabel: label }, get().hydrate);
   },
-  // Derive the next service-invoice serial from the tickets in memory, so the
-  // number stays sequential across reloads without an async round-trip. The
-  // seed data ends at 0008, so the first generated number is 0009.
-  nextInvoiceNo: () => {
-    const serials = get()
-      .tickets.map((t) => t.invoiceNo)
-      .filter((n): n is string => !!n)
-      .map((n) => {
-        const m = n.match(/SVC\/26-27\/(\d+)/);
-        return m ? parseInt(m[1], 10) : 0;
-      });
-    const next = Math.max(8, ...serials) + 1;
-    return `SVC/26-27/${String(next).padStart(4, "0")}`;
+  // Ask the server for the next service-invoice number — it checks the DB for
+  // a free `SER-<year>-XXXXX` code, which an in-memory scan of loaded tickets
+  // can't guarantee (and can't see tickets other staff/tabs have created).
+  nextInvoiceNo: async () => {
+    const res = await fetch("/api/repair/next-invoice", { method: "POST" });
+    if (!res.ok) throw new Error("Couldn't generate a service invoice number");
+    const { invoiceNo } = (await res.json()) as { invoiceNo: string };
+    return invoiceNo;
   },
   resetDemo: () => void get().hydrate(),
 }));

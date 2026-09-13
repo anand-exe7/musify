@@ -49,6 +49,8 @@ export interface Order {
   phone?: string;
   paymentMethod?: string;
   paymentId?: string;
+  shipState?: string;
+  branch?: "Branch 1" | "Branch 2";
   items: { productId: string; quantity: number; price: number }[];
   subtotal: number;
   gst: number;
@@ -67,9 +69,15 @@ export interface Invoice {
   subtotal: number;
   cgst: number;
   sgst: number;
+  igst?: number;
   total: number;
-  paymentMode: "cash" | "card" | "upi" | "bank";
+  /** cash / card / upi / bank / razorpay / cod — kept open so web + POS methods fit. */
+  paymentMode: string;
   status: "paid" | "pending" | "cancelled";
+  /** "web" (storefront), "pos" (counter), or "manual". */
+  source?: "web" | "pos" | "manual";
+  /** Link back to the source order/bill id. */
+  refId?: string;
 }
 
 export interface User {

@@ -15,6 +15,20 @@
       "when": 1789234177607,
       "tag": "0001_grey_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789237583727,
+      "tag": "0002_happy_tarot",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789286886102,
+      "tag": "0003_spicy_captain_america",
+      "breakpoints": true
     }
   ]
 }

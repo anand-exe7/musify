@@ -15,6 +15,7 @@ import {
   Wrench,
   MessageSquare,
   Receipt,
+  FileText,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,8 +24,9 @@ import { useInquiry } from "@/lib/store/inquiry";
 
 const items = [
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
-  { href: "/admin/analytics", label: "POS Analytics", icon: BarChart3 },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/gst", label: "GST & Tax", icon: Receipt },
+  { href: "/admin/invoices", label: "Invoices", icon: FileText },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
   { href: "/admin/service", label: "Service / Repairs", icon: Wrench },
   { href: "/admin/inquiries", label: "Inquiries", icon: MessageSquare },

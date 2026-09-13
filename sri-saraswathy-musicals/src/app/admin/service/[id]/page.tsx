@@ -93,10 +93,10 @@ export default function TicketDetailPage() {
   const setEdit = (patch: Partial<typeof edit>) => setDraft({ ...edit, ...patch });
   const dirty = draft && (draft.finalCost !== t.finalCost || draft.advance !== t.advance || draft.technician !== (t.technician || "Unassigned") || draft.priority !== t.priority || draft.deadline !== t.deadline);
 
-  const changeStatus = (status: RepairStatus) => {
+  const changeStatus = async (status: RepairStatus) => {
     if (status === t.status) return;
     if (status === "completed") {
-      const invoiceNo = t.invoiceNo || nextInvoiceNo();
+      const invoiceNo = t.invoiceNo || (await nextInvoiceNo());
       const finalCost = t.finalCost > 0 ? t.finalCost : t.estimate;
       updateTicket(t.id, { status, completedAt: new Date().toISOString(), invoiceNo, finalCost },
         `Status → Completed · invoice ${invoiceNo}`);
@@ -135,9 +135,9 @@ export default function TicketDetailPage() {
     window.open(waLink(t.phone, repairIntakeMessage(t)), "_blank", "noopener,noreferrer");
   };
 
-  const goInvoice = () => {
+  const goInvoice = async () => {
     if (!t.invoiceNo) {
-      const invoiceNo = nextInvoiceNo();
+      const invoiceNo = await nextInvoiceNo();
       updateTicket(t.id, { invoiceNo }, `Invoice ${invoiceNo} generated`);
     }
     router.push(`/admin/service/${t.id}/invoice`);

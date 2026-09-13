@@ -100,11 +100,14 @@ export function OrderCelebration({ orderId }: { orderId: string }) {
           The music is on its <em className="text-gold-400">way.</em>
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="mx-auto mt-4 max-w-md text-sm text-ivory-100/70 md:text-base">
-          {orderId} is confirmed. Our workshop will call you within 24 hours to schedule set-up and delivery.
+          Order #{orderId} is confirmed. Our workshop will call you within 24 hours to schedule set-up and delivery.
         </motion.p>
 
         <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.95 }} className="mt-9 flex flex-col items-center gap-3 sm:flex-row">
-          <Link href="/profile" className="rounded-full bg-gold-400 px-7 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-colors hover:bg-gold-300">
+          <Link href={`/invoice/${orderId}`} className="rounded-full bg-gold-400 px-7 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-colors hover:bg-gold-300">
+            View invoice
+          </Link>
+          <Link href="/profile" className="rounded-full border border-ivory-100/25 px-7 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ivory-100 transition-colors hover:border-gold-400 hover:text-gold-400">
             View orders
           </Link>
           <Link href="/shop" className="rounded-full border border-ivory-100/25 px-7 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ivory-100 transition-colors hover:border-gold-400 hover:text-gold-400">
