@@ -65,7 +65,11 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       rate: i.price,
       amount: i.price * i.qty,
     }));
-    return <OrderInvoiceView order={orderShape} lines={lines} discount={bill.discount} coupon={bill.coupon} />;
+    const taxBreakup =
+      bill.gstEnabled && (bill.gst ?? 0) > 0
+        ? { taxable: bill.taxable ?? 0, cgst: bill.cgst ?? 0, sgst: bill.sgst ?? 0, gst: bill.gst ?? 0 }
+        : null;
+    return <OrderInvoiceView order={orderShape} lines={lines} discount={bill.discount} coupon={bill.coupon} taxBreakup={taxBreakup} />;
   }
 
   notFound();

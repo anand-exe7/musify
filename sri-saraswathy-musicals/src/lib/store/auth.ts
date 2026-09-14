@@ -1,12 +1,23 @@
 "use client";
 import { create } from "zustand";
 
+export type BranchKey = "Branch 1" | "Branch 2";
+export type AdminAccess = "all" | BranchKey | null;
+
 export interface SessionUser {
   id: string;
   email: string;
   name: string;
   isAdmin: boolean;
+  branch?: BranchKey | null;
   avatar?: string | null;
+}
+
+/** Full admins reach every branch; a user with a branch is scoped to it. */
+export function adminAccessOf(u: SessionUser | null): AdminAccess {
+  if (!u) return null;
+  if (u.isAdmin) return "all";
+  return u.branch ?? null;
 }
 
 interface AuthStore {
@@ -14,6 +25,8 @@ interface AuthStore {
   /** Convenience booleans derived from `user`. */
   loggedIn: boolean;
   isAdmin: boolean;
+  /** Admin-area reach: "all", a branch key, or null (no admin access). */
+  adminAccess: AdminAccess;
   /** True once the first session fetch has resolved (so the UI can avoid
    *  flashing signed-out state before we know). */
   hydrated: boolean;
@@ -31,6 +44,7 @@ export const useAuth = create<AuthStore>()((set) => ({
   user: null,
   loggedIn: false,
   isAdmin: false,
+  adminAccess: null,
   hydrated: false,
   hydrate: async () => {
     try {
@@ -40,10 +54,11 @@ export const useAuth = create<AuthStore>()((set) => ({
         user: data.user,
         loggedIn: Boolean(data.user),
         isAdmin: Boolean(data.user?.isAdmin),
+        adminAccess: adminAccessOf(data.user),
         hydrated: true,
       });
     } catch {
-      set({ user: null, loggedIn: false, isAdmin: false, hydrated: true });
+      set({ user: null, loggedIn: false, isAdmin: false, adminAccess: null, hydrated: true });
     }
   },
   logout: async () => {
@@ -52,7 +67,7 @@ export const useAuth = create<AuthStore>()((set) => ({
     } catch {
       /* ignore — clear locally regardless */
     }
-    set({ user: null, loggedIn: false, isAdmin: false });
+    set({ user: null, loggedIn: false, isAdmin: false, adminAccess: null });
   },
 }));
 

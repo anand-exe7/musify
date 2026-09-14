@@ -12,6 +12,9 @@ export interface BillItem {
   name: string;
   price: number;
   qty: number;
+  /** GST rate (%) snapshotted at bill time. `null`/absent ⇒ line billed non-GST. */
+  gstRate?: number | null;
+  hsn?: string;
 }
 
 export interface Bill {
@@ -27,6 +30,13 @@ export interface Bill {
   discount: number; // coupon + manual, on subtotal
   delivery: number;
   total: number;
+  /** True when raised as a GST tax invoice; false for a plain (non-GST) bill. */
+  gstEnabled?: boolean;
+  /** GST-inclusive breakup of the taxed lines (whole rupees). */
+  taxable?: number;
+  cgst?: number;
+  sgst?: number;
+  gst?: number;
   status: "completed" | "pending";
   payment?: string;
 }
@@ -53,6 +63,10 @@ export interface InvProduct {
   discountLabel?: string;
   newArrival?: boolean;
   lowStockAt: number;
+  /** Default GST rate (%) used when billed as a GST sale. `null` ⇒ non-GST. */
+  gstRate?: number | null;
+  hsn?: string;
+  isGstApplicable?: boolean;
   variants: Variant[];
 }
 
@@ -272,4 +286,52 @@ export function filterBills(
 
 export function genInvoiceId(): string {
   return genDocId("INV");
+}
+
+/* ─────────────────────────────  GST maths  ──────────────────────────── */
+
+/**
+ * Split a **GST-inclusive** line amount into its taxable value and the tax it
+ * already contains. e.g. ₹1180 @ 18% → { taxable: 1000, tax: 180 }. A rate of
+ * 0 / null (a non-GST line) yields all-taxable, zero tax. Whole rupees.
+ */
+export function lineTax(amount: number, rate?: number | null): { taxable: number; tax: number } {
+  const r = Number(rate) || 0;
+  if (r <= 0) return { taxable: Math.round(amount), tax: 0 };
+  const taxable = Math.round(amount / (1 + r / 100));
+  return { taxable, tax: Math.round(amount) - taxable };
+}
+
+export interface BillTax {
+  taxable: number; // GST-inclusive taxable value of taxed lines
+  cgst: number;
+  sgst: number;
+  gst: number; // cgst + sgst
+  byRate: Record<number, { taxable: number; tax: number }>; // per-rate breakup (5/12/18/28…)
+}
+
+/**
+ * Aggregate the GST contained in a bill's lines. When `gstEnabled` is false the
+ * whole bill is untaxed. Intra-state (home branch) split: CGST = SGST = tax/2.
+ */
+export function billTax(items: BillItem[], gstEnabled: boolean): BillTax {
+  const byRate: Record<number, { taxable: number; tax: number }> = {};
+  let taxable = 0;
+  let tax = 0;
+  if (gstEnabled) {
+    for (const it of items) {
+      const rate = Number(it.gstRate) || 0;
+      const { taxable: tv, tax: tx } = lineTax(it.price * it.qty, rate);
+      if (rate > 0) {
+        taxable += tv;
+        tax += tx;
+        const b = byRate[rate] ?? { taxable: 0, tax: 0 };
+        b.taxable += tv;
+        b.tax += tx;
+        byRate[rate] = b;
+      }
+    }
+  }
+  const cgst = Math.round(tax / 2);
+  return { taxable, cgst, sgst: tax - cgst, gst: tax, byRate };
 }

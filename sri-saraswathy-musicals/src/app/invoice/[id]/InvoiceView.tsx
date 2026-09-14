@@ -19,6 +19,8 @@ interface Props {
   lines: Line[];
   discount?: number;
   coupon?: string;
+  /** GST-inclusive tax breakup for a GST bill; omitted/null for plain bills. */
+  taxBreakup?: { taxable: number; cgst: number; sgst: number; gst: number } | null;
 }
 
 function fmtDate(d: string) {
@@ -43,7 +45,7 @@ const PRINT_CSS = `
 }
 `;
 
-export function OrderInvoiceView({ order, lines, discount = 0, coupon }: Props) {
+export function OrderInvoiceView({ order, lines, discount = 0, coupon, taxBreakup }: Props) {
   const [copied, setCopied] = useState(false);
   const paid = order.paymentMethod === "razorpay";
   const paymentLabel =
@@ -173,6 +175,14 @@ export function OrderInvoiceView({ order, lines, discount = 0, coupon }: Props) 
                 <div className="flex justify-between px-3 text-success"><dt>Discount{coupon ? ` (${coupon})` : ""}</dt><dd className="tabular-nums">- {formatINR(discount)}</dd></div>
               )}
               <div className="flex justify-between px-3 text-ink-600"><dt>{order.shipping ? "Delivery" : "Shipping"}</dt><dd className="tabular-nums">{order.shipping === 0 ? "Free" : formatINR(order.shipping)}</dd></div>
+              {taxBreakup && taxBreakup.gst > 0 && (
+                <>
+                  <div className="flex justify-between px-3 text-ink-500"><dt>Taxable value</dt><dd className="tabular-nums">{formatINR(taxBreakup.taxable)}</dd></div>
+                  <div className="flex justify-between px-3 text-ink-500"><dt>CGST</dt><dd className="tabular-nums">{formatINR(taxBreakup.cgst)}</dd></div>
+                  <div className="flex justify-between px-3 text-ink-500"><dt>SGST</dt><dd className="tabular-nums">{formatINR(taxBreakup.sgst)}</dd></div>
+                  <p className="px-3 text-[10px] text-ink-400">GST of {formatINR(taxBreakup.gst)} is included in the total.</p>
+                </>
+              )}
               <div className="mt-1 flex justify-between rounded-lg bg-ink-900 px-3 py-2.5 text-base font-bold text-ivory-50"><dt>Total</dt><dd className="tabular-nums">{formatINR(order.total)}</dd></div>
               <div className={cn("flex justify-between rounded-lg px-3 py-2 text-sm font-bold", paid ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
                 <dt>{paid ? "Paid in full" : "Payable on delivery"}</dt>

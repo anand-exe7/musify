@@ -108,8 +108,13 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
   }
 }
 
-/** Write a GST invoice row for an in-store POS bill (retail prices are treated
- *  as GST-inclusive; the tax is extracted from the grand total).
+/** Write a ledger invoice row for an in-store POS bill.
+ *
+ *  The tax is taken from the bill's own snapshot (`gstEnabled` + the per-line
+ *  `gstRate` totals computed at the counter), NOT recomputed here — so a bill
+ *  raised in Non-GST mode records with zero tax, a GST bill records its exact
+ *  CGST/SGST, and mixed carts (non-GST lines alongside taxed ones) are honoured.
+ *  Retail prices are GST-inclusive, so the tax is contained in the grand total.
  *
  *  The bill's own random id (shown to the customer on the receipt) stays the
  *  invoice's `refId`/`id`; the GST `number` is a separate sequential series
@@ -117,16 +122,17 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
 export async function recordBillInvoice(bill: Bill): Promise<void> {
   try {
     if (await getInvoiceByRefId(bill.id)) return;
-    const gstCfg = await getGstSettings();
-    const rate = gstCfg.standardRate;
-    const gstTotal = Math.round((bill.total * rate) / (100 + rate));
+    const taxed = Boolean(bill.gstEnabled);
+    const gstTotal = taxed ? Math.round(bill.gst ?? 0) : 0;
+    const cgst = taxed ? Math.round(bill.cgst ?? gstTotal / 2) : 0;
+    const sgst = taxed ? Math.round(bill.sgst ?? gstTotal - Math.round(gstTotal / 2)) : 0;
     const taxable = bill.total - gstTotal;
     const items = bill.items.map((i) => ({
       name: i.name,
-      hsn: "-",
+      hsn: i.hsn || "-",
       qty: i.qty,
       rate: i.price,
-      gst: rate,
+      gst: taxed ? Number(i.gstRate) || 0 : 0,
       amount: i.price * i.qty,
     }));
 
@@ -139,8 +145,8 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       branch: bill.branch,
       items,
       subtotal: taxable,
-      cgst: Math.round(gstTotal / 2),
-      sgst: Math.round(gstTotal / 2),
+      cgst,
+      sgst,
       igst: 0,
       total: bill.total,
       paymentMode: bill.payment || (bill.source === "online" ? "razorpay" : "cash"),

@@ -12,7 +12,8 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { usePOS, productStock, genInvoiceId, type Bill, type Source, type Branch } from "@/lib/store/pos";
+import { usePOS, productStock, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
+import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
 
@@ -21,18 +22,44 @@ interface Row {
   name: string;
   price: number;
   qty: number;
+  /** Snapshot GST rate for this line; `null` ⇒ non-GST line. */
+  gstRate?: number | null;
+  hsn?: string;
 }
+
+/** GST rates selectable per line at the counter (`null` = non-GST). */
+const LINE_GST_RATES: { label: string; value: number | null }[] = [
+  { label: "No GST", value: null },
+  { label: "0%", value: 0 },
+  { label: "5%", value: 5 },
+  { label: "12%", value: 12 },
+  { label: "18%", value: 18 },
+  { label: "28%", value: 28 },
+];
 
 export default function BillingPage() {
   const coupons = usePOS((s) => s.coupons);
   const invProducts = usePOS((s) => s.invProducts);
   const addBill = usePOS((s) => s.addBill);
 
+  const canSwitchBranch = useBranchScope((s) => s.canSwitch);
+  const scopeAccess = useBranchScope((s) => s.access);
+  const scopeSelected = useBranchScope((s) => s.selected);
+  // Branch users are pinned to their own branch; admins act as the topbar pick.
+  const lockedBranch: Branch | null =
+    !canSwitchBranch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+
   const [source, setSource] = useState<Source>("offline");
-  const [branch, setBranch] = useState<Branch>("Branch 1");
+  const [branch, setBranch] = useState<Branch>(lockedBranch ?? effectiveBranch(scopeSelected));
+  const [gstMode, setGstMode] = useState(true);
+
+  // Follow the branch scope: locked to the user's branch, else the topbar pick.
+  useEffect(() => {
+    setBranch(lockedBranch ?? effectiveBranch(scopeSelected));
+  }, [lockedBranch, scopeSelected]);
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
-  const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1 }]);
+  const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [couponCode, setCouponCode] = useState("");
@@ -45,6 +72,16 @@ export default function BillingPage() {
   const activeRows = rows.filter((r) => r.name.trim() && r.price > 0);
   const subtotal = activeRows.reduce((n, r) => n + r.price * r.qty, 0);
   const itemCount = activeRows.reduce((n, r) => n + r.qty, 0);
+
+  // GST-inclusive tax contained in the taxed lines (recomputed as rows change).
+  const billItems: BillItem[] = activeRows.map((r) => ({
+    name: r.name.trim(),
+    price: r.price,
+    qty: r.qty,
+    gstRate: gstMode ? (r.gstRate ?? null) : null,
+    hsn: r.hsn,
+  }));
+  const tax = billTax(billItems, gstMode);
 
   const coupon = coupons.find((c) => c.code === couponCode);
   const couponDiscount = useMemo(() => {
@@ -82,21 +119,22 @@ export default function BillingPage() {
   /* ── row helpers ── */
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const addRow = () => setRows((rs) => [...rs, { id: crypto.randomUUID(), name: "", price: 0, qty: 1 }]);
+  const addRow = () => setRows((rs) => [...rs, { id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
   const removeRow = (id: string) =>
-    setRows((rs) => (rs.length === 1 ? [{ id: crypto.randomUUID(), name: "", price: 0, qty: 1 }] : rs.filter((r) => r.id !== id)));
-  const addFromCatalog = (name: string, price: number) => {
+    setRows((rs) => (rs.length === 1 ? [{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }] : rs.filter((r) => r.id !== id)));
+  const addFromCatalog = (name: string, price: number, gstRate?: number | null, hsn?: string) => {
     setRows((rs) => {
       const existing = rs.find((r) => r.name === name);
       if (existing) return rs.map((r) => (r.id === existing.id ? { ...r, qty: r.qty + 1 } : r));
+      const filled = { name, price, qty: 1, gstRate: gstRate ?? null, hsn };
       const blank = rs.find((r) => !r.name.trim());
-      if (blank) return rs.map((r) => (r.id === blank.id ? { ...r, name, price, qty: 1 } : r));
-      return [...rs, { id: crypto.randomUUID(), name, price, qty: 1 }];
+      if (blank) return rs.map((r) => (r.id === blank.id ? { ...r, ...filled } : r));
+      return [...rs, { id: crypto.randomUUID(), ...filled }];
     });
   };
 
   const clearOrder = () => {
-    setRows([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1 }]);
+    setRows([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
     setCouponCode("");
     setDiscVal(0);
     setDelivery(0);
@@ -116,12 +154,17 @@ export default function BillingPage() {
       phone: phone.trim(),
       source,
       branch,
-      items: activeRows.map((r) => ({ name: r.name.trim(), price: r.price, qty: r.qty })),
+      items: billItems,
       subtotal,
       coupon: coupon?.code,
       discount: totalDiscount,
       delivery: Number(delivery) || 0,
       total: grand,
+      gstEnabled: gstMode,
+      taxable: tax.taxable,
+      cgst: tax.cgst,
+      sgst: tax.sgst,
+      gst: tax.gst,
       status: "completed",
       payment: source === "online" ? "Razorpay" : "Cash",
     };
@@ -151,11 +194,19 @@ export default function BillingPage() {
     // (resolves via /invoice/[id] → getBill, no admin sign-in needed).
     const link = `${window.location.origin}/invoice/${bill.id}`;
     const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty)}`).join("\n");
+    const gstLines =
+      bill.gstEnabled && (bill.gst ?? 0) > 0
+        ? `Taxable: ${formatINR(bill.taxable ?? 0)}\n` +
+          `CGST: ${formatINR(bill.cgst ?? 0)}\n` +
+          `SGST: ${formatINR(bill.sgst ?? 0)}\n` +
+          `(GST incl. ${formatINR(bill.gst ?? 0)})\n`
+        : "";
     const msg =
       `*${BUSINESS.name}*\nInvoice ${bill.id}\n\n${lines}\n\n` +
       `Subtotal: ${formatINR(bill.subtotal)}\n` +
       `Discount: -${formatINR(bill.discount)}\n` +
       `Delivery: ${formatINR(bill.delivery)}\n` +
+      gstLines +
       `*Grand Total: ${formatINR(bill.total)}*\n\n` +
       `📄 View your invoice:\n${link}\n\nThank you!`;
     window.open(waLink(phone, msg), "_blank", "noopener,noreferrer");
@@ -188,20 +239,39 @@ export default function BillingPage() {
           <h1 className="text-2xl font-bold text-ink-900">POS Billing Panel</h1>
           <p className="mt-1 text-sm text-ink-500">Quick invoice generator · synced to Orders &amp; Analytics</p>
         </div>
-        <div className="flex items-center gap-2 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          {(["offline", "online"] as Source[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setSource(s)}
-              className={cn(
-                "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
-                source === s ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
-              )}
-            >
-              <span className={cn("h-1.5 w-1.5 rounded-full", s === "offline" ? "bg-gold-400" : "bg-success")} />
-              {s === "offline" ? "Offline (POS)" : "Online Order"}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* GST / Non-GST bill mode */}
+          <div className="flex items-center gap-2 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+            {([true, false] as const).map((on) => (
+              <button
+                key={String(on)}
+                onClick={() => setGstMode(on)}
+                className={cn(
+                  "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
+                  gstMode === on ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", on ? "bg-info" : "bg-ink-300")} />
+                {on ? "GST Bill" : "Non-GST"}
+              </button>
+            ))}
+          </div>
+          {/* Sale source */}
+          <div className="flex items-center gap-2 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+            {(["offline", "online"] as Source[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSource(s)}
+                className={cn(
+                  "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
+                  source === s ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", s === "offline" ? "bg-gold-400" : "bg-success")} />
+                {s === "offline" ? "Offline (POS)" : "Online Order"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -277,6 +347,21 @@ export default function BillingPage() {
                         className={cn(fieldCls, "pl-7")}
                       />
                     </div>
+                    {gstMode && (
+                      <select
+                        value={r.gstRate == null ? "none" : String(r.gstRate)}
+                        onChange={(e) => setRow(r.id, { gstRate: e.target.value === "none" ? null : Number(e.target.value) })}
+                        title="GST rate for this line (inclusive)"
+                        aria-label="GST rate"
+                        className="shrink-0 rounded-xl border border-ink-200 bg-ivory-50 px-2 py-3 text-xs font-medium text-ink-700 focus:border-gold-500 focus:outline-none"
+                      >
+                        {LINE_GST_RATES.map((g) => (
+                          <option key={g.label} value={g.value == null ? "none" : String(g.value)}>
+                            {g.value == null ? "No GST" : `${g.value}%`}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <div className="flex shrink-0 items-center gap-1 rounded-xl border border-ink-200 bg-ivory-50 px-1">
                       <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} aria-label="Decrease quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
                         <Minus className="h-3.5 w-3.5" />
@@ -306,9 +391,19 @@ export default function BillingPage() {
                 <dd className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", source === "offline" ? "bg-gold-100 text-gold-700" : "bg-success/15 text-success")}>{source}</dd>
               </div>
               <div className="flex items-center justify-between">
+                <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Type</dt>
+                <dd className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", gstMode ? "bg-info/15 text-info" : "bg-ink-100 text-ink-500")}>{gstMode ? "GST Invoice" : "Non-GST"}</dd>
+              </div>
+              <div className="flex items-center justify-between">
                 <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Branch</dt>
                 <dd>
-                  <select value={branch} onChange={(e) => setBranch(e.target.value as Branch)} className="rounded-md border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-medium focus:outline-none">
+                  <select
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value as Branch)}
+                    disabled={!!lockedBranch}
+                    title={lockedBranch ? "Locked to your branch" : undefined}
+                    className="rounded-md border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-medium focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                  >
                     <option>Branch 1</option>
                     <option>Branch 2</option>
                   </select>
@@ -377,6 +472,18 @@ export default function BillingPage() {
                 <span>Delivery</span>
                 <input type="number" value={delivery || ""} onChange={(e) => setDelivery(Number(e.target.value))} placeholder="0" className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-right text-sm focus:border-gold-500 focus:outline-none" />
               </div>
+
+              {gstMode && tax.gst > 0 && (
+                <div className="mt-1 space-y-1.5 rounded-lg bg-info/5 px-3 py-2.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold uppercase tracking-wider text-info">GST (incl. in total)</span>
+                    <span className="tabular-nums font-medium text-ink-900">{formatINR(tax.gst)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-ink-500"><span>Taxable value</span><span className="tabular-nums">{formatINR(tax.taxable)}</span></div>
+                  <div className="flex items-center justify-between text-ink-500"><span>CGST</span><span className="tabular-nums">{formatINR(tax.cgst)}</span></div>
+                  <div className="flex items-center justify-between text-ink-500"><span>SGST</span><span className="tabular-nums">{formatINR(tax.sgst)}</span></div>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 flex items-center justify-between border-t border-ink-100 pt-4">

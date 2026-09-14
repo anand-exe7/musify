@@ -13,12 +13,30 @@ import { SignJWT, jwtVerify } from "jose";
 export const SESSION_COOKIE = "ssm_session";
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days, in seconds
 
+export type BranchKey = "Branch 1" | "Branch 2";
+/** Admin-area reach: "all" = full admin, a branch = scoped to it, null = none. */
+export type AdminAccess = "all" | BranchKey | null;
+
 export interface SessionUser {
   id: string;
   email: string;
   name: string;
   isAdmin: boolean;
+  /** Branch the user is scoped to (null for full admins and customers). */
+  branch?: BranchKey | null;
   avatar?: string | null;
+}
+
+/**
+ * Resolve a user's admin-area reach from their flags: full admins see every
+ * branch ("all"); a non-admin with a branch assigned is scoped to that branch;
+ * everyone else (plain customers) gets no admin access. This is the single
+ * place the rule lives — the proxy and the admin UI both derive from it.
+ */
+export function adminAccessOf(u: { isAdmin: boolean; branch?: BranchKey | null } | null): AdminAccess {
+  if (!u) return null;
+  if (u.isAdmin) return "all";
+  return u.branch ?? null;
 }
 
 /** HMAC key for signing/verifying. Falls back to an insecure dev secret so the
@@ -41,6 +59,7 @@ export async function createSessionToken(user: SessionUser): Promise<string> {
     email: user.email,
     name: user.name,
     isAdmin: user.isAdmin,
+    branch: user.branch ?? null,
     avatar: user.avatar ?? null,
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -56,11 +75,13 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   try {
     const { payload } = await jwtVerify(token, secretKey());
     if (!payload.sub) return null;
+    const branch = payload.branch === "Branch 1" || payload.branch === "Branch 2" ? payload.branch : null;
     return {
       id: payload.sub,
       email: String(payload.email ?? ""),
       name: String(payload.name ?? ""),
       isAdmin: payload.isAdmin === true,
+      branch,
       avatar: (payload.avatar as string | null) ?? null,
     };
   } catch {

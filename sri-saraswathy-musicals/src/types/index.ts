@@ -86,7 +86,8 @@ export interface User {
   email: string;
   phone: string;
   role: "admin" | "branch1-manager" | "branch2-manager" | "cashier" | "customer";
-  branch?: "Branch 1" | "Branch 2";
+  /** `null`/absent = no branch (full admin, or a plain customer). */
+  branch?: "Branch 1" | "Branch 2" | null;
   active: boolean;
   /** Authoritative admin flag — grants access to the `/admin` area. */
   isAdmin: boolean;

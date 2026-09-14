@@ -9,7 +9,7 @@
  * at sign-in time.
  */
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
+import { SESSION_COOKIE, verifySessionToken, adminAccessOf } from "@/lib/auth/session";
 
 function redirectToLogin(request: NextRequest): NextResponse {
   const dest = request.nextUrl.pathname + request.nextUrl.search;
@@ -24,7 +24,9 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.startsWith("/admin")) {
     if (!session) return redirectToLogin(request);
-    if (!session.isAdmin) return NextResponse.redirect(new URL("/?denied=admin", request.url));
+    // Full admins ("all") and branch-scoped staff both reach /admin; the admin
+    // UI itself narrows what a branch user sees. Plain customers are turned away.
+    if (adminAccessOf(session) === null) return NextResponse.redirect(new URL("/?denied=admin", request.url));
     return NextResponse.next();
   }
 

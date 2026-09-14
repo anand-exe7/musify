@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X } from "lucide-react";
+import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock } from "lucide-react";
 import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repair";
 import { useInquiry } from "@/lib/store/inquiry";
+import { useBranchScope, BRANCHES, type BranchScope } from "@/lib/store/branch";
 import { cn } from "@/lib/utils";
 
 export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
@@ -60,6 +61,7 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
           <PanelLeft className="h-5 w-5" />
         </button>
         <span className="text-lg font-bold text-ink-900">Dashboard</span>
+        {mounted && <BranchSwitcher />}
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
@@ -171,6 +173,42 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/** Branch selector — a live dropdown for full admins, a locked chip otherwise. */
+function BranchSwitcher() {
+  const access = useBranchScope((s) => s.access);
+  const canSwitch = useBranchScope((s) => s.canSwitch);
+  const selected = useBranchScope((s) => s.selected);
+  const setSelected = useBranchScope((s) => s.setSelected);
+
+  if (access === null) return null; // not signed into an admin-capable account
+
+  if (!canSwitch) {
+    return (
+      <span className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ivory-50 px-2.5 py-1.5 text-xs font-semibold text-ink-700">
+        <Lock className="h-3 w-3 text-ink-400" />
+        {access}
+      </span>
+    );
+  }
+
+  return (
+    <label className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-semibold text-ink-700 focus-within:border-gold-500">
+      <MapPin className="h-3.5 w-3.5 text-gold-600" />
+      <select
+        value={selected}
+        onChange={(e) => setSelected(e.target.value as BranchScope)}
+        aria-label="Branch"
+        className="bg-transparent pr-1 text-xs font-semibold text-ink-900 focus:outline-none"
+      >
+        <option value="all">All Branches</option>
+        {BRANCHES.map((b) => (
+          <option key={b} value={b}>{b}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

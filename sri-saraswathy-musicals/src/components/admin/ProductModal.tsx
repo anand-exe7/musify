@@ -20,9 +20,22 @@ function blankProduct(): InvProduct {
     discountLabel: "",
     newArrival: false,
     lowStockAt: 4,
+    gstRate: 18,
+    hsn: "",
+    isGstApplicable: true,
     variants: [{ attr: "Standard", finish: "Natural", price: 0, weight: 500, stock: 0 }],
   };
 }
+
+/** GST rate options offered in the product form; `null` = non-GST product. */
+const GST_RATES: { label: string; value: number | null }[] = [
+  { label: "Non-GST", value: null },
+  { label: "0%", value: 0 },
+  { label: "5%", value: 5 },
+  { label: "12%", value: 12 },
+  { label: "18%", value: 18 },
+  { label: "28%", value: 28 },
+];
 
 export function ProductModal({ product, onClose }: { product: InvProduct | null; onClose: () => void }) {
   const addProduct = usePOS((s) => s.addProduct);
@@ -48,7 +61,12 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   };
 
   const save = () => {
-    const clean: InvProduct = { ...draft, name: draft.name.trim() || "Untitled product", basePrice: Number(draft.basePrice) || 0 };
+    const clean: InvProduct = {
+      ...draft,
+      name: draft.name.trim() || "Untitled product",
+      basePrice: Number(draft.basePrice) || 0,
+      isGstApplicable: draft.gstRate != null,
+    };
     if (isNew) addProduct(clean);
     else updateProduct(clean.id, clean);
     onClose();
@@ -117,6 +135,34 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
               <p className="mb-2 mt-4 text-sm font-bold text-ink-900">Inventory Alerts</p>
               <label className={label}>Low-stock alert at</label>
               <input type="number" value={draft.lowStockAt} onChange={(e) => set({ lowStockAt: Number(e.target.value) })} className={field} />
+
+              <p className="mb-2 mt-4 text-sm font-bold text-ink-900">Tax (GST)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={label}>Default GST Rate</label>
+                  <select
+                    value={draft.gstRate == null ? "none" : String(draft.gstRate)}
+                    onChange={(e) => {
+                      const v = e.target.value === "none" ? null : Number(e.target.value);
+                      set({ gstRate: v, isGstApplicable: v != null });
+                    }}
+                    className={field}
+                  >
+                    {GST_RATES.map((g) => (
+                      <option key={g.label} value={g.value == null ? "none" : String(g.value)}>{g.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={label}>HSN / SAC Code</label>
+                  <input value={draft.hsn ?? ""} onChange={(e) => set({ hsn: e.target.value })} className={field} placeholder="e.g. 9207" />
+                </div>
+              </div>
+              <p className="mt-1.5 text-[11px] text-ink-400">
+                {draft.gstRate == null
+                  ? "Non-GST — never taxed, even on a GST bill."
+                  : "Default rate at the POS; editable per line when billing."}
+              </p>
             </div>
           </div>
 

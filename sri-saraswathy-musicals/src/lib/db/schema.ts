@@ -37,6 +37,9 @@ export const products = pgTable("products", {
   mrp: integer("mrp").notNull(),
   gstRate: integer("gst_rate").notNull(),
   hsn: text("hsn").notNull(),
+  /** `false` marks a non-GST storefront product (kept alongside the required
+   *  `gstRate` so existing checkout pricing is untouched — filters read this). */
+  isGstApplicable: boolean("is_gst_applicable").notNull().default(true),
   stock: integer("stock").notNull().default(0),
   rating: doublePrecision("rating").notNull().default(0),
   reviews: integer("reviews").notNull().default(0),
@@ -168,7 +171,10 @@ export const posBills = pgTable("pos_bills", {
   source: text("source").notNull(),
   branch: text("branch").notNull(),
   items: jsonb("items")
-    .$type<{ name: string; price: number; qty: number }[]>()
+    // `gstRate` is the rate (%) snapshotted onto the line at bill time — so a
+    // later change to the product's default rate never rewrites history. `null`
+    // / absent means the line was billed as non-GST.
+    .$type<{ name: string; price: number; qty: number; gstRate?: number | null; hsn?: string }[]>()
     .notNull()
     .default([]),
   subtotal: integer("subtotal").notNull().default(0),
@@ -176,6 +182,13 @@ export const posBills = pgTable("pos_bills", {
   discount: integer("discount").notNull().default(0),
   delivery: integer("delivery").notNull().default(0),
   total: integer("total").notNull().default(0),
+  /** Whether this bill was raised as a GST tax invoice (vs a plain bill). */
+  gstEnabled: boolean("gst_enabled").notNull().default(false),
+  /** GST-inclusive breakup — taxable value and the tax split it contains. */
+  taxable: integer("taxable").notNull().default(0),
+  cgst: integer("cgst").notNull().default(0),
+  sgst: integer("sgst").notNull().default(0),
+  gst: integer("gst").notNull().default(0),
   status: text("status").notNull(),
   payment: text("payment"),
 });
@@ -194,6 +207,18 @@ export const inventoryProducts = pgTable("inventory_products", {
   discountLabel: text("discount_label"),
   newArrival: boolean("new_arrival").notNull().default(false),
   lowStockAt: integer("low_stock_at").notNull().default(4),
+  /**
+   * Default GST rate (%) applied when this product is billed as a GST sale.
+   * `null` means the product is **non-GST** — it is never taxed, even on a GST
+   * bill. The rate is only a default: it can be overridden per line at the POS.
+   * Defaults to 18 so existing/seeded stock is taxable out of the box; mark a
+   * product Non-GST (null) in the product form to exempt it.
+   */
+  gstRate: integer("gst_rate").default(18),
+  /** HSN/SAC code for the GST tax invoice (optional; blank until filled in). */
+  hsn: text("hsn").notNull().default(""),
+  /** Derived convenience flag for filters — `true` when `gstRate` is set. */
+  isGstApplicable: boolean("is_gst_applicable").notNull().default(true),
   variants: jsonb("variants")
     .$type<
       { attr: string; finish: string; price: number; weight: number; stock: number; disabled?: boolean }[]

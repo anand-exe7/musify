@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
       email: user.email,
       name: user.name,
       isAdmin: user.isAdmin,
+      branch: user.branch === "Branch 1" || user.branch === "Branch 2" ? user.branch : null,
       avatar: user.avatar ?? null,
     });
 
