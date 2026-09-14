@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Bill } from "@/lib/store/pos";
 import type { Order, Product } from "@/types";
 import { useProducts } from "@/lib/client/catalog";
+import { grossTotal, balanceDue, isFixed, type RepairTicket } from "@/lib/store/repair";
 
 /**
  * A unified sale row that flattens both storefront web orders and POS bills into
@@ -43,26 +44,76 @@ export function orderToBill(order: Order, productById?: Map<string, Product>): U
 }
 
 /**
- * Hydrate the admin combined sales feed: /api/orders (web) + /api/pos/bills
- * (in-store), merged newest-first. Both endpoints already require admin.
+ * A repair ticket earns revenue once the work is done (ready/completed) or once
+ * an invoice has been raised for it — cancelled tickets and zero-charge tickets
+ * never count.
  */
-export function useAllSales(): { sales: UnifiedBill[]; loading: boolean } {
+export function isServiceRevenue(t: RepairTicket): boolean {
+  if (t.status === "cancelled") return false;
+  if (grossTotal(t) <= 0) return false;
+  return isFixed(t.status) || Boolean(t.invoiceNo);
+}
+
+/**
+ * Flatten a repair ticket into the unified sale shape as a third channel,
+ * "service". The GST-inclusive service charge (`grossTotal`) is the sale value,
+ * dated by completion so it lands in the right period on the revenue trend.
+ */
+export function ticketToBill(t: RepairTicket): UnifiedBill {
+  const gross = grossTotal(t);
+  return {
+    id: t.id,
+    createdAt: t.completedAt || t.updatedAt || t.createdAt,
+    customerName: t.customerName || "Service customer",
+    phone: t.phone || "",
+    source: "service",
+    branch: t.branch,
+    items: [{ name: `Repair — ${t.productName}`, price: gross, qty: 1 }],
+    subtotal: gross,
+    discount: 0,
+    delivery: 0,
+    total: gross,
+    status: "completed",
+    payment: balanceDue(t) <= 0 ? "Paid" : "Balance due",
+  };
+}
+
+/**
+ * Hydrate the admin combined sales feed: /api/orders (web) + /api/pos/bills
+ * (in-store) + /api/repair (service), merged newest-first. Order & POS
+ * endpoints require admin; repair is best-effort so a repair outage never hides
+ * product sales.
+ */
+export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: boolean } {
   const [orders, setOrders] = useState<Order[]>([]);
   const [posBills, setPosBills] = useState<Bill[]>([]);
+  const [tickets, setTickets] = useState<RepairTicket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const { products } = useProducts();
 
   useEffect(() => {
     let alive = true;
+    // Reject on a failed response so the caller can tell "offline / server
+    // unreachable" apart from a genuinely empty ledger. Repair is best-effort
+    // (its own catch), so a repair outage never trips the offline state.
     Promise.all([
-      fetch("/api/orders").then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch("/api/pos/bills").then((r) => (r.ok ? r.json() : [])).catch(() => []),
-    ]).then(([o, b]) => {
-      if (!alive) return;
-      setOrders(Array.isArray(o) ? o : []);
-      setPosBills(Array.isArray(b) ? b : []);
-      setLoading(false);
-    });
+      fetch("/api/orders").then((r) => { if (!r.ok) throw new Error("orders"); return r.json(); }),
+      fetch("/api/pos/bills").then((r) => { if (!r.ok) throw new Error("bills"); return r.json(); }),
+      fetch("/api/repair").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+    ])
+      .then(([o, b, t]) => {
+        if (!alive) return;
+        setOrders(Array.isArray(o) ? o : []);
+        setPosBills(Array.isArray(b) ? b : []);
+        setTickets(Array.isArray(t) ? t : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setError(true);
+        setLoading(false);
+      });
     return () => {
       alive = false;
     };
@@ -71,10 +122,11 @@ export function useAllSales(): { sales: UnifiedBill[]; loading: boolean } {
   const sales = useMemo(() => {
     const byId = new Map(products.map((p) => [p.id, p]));
     const webBills: UnifiedBill[] = orders.map((o) => orderToBill(o, byId));
-    return [...webBills, ...posBills].sort(
+    const serviceBills: UnifiedBill[] = tickets.filter(isServiceRevenue).map(ticketToBill);
+    return [...webBills, ...posBills, ...serviceBills].sort(
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     );
-  }, [orders, posBills, products]);
+  }, [orders, posBills, tickets, products]);
 
-  return { sales, loading };
+  return { sales, loading, error };
 }

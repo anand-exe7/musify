@@ -6,7 +6,7 @@ import { genDocId } from "@/lib/ids";
 
 export type Branch = "Branch 1" | "Branch 2";
 export type BranchFilter = Branch | "all";
-export type Source = "offline" | "online";
+export type Source = "offline" | "online" | "service";
 
 export interface BillItem {
   name: string;

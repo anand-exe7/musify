@@ -3,36 +3,27 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { MapPin, Phone, ArrowRight, Clock, Navigation } from "lucide-react";
 import { useState } from "react";
+import { BUSINESS, type BranchInfo } from "@/lib/data/business";
 
-const branches = [
-  {
-    id: "chennai",
-    city: "Chennai",
-    branch: "Mylapore",
-    street: "14 Kutchery Road, Mylapore",
-    zip: "Chennai 600004",
-    hours: "Mon — Sat · 10:00 to 20:00",
-    phone: "+91 44 2464 1234",
-    // Google Maps embed for Kutchery Road, Mylapore
-    map: "https://www.google.com/maps?q=Kutchery+Road+Mylapore+Chennai&output=embed",
-    directions: "https://www.google.com/maps/dir/?api=1&destination=Kutchery+Road+Mylapore+Chennai",
-  },
-  {
-    id: "bengaluru",
-    city: "Bengaluru",
-    branch: "Basavanagudi",
-    street: "62 Gandhi Bazaar Main Road",
-    zip: "Bengaluru 560004",
-    hours: "Tue — Sun · 10:30 to 20:30",
-    phone: "+91 80 2661 5678",
-    map: "https://www.google.com/maps?q=Gandhi+Bazaar+Basavanagudi+Bengaluru&output=embed",
-    directions:
-      "https://www.google.com/maps/dir/?api=1&destination=Gandhi+Bazaar+Basavanagudi+Bengaluru",
-  },
-];
+function embedUrl(b: BranchInfo): string {
+  const q = encodeURIComponent(`${b.street}, ${b.area}, ${b.zip}`);
+  return `https://www.google.com/maps?q=${q}&output=embed`;
+}
+
+const branches = BUSINESS.branches.map((b) => ({
+  id: b.area.toLowerCase(),
+  city: b.city,
+  branch: b.area,
+  street: `${b.street}, ${b.area}`,
+  zip: b.zip,
+  hours: b.hours,
+  phone: b.phone,
+  map: embedUrl(b),
+  directions: b.maps,
+}));
 
 export function Visit() {
-  const [active, setActive] = useState<string>("chennai");
+  const [active, setActive] = useState<string>(branches[0].id);
   const activeBranch = branches.find((b) => b.id === active)!;
 
   return (

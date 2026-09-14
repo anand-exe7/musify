@@ -12,7 +12,7 @@ import {
   type RepairStatus, type RepairPriority, type RepairTicket,
 } from "@/lib/store/repair";
 import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/RepairTicketModal";
-import { BUSINESS, waLink } from "@/lib/data/business";
+import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
 
 function toDateInput(iso?: string) {
@@ -46,6 +46,7 @@ function statusUpdateMessage(t: RepairTicket): string {
     `📋 Status: ${sm.label}\n` +
     `📅 Ready by: ${fmtDate(t.deadline)}\n` +
     (chargeBase(t) > 0 ? `💰 Charge: ${formatINR(grossTotal(t))} (incl GST)${bal > 0 ? `\nBalance due: ${formatINR(bal)}` : "\nFully paid ✅"}\n` : "") +
+    `\n📄 Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n` +
     `\nQuestions? Reply here or call ${BUSINESS.branches[0].phone}`
   );
 }

@@ -252,7 +252,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                   <p><strong className="text-ink-900">White-glove delivery</strong> — free across India for orders above ₹5,000. International rates on request.</p>
                   <p><strong className="text-ink-900">Set-up included</strong> — every instrument leaves the atelier tuned and ready to play.</p>
                   <p><strong className="text-ink-900">Insured in transit</strong> — each piece is packed and couriered fully insured to your door.</p>
-                  <p><strong className="text-ink-900">Support</strong> — visit us in Chennai or Bengaluru for a hands-on fitting any time.</p>
+                  <p><strong className="text-ink-900">Support</strong> — visit us at our Vadapalani or Porur branch for a hands-on fitting any time.</p>
                 </div>
               )}
           </motion.div>

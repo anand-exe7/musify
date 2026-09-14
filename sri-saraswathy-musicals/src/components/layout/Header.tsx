@@ -10,6 +10,7 @@ import { useCart } from "@/lib/store/cart";
 import { useAuth } from "@/lib/store/auth";
 import { useCategories, useProducts } from "@/lib/client/catalog";
 import { cn } from "@/lib/utils";
+import { BUSINESS } from "@/lib/data/business";
 
 interface NavItem {
   href: string;
@@ -341,7 +342,7 @@ export function Header() {
             </div>
             <div className="mt-auto p-6 text-xs uppercase tracking-[0.24em] text-ink-400">
               <p>Sri Saraswathy Musicals</p>
-              <p>Chennai · Bengaluru · Est. 1978</p>
+              <p>{BUSINESS.branches[0].area} · {BUSINESS.branches[1].area} · Est. 1978</p>
             </div>
           </motion.div>
         )}

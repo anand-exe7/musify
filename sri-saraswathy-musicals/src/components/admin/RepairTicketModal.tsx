@@ -10,7 +10,7 @@ import {
   type RepairPriority,
 } from "@/lib/store/repair";
 import type { Branch } from "@/lib/store/pos";
-import { BUSINESS, waLink } from "@/lib/data/business";
+import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
 
 /** Date input helper — ISO ⇄ yyyy-mm-dd */
@@ -67,6 +67,7 @@ export function repairIntakeMessage(t: RepairTicket): string {
     `🛠 Reported issue: ${t.problem}\n\n` +
     `💰 Estimate: ${formatINR(t.estimate)}${t.advance > 0 ? `\nAdvance paid: ${formatINR(t.advance)}\nBalance (approx): ${formatINR(balance)}` : ""}\n` +
     `📅 Ready by: ${fmtDeadline(t.deadline)}\n\n` +
+    `📄 Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n\n` +
     `We'll keep you posted. Reply here for any questions.\n${BUSINESS.branches[0].phone}`
   );
 }

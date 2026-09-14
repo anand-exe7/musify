@@ -155,8 +155,9 @@ export default function InquiryPage() {
                   <label className={label}>Preferred Branch</label>
                   <select value={form.branch} onChange={(e) => set({ branch: e.target.value as typeof form.branch })} className={field}>
                     <option value="Any">Any branch</option>
-                    <option value="Branch 1">Chennai · Mylapore</option>
-                    <option value="Branch 2">Bengaluru · Basavanagudi</option>
+                    {BUSINESS.branches.map((b) => (
+                      <option key={b.key} value={b.key}>{b.city} · {b.area}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

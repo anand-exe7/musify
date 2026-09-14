@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
+import { BUSINESS } from "@/lib/data/business";
 
 const cols = [
   {
@@ -46,8 +47,9 @@ export function Footer() {
               Instruments, set up by hand, delivered by the people who set them up. Since 1978.
             </p>
             <div className="mt-6 space-y-2 text-xs uppercase tracking-[0.2em] text-ivory-100/50">
-              <p>Chennai · Mylapore</p>
-              <p>Bengaluru · Basavanagudi</p>
+              {BUSINESS.branches.map((b) => (
+                <p key={b.key}>{b.city} · {b.area}</p>
+              ))}
             </div>
           </div>
 

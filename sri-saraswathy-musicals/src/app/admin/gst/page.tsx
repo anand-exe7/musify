@@ -1,11 +1,14 @@
 "use client";
-import { useMemo, useState } from "react";
-import { Receipt, Save, RotateCcw, MapPin, ArrowLeftRight, Building2, Info } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Receipt, Save, RotateCcw, MapPin, ArrowLeftRight, Building2, Info, FileText, ArrowRight } from "lucide-react";
 import { useGst, extractGst, IN_STATES } from "@/lib/store/gst";
 import { usePOS, filterBills, type Period, type BranchFilter } from "@/lib/store/pos";
+import { buildGstr1, MONTHS, type Period as ReportRange } from "@/lib/gst/report";
+import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 
-type Tab = "rules" | "collections";
+type Tab = "rules" | "collections" | "returns";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "all", label: "All Time" },
@@ -62,16 +65,18 @@ export default function GstPage() {
 
       {/* Tabs */}
       <div className="mb-6 flex gap-6 border-b border-ink-100">
-        {(["rules", "collections"] as Tab[]).map((t) => (
+        {(["rules", "collections", "returns"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={cn("relative -mb-px border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors",
               tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
-            {t === "rules" ? "Tax Rules" : "GST Collections"}
+            {t === "rules" ? "Tax Rules" : t === "collections" ? "GST Collections" : "Returns"}
           </button>
         ))}
       </div>
 
-      {tab === "rules" ? (
+      {tab === "returns" ? (
+        <ReturnsTab rate={gst.standardRate} homeState={gst.homeState} />
+      ) : tab === "rules" ? (
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           {/* Config */}
           <Card>
@@ -247,4 +252,134 @@ function CollectionsTab({ bills, rate, labels }: { bills: ReturnType<typeof useP
       </Card>
     </div>
   );
+}
+
+/* ─────────────────────────  Returns (GSTR-1 / 3B)  ───────────────────────── */
+
+function ReturnsTab({ rate, homeState }: { rate: number; homeState: string }) {
+  const now = new Date();
+  const [fromY, setFromY] = useState(now.getFullYear());
+  const [fromM, setFromM] = useState(now.getMonth());
+  const [toY, setToY] = useState(now.getFullYear());
+  const [toM, setToM] = useState(now.getMonth());
+
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/invoices")
+      .then((r) => { if (!r.ok) throw new Error("invoices"); return r.json(); })
+      .then((d) => { if (!alive) return; setInvoices(Array.isArray(d) ? d : []); setStatus("ready"); })
+      .catch(() => { if (alive) setStatus("error"); });
+    return () => { alive = false; };
+  }, []);
+
+  const range: ReportRange = { fromYear: fromY, fromMonth: fromM, toYear: toY, toMonth: toM };
+  const g1 = useMemo(
+    () => buildGstr1(invoices, range, { standardRate: rate, homeState }),
+    [invoices, fromY, fromM, toY, toM, rate, homeState],
+  );
+
+  const years = Array.from({ length: 6 }, (_, i) => now.getFullYear() - 4 + i);
+  const qs = new URLSearchParams({ fy: String(fromY), fm: String(fromM), ty: String(toY), tm: String(toM) });
+  const link = (type: "gstr1" | "gstr3b") => `/admin/gst/report?type=${type}&${qs.toString()}`;
+
+  const field = "rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
+  const lbl = "mb-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
+
+  return (
+    <div className="space-y-6">
+      {/* Period picker */}
+      <Card>
+        <p className="mb-4 flex items-center gap-2 text-sm font-bold text-ink-900"><FileText className="h-4 w-4 text-gold-600" /> Return period</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <span className={lbl}>From</span>
+            <div className="flex gap-2">
+              <select value={fromM} onChange={(e) => setFromM(Number(e.target.value))} className={field}>
+                {MONTHS.map((mo, i) => <option key={mo} value={i}>{mo}</option>)}
+              </select>
+              <select value={fromY} onChange={(e) => setFromY(Number(e.target.value))} className={field}>
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <span className={lbl}>To</span>
+            <div className="flex gap-2">
+              <select value={toM} onChange={(e) => setToM(Number(e.target.value))} className={field}>
+                {MONTHS.map((mo, i) => <option key={mo} value={i}>{mo}</option>)}
+              </select>
+              <select value={toY} onChange={(e) => setToY(Number(e.target.value))} className={field}>
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] text-ink-400">Returns cover the whole GSTIN across both branches. Figures come from the invoice ledger; tax is extracted from GST-inclusive invoice values.</p>
+      </Card>
+
+      {/* Summary */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Invoices in period</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{status === "ready" ? g1.sales.length : status === "loading" ? "…" : "—"}</p>
+          <p className="mt-1 text-xs text-ink-400">Outward supplies</p>
+        </Card>
+        <Card>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Taxable value</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{status === "ready" ? formatINR(g1.totals.taxableValue) : status === "loading" ? "…" : "—"}</p>
+          <p className="mt-1 text-xs text-ink-400">Net of GST</p>
+        </Card>
+        <Card>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Tax payable</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-gold-600 md:text-3xl">{status === "ready" ? formatINR(g1.totals.integratedTax + g1.totals.centralTax + g1.totals.stateTax) : status === "loading" ? "…" : "—"}</p>
+          <p className="mt-1 text-xs text-ink-400">IGST + CGST + SGST</p>
+        </Card>
+      </div>
+
+      {/* Export cards */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <ReturnCard
+          title="GSTR-1"
+          desc="Outward supplies — invoice-wise sales & sale returns."
+          href={link("gstr1")}
+          disabled={status !== "ready"}
+        />
+        <ReturnCard
+          title="GSTR-3B"
+          desc="Summary return — outward supplies, ITC & exempt supplies."
+          href={link("gstr3b")}
+          disabled={status !== "ready"}
+        />
+      </div>
+
+      {status === "error" && (
+        <p className="text-center text-xs text-danger">Couldn&apos;t reach the server to load the ledger.</p>
+      )}
+    </div>
+  );
+}
+
+function ReturnCard({ title, desc, href, disabled }: { title: string; desc: string; href: string; disabled: boolean }) {
+  const body = (
+    <div className={cn(
+      "group flex items-center justify-between rounded-2xl border border-ink-100 bg-ivory-50 p-5 transition-all",
+      disabled ? "opacity-50" : "hover:border-gold-400 hover:shadow-card",
+    )}>
+      <div className="flex items-center gap-4">
+        <div className="grid h-11 w-11 place-items-center rounded-xl bg-ink-900 text-ivory-50"><FileText className="h-5 w-5" /></div>
+        <div>
+          <p className="text-base font-bold text-ink-900">{title}</p>
+          <p className="mt-0.5 text-xs text-ink-500">{desc}</p>
+        </div>
+      </div>
+      <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gold-600">
+        Open <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </div>
+  );
+  if (disabled) return <div aria-disabled>{body}</div>;
+  return <Link href={href} target="_blank" rel="noopener noreferrer">{body}</Link>;
 }

@@ -1,9 +1,10 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePOS } from "@/lib/store/pos";
 import { inPeriod, type Period, type Source } from "@/lib/store/pos";
 import { useAllSales } from "@/lib/client/sales";
+import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { ShoppingCart, Trash2, Download, ExternalLink, Eye } from "lucide-react";
 
@@ -15,6 +16,25 @@ function fmtDate(iso: string) {
 export default function OrdersPage() {
   const { sales, loading } = useAllSales();
   const deleteBill = usePOS((s) => s.deleteBill);
+
+  // Tax invoices keyed by the order/bill/ticket id they were raised for, so each
+  // row can show its sequential GST number and link straight to it.
+  const [invByRef, setInvByRef] = useState<Record<string, Invoice>>({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/invoices")
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => [])
+      .then((data: Invoice[]) => {
+        if (!alive || !Array.isArray(data)) return;
+        const m: Record<string, Invoice> = {};
+        for (const inv of data) if (inv.refId) m[inv.refId] = inv;
+        setInvByRef(m);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const [type, setType] = useState<Source | "all">("all");
   const [date, setDate] = useState<Period>("all");
@@ -89,7 +109,7 @@ export default function OrdersPage() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-12 text-[10px] font-bold uppercase tracking-wider text-ink-400">Type</span>
-              {([["all", "All Orders"], ["offline", "In-store (POS)"], ["online", "Online"]] as const).map(([k, l]) => (
+              {([["all", "All Orders"], ["offline", "In-store (POS)"], ["online", "Online"], ["service", "Service"]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setType(k)} className={chip(type === k)}>{l}</button>
               ))}
             </div>
@@ -132,7 +152,7 @@ export default function OrdersPage() {
         <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-              <th className="px-5 py-4">Order</th><th>Customer</th><th>Phone</th><th>Type</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="px-5 text-right">Actions</th>
+              <th className="px-5 py-4">Order</th><th>Customer</th><th>Phone</th><th>Type</th><th>Tax Invoice</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="px-5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-50">
@@ -141,7 +161,16 @@ export default function OrdersPage() {
                 <td className="px-5 py-4"><span className="inline-flex items-center gap-1 font-semibold text-ink-900">{b.id.toUpperCase()}</span></td>
                 <td className="font-medium">{b.customerName}</td>
                 <td className="text-ink-600">{b.phone || "—"}</td>
-                <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", b.source === "online" ? "bg-success/15 text-success" : "bg-gold-100 text-gold-700")}>{b.source === "online" ? "Online" : "In-store"}</span></td>
+                <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", b.source === "online" ? "bg-success/15 text-success" : b.source === "service" ? "bg-[#8B5CF6]/15 text-[#6D28D9]" : "bg-gold-100 text-gold-700")}>{b.source === "online" ? "Online" : b.source === "service" ? "Service" : "In-store"}</span></td>
+                <td>
+                  {invByRef[b.id] ? (
+                    <Link href={`/admin/invoices/${invByRef[b.id].id}`} target="_blank" title="Open GST tax invoice" className="inline-flex items-center gap-1 font-semibold text-gold-600 hover:text-gold-700">
+                      {invByRef[b.id].number} <ExternalLink className="h-3 w-3 text-ink-300" />
+                    </Link>
+                  ) : (
+                    <span className="text-ink-300">—</span>
+                  )}
+                </td>
                 <td className="text-gold-600">{b.coupon || "—"}</td>
                 <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
                 <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
@@ -151,12 +180,12 @@ export default function OrdersPage() {
                 <td className="px-5">
                   <div className="flex items-center justify-end gap-1">
                     <Link
-                      href={`/invoice/${b.id}`}
+                      href={b.source === "service" ? `/invoice/service/${b.id}` : `/invoice/${b.id}`}
                       target="_blank"
-                      title="View order bill"
+                      title={b.source === "service" ? "View service invoice" : "View order bill"}
                       className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600"
                     >
-                      <Eye className="h-3.5 w-3.5" /> Bill <ExternalLink className="h-3 w-3 text-ink-300" />
+                      <Eye className="h-3.5 w-3.5" /> {b.source === "service" ? "Invoice" : "Bill"} <ExternalLink className="h-3 w-3 text-ink-300" />
                     </Link>
                     {b.source === "offline" && (
                       <button onClick={() => setConfirmId(b.id)} title="Delete POS bill" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
@@ -168,7 +197,7 @@ export default function OrdersPage() {
               </tr>
             ))}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={11} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
+              <tr><td colSpan={12} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
             )}
           </tbody>
         </table>

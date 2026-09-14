@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { usePOS, filterBills, productStock, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
 import { useAllSales } from "@/lib/client/sales";
 import { useGst, extractGst } from "@/lib/store/gst";
+import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -37,7 +38,7 @@ function Stat({ label, value, hint, accent }: { label: string; value: string; hi
 }
 
 export default function AnalyticsPage() {
-  const { sales: bills } = useAllSales();
+  const { sales: bills, loading, error } = useAllSales();
   const invProducts = usePOS((s) => s.invProducts);
   const coupons = usePOS((s) => s.coupons);
   const gstRate = useGst((s) => s.standardRate);
@@ -68,6 +69,7 @@ export default function AnalyticsPage() {
     const gstCollected = scoped.reduce((n, b) => n + gstOf(billGoods(b)), 0);
     const offline = scoped.filter((b) => b.source === "offline");
     const online = scoped.filter((b) => b.source === "online");
+    const service = scoped.filter((b) => b.source === "service");
     const items = scoped.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
     const revByItem = new Map<string, number>();
     const qtyByItem = new Map<string, number>();
@@ -82,8 +84,10 @@ export default function AnalyticsPage() {
       count: scoped.length,
       offlineRev: offline.reduce((n, b) => n + netOf(billGoods(b)), 0),
       onlineRev: online.reduce((n, b) => n + netOf(billGoods(b)), 0),
+      serviceRev: service.reduce((n, b) => n + netOf(billGoods(b)), 0),
       offlineCount: offline.length,
       onlineCount: online.length,
+      serviceCount: service.length,
       items,
       aov: scoped.length ? Math.round(totalRevenue / scoped.length) : 0,
       topProduct: topItems[0]?.[0] ?? "—",
@@ -104,6 +108,24 @@ export default function AnalyticsPage() {
   const yearTotal = monthly.reduce((a, b) => a + b, 0);
 
   const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
+
+  // Until the sales feed resolves, show a loading (or offline) panel rather than
+  // a wall of ₹0 stats that reads like the business has no sales.
+  if (loading || error) {
+    return (
+      <div className="p-5 md:p-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-ink-900">Analytics</h1>
+          <p className="mt-1 text-sm text-ink-500">Real-time insights across in-store POS and online storefront orders</p>
+        </div>
+        {error ? (
+          <OfflinePanel hint="We couldn't load your sales data. Check your connection and refresh." />
+        ) : (
+          <LoadingPanel label="Loading analytics…" />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="p-5 md:p-8">
@@ -152,9 +174,9 @@ export default function AnalyticsPage() {
       {/* Channel + branch filters */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          {([["all", "All Channels"], ["offline", "In-store (POS)"], ["online", "Online (Storefront)"]] as const).map(([k, label]) => (
+          {([["all", "All Channels"], ["offline", "In-store (POS)"], ["online", "Online (Storefront)"], ["service", "Service (Repairs)"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setChannel(k)} className={cn(pill, channel === k ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
-              {k !== "all" && <span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle", k === "offline" ? "bg-gold-400" : "bg-success")} />}
+              {k !== "all" && <span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle", k === "offline" ? "bg-gold-400" : k === "online" ? "bg-success" : "bg-[#8B5CF6]")} />}
               {label}
             </button>
           ))}
@@ -181,8 +203,8 @@ export default function AnalyticsPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="In-store Net Rev" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
             <Stat label="Online Net Rev" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
+            <Stat label="Service Net Rev" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"}`} />
             <Stat label="Total Items Sold" value={`${m.items} pcs`} />
-            <Stat label="Top Product" value={m.topProduct} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
@@ -211,7 +233,7 @@ export default function AnalyticsPage() {
             <div className="space-y-4">
               <Card>
                 <p className="mb-4 text-sm font-bold text-ink-900">Order Source</p>
-                {([["In-store", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"]] as const).map(([label, rev, cnt, color]) => (
+                {([["In-store", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"], ["Service", m.serviceRev, m.serviceCount, "#8B5CF6"]] as const).map(([label, rev, cnt, color]) => (
                   <div key={label} className="mb-4 last:mb-0">
                     <div className="mb-1 flex items-center justify-between text-xs">
                       <span className="font-semibold uppercase tracking-wider text-ink-500">{label} · {cnt}</span>
@@ -321,7 +343,7 @@ function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: Re
           )}
         </Card>
         <div className="space-y-4">
-          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split <span className="font-normal text-ink-400">(net)</span></p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online"] as const).map((s) => { const r = today.filter((b) => b.source === s).reduce((n, b) => n + extractGst(goods(b), rate).net, 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s}</span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
+          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split <span className="font-normal text-ink-400">(net)</span></p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online", "service"] as const).map((s) => { const r = today.filter((b) => b.source === s).reduce((n, b) => n + extractGst(goods(b), rate).net, 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s}</span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
           <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Top Items</p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No items sold today.</p> : <p className="text-sm text-ink-500">{items} pcs across {today.length} bills</p>}</Card>
         </div>
       </div>

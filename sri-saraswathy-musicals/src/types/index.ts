@@ -74,8 +74,8 @@ export interface Invoice {
   /** cash / card / upi / bank / razorpay / cod — kept open so web + POS methods fit. */
   paymentMode: string;
   status: "paid" | "pending" | "cancelled";
-  /** "web" (storefront), "pos" (counter), or "manual". */
-  source?: "web" | "pos" | "manual";
+  /** "web" (storefront), "pos" (counter), "service" (repair), or "manual". */
+  source?: "web" | "pos" | "service" | "manual";
   /** Link back to the source order/bill id. */
   refId?: string;
 }

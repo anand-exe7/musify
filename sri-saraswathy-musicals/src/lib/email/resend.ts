@@ -41,7 +41,7 @@ async function renderOrderEmail(order: Order): Promise<string> {
       <tr><td style="padding:12px 0;font-weight:bold;border-top:2px solid #111;">Total</td><td style="padding:12px 0;text-align:right;font-weight:bold;border-top:2px solid #111;">${formatINR(order.total)}</td></tr>
     </table>
     <p style="color:#555;margin-top:16px;">${order.address}</p>
-    <p style="color:#999;font-size:12px;margin-top:24px;">Sri Saraswathy Musicals · Chennai · Bengaluru</p>
+    <p style="color:#999;font-size:12px;margin-top:24px;">Sri Saraswathy Musicals · Vadapalani · Porur</p>
   </div>`;
 }
 

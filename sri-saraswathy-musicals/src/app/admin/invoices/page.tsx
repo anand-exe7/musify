@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Search, Globe, Store, ExternalLink } from "lucide-react";
+import { FileText, Search, Globe, Store, Wrench, ExternalLink } from "lucide-react";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 
-type SourceFilter = "all" | "web" | "pos" | "manual";
+type SourceFilter = "all" | "web" | "pos" | "service" | "manual";
 
 function fmtDate(d: string) {
   const date = new Date(d);
@@ -21,23 +21,37 @@ const STATUS_TONE: Record<string, string> = {
 export default function InvoicesLedgerPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [source, setSource] = useState<SourceFilter>("all");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     let alive = true;
+    // Throw on a bad response so a failed fetch reads as "offline", not as an
+    // empty ledger.
     fetch("/api/invoices")
-      .then((r) => (r.ok ? r.json() : []))
-      .catch(() => [])
+      .then((r) => {
+        if (!r.ok) throw new Error("invoices");
+        return r.json();
+      })
       .then((data) => {
         if (!alive) return;
         setInvoices(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setError(true);
         setLoading(false);
       });
     return () => {
       alive = false;
     };
   }, []);
+
+  // While the ledger is loading (or unreachable), the stat tiles show a
+  // placeholder instead of a misleading 0.
+  const stat = (v: string | number) => (loading ? "…" : error ? "—" : String(v));
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,6 +79,7 @@ export default function InvoicesLedgerPage() {
     { key: "all", label: "All" },
     { key: "web", label: "Online" },
     { key: "pos", label: "In-store" },
+    { key: "service", label: "Service" },
     { key: "manual", label: "Manual" },
   ];
 
@@ -82,10 +97,10 @@ export default function InvoicesLedgerPage() {
 
       {/* Stats */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Invoices" value={String(stats.count)} />
-        <Stat label="Total billed" value={formatINR(stats.total)} />
-        <Stat label="Online" value={String(stats.web)} />
-        <Stat label="In-store" value={String(stats.pos)} />
+        <Stat label="Invoices" value={stat(stats.count)} />
+        <Stat label="Total billed" value={loading ? "…" : error ? "—" : formatINR(stats.total)} />
+        <Stat label="Online" value={stat(stats.web)} />
+        <Stat label="In-store" value={stat(stats.pos)} />
       </div>
 
       {/* Controls */}
@@ -134,6 +149,13 @@ export default function InvoicesLedgerPage() {
           <tbody>
             {loading ? (
               <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">Loading ledger…</td></tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={9} className="px-4 py-16 text-center">
+                  <span className="block text-sm font-bold text-ink-900">You appear to be offline</span>
+                  <span className="mt-1 block text-xs text-ink-500">We couldn&apos;t reach the server. Check your connection and try again.</span>
+                </td>
+              </tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">No invoices yet.</td></tr>
             ) : (
@@ -146,10 +168,10 @@ export default function InvoicesLedgerPage() {
                   <td className="px-4 py-3">
                     <span className={cn(
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                      v.source === "web" ? "bg-info/10 text-info" : v.source === "pos" ? "bg-gold-100 text-gold-700" : "bg-ink-100 text-ink-600",
+                      v.source === "web" ? "bg-info/10 text-info" : v.source === "pos" ? "bg-gold-100 text-gold-700" : v.source === "service" ? "bg-[#8B5CF6]/15 text-[#6D28D9]" : "bg-ink-100 text-ink-600",
                     )}>
-                      {v.source === "web" ? <Globe className="h-3 w-3" /> : v.source === "pos" ? <Store className="h-3 w-3" /> : null}
-                      {v.source === "web" ? "Online" : v.source === "pos" ? "In-store" : "Manual"}
+                      {v.source === "web" ? <Globe className="h-3 w-3" /> : v.source === "pos" ? <Store className="h-3 w-3" /> : v.source === "service" ? <Wrench className="h-3 w-3" /> : null}
+                      {v.source === "web" ? "Online" : v.source === "pos" ? "In-store" : v.source === "service" ? "Service" : "Manual"}
                     </span>
                   </td>
                   <td className="px-4 py-3 uppercase text-ink-600">{v.paymentMode}</td>

@@ -7,23 +7,44 @@
  * Both recorders are best-effort: a failure here is logged but never bubbles up
  * to fail the underlying sale.
  */
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db, invoices } from "@/lib/db";
+import { counters } from "@/lib/db/schema";
+import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
 import { getAllProducts } from "@/lib/db/queries/products";
 import { getGstSettings } from "@/lib/db/queries/settings";
-import { genDocId } from "@/lib/ids";
 import type { Order, Invoice } from "@/types";
 import type { Bill } from "@/lib/store/pos";
+import type { RepairTicket } from "@/lib/store/repair";
 
-/** Generate the next sales-invoice number, e.g. `INV-2026-7QK3M`. Checks the
- *  DB for a free code before returning it, retrying on the rare clash. */
-async function nextInvoiceNumber(): Promise<string> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const candidate = genDocId("INV");
-    const [existing] = await db.select({ id: invoices.id }).from(invoices).where(eq(invoices.id, candidate)).limit(1);
-    if (!existing) return candidate;
-  }
-  throw new Error("Could not generate a unique invoice number");
+/**
+ * Indian financial year label for a date, e.g. 2026-09-14 → "2026-27". The FY
+ * runs 1 April → 31 March, so Jan–Mar belong to the year that started the
+ * previous April. Used to scope the invoice series so it resets each FY.
+ */
+function financialYear(iso: string): string {
+  const d = new Date(iso);
+  const y = Number.isNaN(d.getTime()) ? new Date().getFullYear() : d.getFullYear();
+  const m = Number.isNaN(d.getTime()) ? new Date().getMonth() : d.getMonth(); // 0 = Jan
+  const start = m >= 3 ? y : y - 1; // April (index 3) starts the FY
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
+
+/**
+ * Next sequential GST tax-invoice number, e.g. `SSM/2026-27/0001`. The per-FY
+ * counter is bumped atomically in a single upsert, so concurrent sales never
+ * collide or skip. Stays within GST's 16-character limit for 4-digit runs.
+ */
+async function nextInvoiceNumber(dateIso: string): Promise<string> {
+  const fy = financialYear(dateIso);
+  const key = `invoice:${fy}`;
+  const [r] = await db
+    .insert(counters)
+    .values({ key, value: 1 })
+    .onConflictDoUpdate({ target: counters.key, set: { value: sql`${counters.value} + 1` } })
+    .returning({ value: counters.value });
+  const seq = r?.value ?? 1;
+  return `SSM/${fy}/${String(seq).padStart(4, "0")}`;
 }
 
 async function insertInvoice(inv: Invoice): Promise<void> {
@@ -33,6 +54,8 @@ async function insertInvoice(inv: Invoice): Promise<void> {
 /** Write a GST invoice row for a completed web order. */
 export async function recordOrderInvoice(order: Order): Promise<void> {
   try {
+    // One tax invoice per source order — never mint a second number on a retry.
+    if (await getInvoiceByRefId(order.id)) return;
     const [products, gstCfg] = await Promise.all([getAllProducts(), getGstSettings()]);
     const byId = new Map(products.map((p) => [p.id, p]));
     const intra =
@@ -62,9 +85,9 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
       };
     });
 
-    const number = await nextInvoiceNumber();
+    const number = await nextInvoiceNumber(order.date);
     await insertInvoice({
-      id: number,
+      id: order.id,
       number,
       date: order.date,
       customer: order.customerName || "Online customer",
@@ -88,11 +111,12 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
 /** Write a GST invoice row for an in-store POS bill (retail prices are treated
  *  as GST-inclusive; the tax is extracted from the grand total).
  *
- *  Reuses the bill's own id as the invoice number — that id is already what's
- *  printed on the receipt and sent to the customer over WhatsApp, so the
- *  ledger must record the same number rather than minting a second one. */
+ *  The bill's own random id (shown to the customer on the receipt) stays the
+ *  invoice's `refId`/`id`; the GST `number` is a separate sequential series
+ *  that is never shown to the customer. */
 export async function recordBillInvoice(bill: Bill): Promise<void> {
   try {
+    if (await getInvoiceByRefId(bill.id)) return;
     const gstCfg = await getGstSettings();
     const rate = gstCfg.standardRate;
     const gstTotal = Math.round((bill.total * rate) / (100 + rate));
@@ -106,9 +130,10 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       amount: i.price * i.qty,
     }));
 
+    const number = await nextInvoiceNumber(bill.createdAt);
     await insertInvoice({
       id: bill.id,
-      number: bill.id,
+      number,
       date: bill.createdAt,
       customer: bill.customerName || "Walk-in",
       branch: bill.branch,
@@ -125,5 +150,50 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
     });
   } catch (err) {
     console.error("[ledger] recordBillInvoice failed:", err);
+  }
+}
+
+/**
+ * Write a GST tax invoice for a repair once it is billable — i.e. the work is
+ * ready/completed or an invoice has been raised for it, and there is a charge.
+ * The service charge is pre-GST; tax is added on top (SAC 9954, intra-state as
+ * both branches are in Tamil Nadu). Idempotent per ticket, so it can be called
+ * on every repair update and only ever mints one number.
+ */
+export async function recordServiceInvoice(t: RepairTicket): Promise<void> {
+  try {
+    if (t.status === "cancelled") return;
+    const base = t.finalCost > 0 ? t.finalCost : t.estimate;
+    if (base <= 0) return;
+    const billable = t.status === "ready" || t.status === "completed" || Boolean(t.invoiceNo);
+    if (!billable) return;
+    if (await getInvoiceByRefId(t.id)) return;
+
+    const rate = t.gstRate || 0;
+    const total = Math.round(base * (1 + rate / 100));
+    const gst = total - base;
+    const dateIso = t.completedAt || t.updatedAt || t.createdAt;
+    const number = await nextInvoiceNumber(dateIso);
+    const paid = total - (t.advance || 0) <= 0;
+
+    await insertInvoice({
+      id: t.id,
+      number,
+      date: dateIso,
+      customer: t.customerName || "Service customer",
+      branch: t.branch,
+      items: [{ name: `Repair & service — ${t.productName}`, hsn: "9954", qty: 1, rate: base, gst: rate, amount: base }],
+      subtotal: base,
+      cgst: Math.round(gst / 2),
+      sgst: Math.round(gst / 2),
+      igst: 0,
+      total,
+      paymentMode: "cash",
+      status: paid ? "paid" : "pending",
+      source: "service",
+      refId: t.id,
+    });
+  } catch (err) {
+    console.error("[ledger] recordServiceInvoice failed:", err);
   }
 }

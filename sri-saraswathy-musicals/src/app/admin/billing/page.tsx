@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePOS, productStock, genInvoiceId, type Bill, type Source, type Branch } from "@/lib/store/pos";
+import { BUSINESS, waLink } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
 
 interface Row {
@@ -146,12 +147,18 @@ export default function BillingPage() {
       return;
     }
     addBill(bill);
-    const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty)}`).join("%0A");
+    // Public, shareable invoice the customer can open from the WhatsApp link
+    // (resolves via /invoice/[id] → getBill, no admin sign-in needed).
+    const link = `${window.location.origin}/invoice/${bill.id}`;
+    const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty)}`).join("\n");
     const msg =
-      `*Sri Saraswathy Musicals*%0AInvoice ${bill.id}%0A%0A${lines}%0A%0ASubtotal: ${formatINR(bill.subtotal)}` +
-      `%0ADiscount: -${formatINR(bill.discount)}%0ADelivery: ${formatINR(bill.delivery)}%0A*Grand Total: ${formatINR(bill.total)}*%0A%0AThank you!`;
-    const num = phone.replace(/\D/g, "");
-    window.open(`https://wa.me/91${num}?text=${msg}`, "_blank", "noopener,noreferrer");
+      `*${BUSINESS.name}*\nInvoice ${bill.id}\n\n${lines}\n\n` +
+      `Subtotal: ${formatINR(bill.subtotal)}\n` +
+      `Discount: -${formatINR(bill.discount)}\n` +
+      `Delivery: ${formatINR(bill.delivery)}\n` +
+      `*Grand Total: ${formatINR(bill.total)}*\n\n` +
+      `📄 View your invoice:\n${link}\n\nThank you!`;
+    window.open(waLink(phone, msg), "_blank", "noopener,noreferrer");
     setToast(`Bill saved · WhatsApp opened for ${phone}`);
     setTimeout(() => setToast(null), 3000);
     clearOrder();

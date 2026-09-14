@@ -53,7 +53,7 @@ function ShopContent() {
           )}
         </h1>
         <p className="mt-3 text-sm text-ink-500 md:text-base">
-          {filtered.length} pieces · in stock at Chennai & Bengaluru
+          {filtered.length} pieces · in stock at Vadapalani & Porur
         </p>
       </div>
 
