@@ -1,10 +1,20 @@
 "use client";
-import { useMemo, useState } from "react";
-import { usePOS, filterBills, productStock, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
+import { useEffect, useMemo, useState } from "react";
+import { usePOS, filterBills, inPeriod, productStock, type Bill, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
 import { useAllSales } from "@/lib/client/sales";
 import { useGst, extractGst } from "@/lib/store/gst";
+import { useExpenses } from "@/lib/store/expenses";
+import { useBranchScope } from "@/lib/store/branch";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
+
+/** A sale is "GST" when it actually carried tax: POS bills honour their saved
+ *  `gstEnabled` snapshot; web + service sales are always taxed. */
+function isGstBill(b: Bill): boolean {
+  return b.source === "offline" ? Boolean(b.gstEnabled) : true;
+}
+
+type SalesClass = "all" | "gst" | "nongst";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "all", label: "All Time" },
@@ -42,31 +52,53 @@ export default function AnalyticsPage() {
   const invProducts = usePOS((s) => s.invProducts);
   const coupons = usePOS((s) => s.coupons);
   const gstRate = useGst((s) => s.standardRate);
+  const expensesAll = useExpenses((s) => s.expenses);
+  const hydrateExpenses = useExpenses((s) => s.hydrate);
+
+  // Branch scope: a branch user is locked to their own branch.
+  const canSwitchBranch = useBranchScope((s) => s.canSwitch);
+  const scopeAccess = useBranchScope((s) => s.access);
+  const lockedBranch: BranchFilter | null =
+    !canSwitchBranch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
 
   const [tab, setTab] = useState<(typeof TABS)[number]>("revenue");
   const [period, setPeriod] = useState<Period>("all");
   const [custom, setCustom] = useState<{ from?: string; to?: string }>({});
   const [channel, setChannel] = useState<Source | "all">("all");
-  const [branch, setBranch] = useState<BranchFilter>("all");
+  const [salesClass, setSalesClass] = useState<SalesClass>("all");
+  const [branch, setBranch] = useState<BranchFilter>(lockedBranch ?? "all");
   const [prodQuery, setProdQuery] = useState("");
   const [couponQuery, setCouponQuery] = useState("");
   const [txnQuery, setTxnQuery] = useState("");
 
+  useEffect(() => {
+    void hydrateExpenses();
+  }, [hydrateExpenses]);
+  useEffect(() => {
+    if (lockedBranch) setBranch(lockedBranch);
+  }, [lockedBranch]);
+
   const scoped = useMemo(
-    () => filterBills(bills, { period, branch, source: channel, custom }),
-    [bills, period, branch, channel, custom],
+    () =>
+      filterBills(bills, { period, branch, source: channel, custom }).filter(
+        (b) => salesClass === "all" || (salesClass === "gst") === isGstBill(b),
+      ),
+    [bills, period, branch, channel, custom, salesClass],
   );
 
-  // Net-of-GST helpers: sale values are treated as GST-inclusive, so revenue
-  // is the taxable value (sale − GST) and GST is the tax collected.
+  // Net-of-GST helpers. Sale values are GST-inclusive: a POS bill contributes
+  // its saved tax snapshot (0 on a non-GST bill); web/service extract at the
+  // standard slab. Revenue is the taxable value (sale − GST).
   const netOf = (gross: number) => extractGst(Math.max(0, gross), gstRate).net;
   const gstOf = (gross: number) => extractGst(Math.max(0, gross), gstRate).gst;
-  const billGoods = (b: (typeof scoped)[number]) => Math.max(0, b.subtotal - b.discount);
+  const billGoods = (b: Bill) => Math.max(0, b.subtotal - b.discount);
+  const billGst = (b: Bill): number => (b.source === "offline" ? (b.gstEnabled ? Math.max(0, b.gst ?? 0) : 0) : gstOf(billGoods(b)));
+  const billNet = (b: Bill) => Math.max(0, billGoods(b) - billGst(b));
 
   const m = useMemo(() => {
     // Revenue = product sale value net of GST (excludes delivery & tax).
-    const totalRevenue = scoped.reduce((n, b) => n + netOf(billGoods(b)), 0);
-    const gstCollected = scoped.reduce((n, b) => n + gstOf(billGoods(b)), 0);
+    const totalRevenue = scoped.reduce((n, b) => n + billNet(b), 0);
+    const gstCollected = scoped.reduce((n, b) => n + billGst(b), 0);
     const offline = scoped.filter((b) => b.source === "offline");
     const online = scoped.filter((b) => b.source === "online");
     const service = scoped.filter((b) => b.source === "service");
@@ -82,9 +114,9 @@ export default function AnalyticsPage() {
       totalRevenue,
       gstCollected,
       count: scoped.length,
-      offlineRev: offline.reduce((n, b) => n + netOf(billGoods(b)), 0),
-      onlineRev: online.reduce((n, b) => n + netOf(billGoods(b)), 0),
-      serviceRev: service.reduce((n, b) => n + netOf(billGoods(b)), 0),
+      offlineRev: offline.reduce((n, b) => n + billNet(b), 0),
+      onlineRev: online.reduce((n, b) => n + billNet(b), 0),
+      serviceRev: service.reduce((n, b) => n + billNet(b), 0),
       offlineCount: offline.length,
       onlineCount: online.length,
       serviceCount: service.length,
@@ -99,13 +131,44 @@ export default function AnalyticsPage() {
 
   // net revenue trend by month (respects branch + channel, ignores period so the year reads fully)
   const monthly = useMemo(() => {
-    const base = filterBills(bills, { period: "all", branch, source: channel });
+    const base = filterBills(bills, { period: "all", branch, source: channel }).filter(
+      (b) => salesClass === "all" || (salesClass === "gst") === isGstBill(b),
+    );
     const totals = new Array(12).fill(0);
-    base.forEach((b) => { totals[new Date(b.createdAt).getMonth()] += netOf(Math.max(0, b.subtotal - b.discount)); });
+    base.forEach((b) => { totals[new Date(b.createdAt).getMonth()] += billNet(b); });
     return totals;
-  }, [bills, branch, channel, gstRate]);
+  }, [bills, branch, channel, gstRate, salesClass]);
   const maxMonth = Math.max(...monthly, 1);
   const yearTotal = monthly.reduce((a, b) => a + b, 0);
+
+  // Expenses for the current period + branch → true net profit.
+  const totalExpenses = useMemo(
+    () =>
+      expensesAll
+        .filter((e) => (branch === "all" || e.branch === branch) && inPeriod(e.expenseDate, period, new Date(), custom))
+        .reduce((n, e) => n + e.amount, 0),
+    [expensesAll, branch, period, custom],
+  );
+
+  // Estimated COGS: match each sold item's name to its inventory purchase cost.
+  const cogs = useMemo(() => {
+    const costByName = new Map(invProducts.map((p) => [p.name, p.cost ?? 0]));
+    return scoped.reduce((n, b) => n + b.items.reduce((s, i) => s + (costByName.get(i.name) ?? 0) * i.qty, 0), 0);
+  }, [scoped, invProducts]);
+
+  // net profit = sales − GST collected − expenses = net-of-GST revenue − expenses
+  const netProfit = m.totalRevenue - totalExpenses;
+  const grossProfit = m.totalRevenue - cogs; // estimated (cost known where matched)
+
+  // GST vs non-GST split of the current scoped view.
+  const split = useMemo(() => {
+    let gstSales = 0, nonGstSales = 0;
+    for (const b of scoped) {
+      if (isGstBill(b)) gstSales += billGoods(b);
+      else nonGstSales += billGoods(b);
+    }
+    return { gstSales, nonGstSales };
+  }, [scoped]);
 
   const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
@@ -183,8 +246,21 @@ export default function AnalyticsPage() {
         </div>
         <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
-          {([["all", "Overall"], ["Branch 1", "Branch 1"], ["Branch 2", "Branch 2"]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setBranch(k)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
+          {lockedBranch ? (
+            <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
+          ) : (
+            ([["all", "Overall"], ["Branch 1", "Branch 1"], ["Branch 2", "Branch 2"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setBranch(k)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
+                {label}
+              </button>
+            ))
+          )}
+        </div>
+        {/* GST vs Non-GST split */}
+        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Tax</span>
+          {([["all", "All Sales"], ["gst", "GST"], ["nongst", "Non-GST"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setSalesClass(k)} className={cn(pill, salesClass === k ? "bg-info text-white" : "text-ink-500 hover:text-ink-900")}>
               {label}
             </button>
           ))}
@@ -194,9 +270,35 @@ export default function AnalyticsPage() {
       {/* ── REVENUE ── */}
       {tab === "revenue" && (
         <div className="space-y-6">
+          {/* Profit summary */}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={cn("rounded-2xl border p-5", netProfit >= 0 ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5")}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Net Profit</p>
+              <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl", netProfit >= 0 ? "text-success" : "text-danger")}>{netProfit < 0 ? "-" : ""}{formatINR(Math.abs(netProfit))}</p>
+              <p className="mt-1 text-xs text-ink-400">Sales − GST − Expenses</p>
+            </div>
+            <Stat label="Est. Gross Profit" value={`${grossProfit < 0 ? "-" : ""}${formatINR(Math.abs(grossProfit))}`} hint="Net revenue − matched cost" accent="green" />
+            <Stat label="Total Expenses" value={formatINR(totalExpenses)} hint="This period · branch" />
+            <Card>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Sales Mix <span className="normal-case text-ink-300">(incl. GST)</span></p>
+              {(() => {
+                const tot = split.gstSales + split.nonGstSales || 1;
+                return (
+                  <div className="mt-3 space-y-2.5">
+                    {([["GST", split.gstSales, "#2563EB"], ["Non-GST", split.nonGstSales, "#9CA3AF"]] as const).map(([label, val, color]) => (
+                      <div key={label}>
+                        <div className="mb-1 flex items-center justify-between text-xs"><span className="font-semibold text-ink-600">{label}</span><span className="tabular-nums text-ink-500">{formatINR(val)}</span></div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-ink-100"><div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: color }} /></div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </Card>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Net Revenue" value={formatINR(m.totalRevenue)} hint="Ex-GST · sale − tax" accent="green" />
-            <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint={`Output tax @ ${gstRate}%`} accent="gold" />
+            <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint="Actual output tax" accent="gold" />
             <Stat label="Completed Bills" value={String(m.count)} hint="in current view" />
             <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
           </div>

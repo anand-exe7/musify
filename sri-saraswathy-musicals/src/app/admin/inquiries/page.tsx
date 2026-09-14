@@ -1,11 +1,12 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox,
+  MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox, Plus
 } from "lucide-react";
 import {
-  useInquiry, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus,
+  useInquiry, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus, INQUIRY_TOPICS, genInquiryId
 } from "@/lib/store/inquiry";
+import { useBranchScope, effectiveBranch, type BranchScope } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { cn } from "@/lib/utils";
 
@@ -34,27 +35,55 @@ function Stat({ label, value, accent, icon }: { label: string; value: string; ac
 
 export default function InquiriesPage() {
   const inquiries = useInquiry((s) => s.inquiries);
+  const addInquiry = useInquiry((s) => s.addInquiry);
   const updateInquiry = useInquiry((s) => s.updateInquiry);
   const deleteInquiry = useInquiry((s) => s.deleteInquiry);
+
+  const canSwitchBranch = useBranchScope((s) => s.canSwitch);
+  const scopeAccess = useBranchScope((s) => s.access);
+  const lockedBranch = !canSwitchBranch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+
+  const [branch, setBranch] = useState<BranchScope>(lockedBranch ?? "all");
+
+  useEffect(() => {
+    if (lockedBranch) setBranch(lockedBranch);
+  }, [lockedBranch]);
 
   const [statusF, setStatusF] = useState<InquiryStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: "",
+    phone: "",
+    topic: "Other",
+    message: "",
+    productInterest: "",
+    status: "new" as InquiryStatus,
+  });
+
+  const scopedInquiries = useMemo(() => {
+    return inquiries.filter((i) => {
+      if (branch === "all") return true;
+      return i.branch === branch;
+    });
+  }, [inquiries, branch]);
+
   const counts = useMemo(() => ({
-    total: inquiries.length,
-    new: inquiries.filter((i) => i.status === "new").length,
-    contacted: inquiries.filter((i) => i.status === "contacted").length,
-    resolved: inquiries.filter((i) => i.status === "resolved").length,
-  }), [inquiries]);
+    total: scopedInquiries.length,
+    new: scopedInquiries.filter((i) => i.status === "new").length,
+    contacted: scopedInquiries.filter((i) => i.status === "contacted").length,
+    resolved: scopedInquiries.filter((i) => i.status === "resolved").length,
+  }), [scopedInquiries]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return inquiries
+    return scopedInquiries
       .filter((i) => statusF === "all" || i.status === statusF)
       .filter((i) => !q || i.name.toLowerCase().includes(q) || i.phone.includes(query.trim()) || i.topic.toLowerCase().includes(q) || (i.productInterest || "").toLowerCase().includes(q) || i.message.toLowerCase().includes(q))
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  }, [inquiries, statusF, query]);
+  }, [scopedInquiries, statusF, query]);
 
   const contact = (i: Inquiry) => {
     if (i.status === "new") updateInquiry(i.id, { status: "contacted" });
@@ -65,8 +94,70 @@ export default function InquiriesPage() {
     cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all",
       active ? "bg-ink-900 text-ivory-50" : "bg-ivory-50 text-ink-500 ring-1 ring-ink-100 hover:text-ink-900");
 
+  const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
+
   return (
     <div className="p-5 md:p-8">
+      {/* Add Inquiry Modal */}
+      {showAdd && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setShowAdd(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-ink-900">Add Inquiry</h3>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Name *</label>
+                <input required value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Phone *</label>
+                <input required type="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Topic</label>
+                <select value={addForm.topic} onChange={(e) => setAddForm((f) => ({ ...f, topic: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
+                  {INQUIRY_TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">What they asked</label>
+                <textarea rows={3} value={addForm.message} onChange={(e) => setAddForm((f) => ({ ...f, message: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Product Interest (Optional)</label>
+                <input value={addForm.productInterest} onChange={(e) => setAddForm((f) => ({ ...f, productInterest: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Follow-up Status</label>
+                <select value={addForm.status} onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value as InquiryStatus }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-2">
+              <button onClick={() => setShowAdd(false)} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
+              <button onClick={() => {
+                if (!addForm.name.trim() || !addForm.phone.trim()) return alert("Name and phone are required.");
+                addInquiry({
+                  id: genInquiryId(),
+                  createdAt: new Date().toISOString(),
+                  name: addForm.name.trim(),
+                  phone: addForm.phone.trim(),
+                  topic: addForm.topic,
+                  message: addForm.message.trim(),
+                  productInterest: addForm.productInterest.trim() || undefined,
+                  status: addForm.status,
+                  branch: lockedBranch || effectiveBranch(branch),
+                });
+                setShowAdd(false);
+                setAddForm({ name: "", phone: "", topic: "Other", message: "", productInterest: "", status: "new" });
+              }} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-white hover:opacity-90">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm delete */}
       {confirmId && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setConfirmId(null)}>
@@ -82,9 +173,14 @@ export default function InquiriesPage() {
       )}
 
       {/* Header */}
-      <div className="mb-6 border-l-4 border-ink-900 pl-4">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-ink-900"><MessageSquare className="h-6 w-6 text-gold-600" /> Customer Inquiries</h1>
-        <p className="mt-1 text-sm text-ink-500">Website enquiries land here · reach customers on WhatsApp to continue</p>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="border-l-4 border-ink-900 pl-4">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-ink-900"><MessageSquare className="h-6 w-6 text-gold-600" /> Customer Inquiries</h1>
+          <p className="mt-1 text-sm text-ink-500">Website enquiries land here · reach customers on WhatsApp to continue</p>
+        </div>
+        <button onClick={() => setShowAdd(true)} className="flex shrink-0 items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:opacity-90">
+          <Plus className="h-4 w-4" /> Add Inquiry
+        </button>
       </div>
 
       {/* KPIs */}
@@ -96,15 +192,29 @@ export default function InquiriesPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          {(["all", "new", "contacted", "resolved"] as const).map((s) => (
-            <button key={s} onClick={() => setStatusF(s)} className={chip(statusF === s)}>{s === "all" ? "All" : INQUIRY_STATUS_META[s].label}</button>
-          ))}
+      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-ink-100">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
+            {lockedBranch ? (
+              <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
+            ) : (
+              ([["all", "All"], ["Branch 1", "Branch 1"], ["Branch 2", "Branch 2"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
+                  {label}
+                </button>
+              ))
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(["all", "new", "contacted", "resolved"] as const).map((s) => (
+              <button key={s} onClick={() => setStatusF(s)} className={chip(statusF === s)}>{s === "all" ? "All Status" : INQUIRY_STATUS_META[s].label}</button>
+            ))}
+          </div>
         </div>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, topic…" className="w-full rounded-xl border border-ink-200 bg-ivory-50 py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none sm:w-72" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, topic…" className="w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none sm:w-72" />
         </div>
       </div>
 

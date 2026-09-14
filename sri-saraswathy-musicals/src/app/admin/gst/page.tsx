@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Receipt, Save, RotateCcw, MapPin, ArrowLeftRight, Building2, Info, FileText, ArrowRight } from "lucide-react";
-import { useGst, extractGst, IN_STATES } from "@/lib/store/gst";
-import { usePOS, filterBills, type Period, type BranchFilter } from "@/lib/store/pos";
+import { Receipt, Save, RotateCcw, MapPin, ArrowLeftRight, Building2, Info, FileText, ArrowRight, Download } from "lucide-react";
+import { useGst, IN_STATES } from "@/lib/store/gst";
+import { inPeriod, type Period, type BranchFilter } from "@/lib/store/pos";
+import { useBranchScope } from "@/lib/store/branch";
 import { buildGstr1, MONTHS, type Period as ReportRange } from "@/lib/gst/report";
+import { rateWiseSummary, invoiceRateOf, toCsv } from "@/lib/gst/summary";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 
@@ -24,7 +26,6 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 
 export default function GstPage() {
   const gst = useGst();
-  const bills = usePOS((s) => s.bills);
   const [tab, setTab] = useState<Tab>("rules");
 
   // local draft for the config form
@@ -156,7 +157,7 @@ export default function GstPage() {
           </div>
         </div>
       ) : (
-        <CollectionsTab bills={bills} rate={gst.standardRate} labels={gst} />
+        <CollectionsTab labels={gst} />
       )}
     </div>
   );
@@ -183,30 +184,75 @@ function PreviewTable({ rate, labels }: { rate: number; labels: { cgstLabel: str
   );
 }
 
-function CollectionsTab({ bills, rate, labels }: { bills: ReturnType<typeof usePOS.getState>["bills"]; rate: number; labels: { cgstLabel: string; sgstLabel: string; igstLabel: string } }) {
-  const [period, setPeriod] = useState<Period>("all");
+function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: string; igstLabel: string } }) {
+  const [period, setPeriod] = useState<Period>("month");
   const [branch, setBranch] = useState<BranchFilter>("all");
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
-  const m = useMemo(() => {
-    const scoped = filterBills(bills, { period, branch });
-    let taxable = 0, gstColl = 0, cgst = 0, sgst = 0, igst = 0, intraCount = 0, interCount = 0;
-    for (const b of scoped) {
-      const goods = Math.max(0, b.subtotal - b.discount); // GST-inclusive goods value
-      const { gst, net } = extractGst(goods, rate);
-      taxable += net;
-      gstColl += gst;
-      // Offline (walk-in) = intra-state; online (shipped) = treated inter-state
-      if (b.source === "offline") { cgst += gst / 2; sgst += gst / 2; intraCount++; }
-      else { igst += gst; interCount++; }
-    }
-    return { count: scoped.length, taxable, gstColl, cgst: Math.round(cgst), sgst: Math.round(sgst), igst: Math.round(igst), intraCount, interCount };
-  }, [bills, period, branch, rate]);
+  // Branch users are pinned to their own branch.
+  const canSwitch = useBranchScope((s) => s.canSwitch);
+  const scopeAccess = useBranchScope((s) => s.access);
+  const lockedBranch: BranchFilter | null =
+    !canSwitch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+  useEffect(() => {
+    if (lockedBranch) setBranch(lockedBranch);
+  }, [lockedBranch]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/invoices")
+      .then((r) => { if (!r.ok) throw new Error("invoices"); return r.json(); })
+      .then((d) => { if (!alive) return; setInvoices(Array.isArray(d) ? d : []); setStatus("ready"); })
+      .catch(() => { if (alive) setStatus("error"); });
+    return () => { alive = false; };
+  }, []);
+
+  const scoped = useMemo(
+    () =>
+      invoices.filter(
+        (inv) => (branch === "all" || inv.branch === branch) && inPeriod(inv.date, period),
+      ),
+    [invoices, branch, period],
+  );
+  const { buckets, totals } = useMemo(() => rateWiseSummary(scoped), [scoped]);
+
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? period;
+
+  const exportCsv = () => {
+    const branchLabel = branch === "all" ? "All-Branches" : branch;
+    const header: (string | number)[][] = [
+      [`GST Summary — ${branchLabel} — ${periodLabel}`],
+      [`Generated`, new Date().toLocaleString("en-IN")],
+      [],
+      ["Rate-wise summary"],
+      ["GST Rate %", "Invoices", "Taxable Value", labels.cgstLabel, labels.sgstLabel, labels.igstLabel, "Total Tax", "Invoice Value"],
+      ...buckets.map((b) => [b.rate, b.count, b.taxable, b.cgst, b.sgst, b.igst, b.tax, b.invoiceValue]),
+      ["Total", totals.count, totals.taxable, totals.cgst, totals.sgst, totals.igst, totals.tax, totals.invoiceValue],
+      [],
+      ["Invoice-wise detail"],
+      ["Invoice No", "Date", "Branch", "Customer", "Source", "GST Rate %", "Taxable", labels.cgstLabel, labels.sgstLabel, labels.igstLabel, "Total"],
+      ...scoped.map((inv) => [
+        inv.number, inv.date, inv.branch, inv.customer, inv.source ?? "", invoiceRateOf(inv),
+        inv.subtotal, inv.cgst || 0, inv.sgst || 0, inv.igst || 0, inv.total,
+      ]),
+    ];
+    const blob = new Blob([toCsv(header)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gst-summary-${branchLabel}-${period}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
   return (
     <div className="space-y-6">
-      {/* filters */}
+      {/* filters + export */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
@@ -216,39 +262,73 @@ function CollectionsTab({ bills, rate, labels }: { bills: ReturnType<typeof useP
         </div>
         <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
-          {(["all", "Branch 1", "Branch 2"] as BranchFilter[]).map((b) => (
-            <button key={b} onClick={() => setBranch(b)} className={cn(pill, branch === b ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>{b === "all" ? "Overall" : b}</button>
-          ))}
+          {lockedBranch ? (
+            <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
+          ) : (
+            (["all", "Branch 1", "Branch 2"] as BranchFilter[]).map((b) => (
+              <button key={b} onClick={() => setBranch(b)} className={cn(pill, branch === b ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>{b === "all" ? "Overall" : b}</button>
+            ))
+          )}
         </div>
+        <button
+          onClick={exportCsv}
+          disabled={status !== "ready" || scoped.length === 0}
+          className="ml-auto flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2 text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-40"
+        >
+          <Download className="h-3.5 w-3.5" /> Export CSV
+        </button>
       </div>
+
+      {status === "error" && <p className="text-xs text-danger">Couldn&apos;t reach the server to load the ledger.</p>}
 
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Taxable Value</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{formatINR(m.taxable)}</p><p className="mt-1 text-xs text-ink-400">Net of GST · {m.count} bills</p></Card>
-        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">GST Collected</p><p className="mt-2 text-2xl font-bold tabular-nums text-gold-600 md:text-3xl">{formatINR(m.gstColl)}</p><p className="mt-1 text-xs text-ink-400">Output tax @ {rate}%</p></Card>
-        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{labels.cgstLabel} + {labels.sgstLabel}</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{formatINR(m.cgst + m.sgst)}</p><p className="mt-1 text-xs text-ink-400">In-state · {m.intraCount} bills</p></Card>
-        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{labels.igstLabel}</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{formatINR(m.igst)}</p><p className="mt-1 text-xs text-ink-400">Inter-state · {m.interCount} bills</p></Card>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Taxable Value</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{formatINR(totals.taxable)}</p><p className="mt-1 text-xs text-ink-400">Net of GST · {totals.count} invoices</p></Card>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">GST Collected</p><p className="mt-2 text-2xl font-bold tabular-nums text-gold-600 md:text-3xl">{formatINR(totals.tax)}</p><p className="mt-1 text-xs text-ink-400">Total output tax</p></Card>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{labels.cgstLabel} + {labels.sgstLabel}</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{formatINR(totals.cgst + totals.sgst)}</p><p className="mt-1 text-xs text-ink-400">Intra-state</p></Card>
+        <Card><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{labels.igstLabel}</p><p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{formatINR(totals.igst)}</p><p className="mt-1 text-xs text-ink-400">Inter-state</p></Card>
       </div>
 
-      {/* Breakdown */}
+      {/* Rate-wise breakdown */}
       <Card>
-        <p className="mb-4 text-sm font-bold text-ink-900">Output Tax Breakdown</p>
+        <p className="mb-4 text-sm font-bold text-ink-900">GST Summary by Rate <span className="font-normal text-ink-400">· {branch === "all" ? "all branches" : branch} · {periodLabel}</span></p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[420px] text-sm">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">
-                <th className="py-3">Component</th><th>Supply Type</th><th className="text-right">Amount</th>
+                <th className="py-3">GST Rate</th><th className="text-center">Invoices</th><th className="text-right">Taxable Value</th><th className="text-right">{labels.cgstLabel}</th><th className="text-right">{labels.sgstLabel}</th><th className="text-right">{labels.igstLabel}</th><th className="text-right">Total Tax</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-50">
-              <tr className="text-ink-800"><td className="py-3.5 font-semibold text-ink-900">{labels.cgstLabel}</td><td className="text-ink-500">Intra-state</td><td className="text-right tabular-nums">{formatINR(m.cgst)}</td></tr>
-              <tr className="text-ink-800"><td className="py-3.5 font-semibold text-ink-900">{labels.sgstLabel}</td><td className="text-ink-500">Intra-state</td><td className="text-right tabular-nums">{formatINR(m.sgst)}</td></tr>
-              <tr className="text-ink-800"><td className="py-3.5 font-semibold text-ink-900">{labels.igstLabel}</td><td className="text-ink-500">Inter-state</td><td className="text-right tabular-nums">{formatINR(m.igst)}</td></tr>
-              <tr className="font-bold text-ink-900"><td className="py-3.5">Total GST</td><td></td><td className="text-right tabular-nums text-gold-600">{formatINR(m.gstColl)}</td></tr>
+              {buckets.map((b) => (
+                <tr key={b.rate} className="text-ink-800">
+                  <td className="py-3.5 font-semibold text-ink-900">{b.rate === 0 ? "Non-GST / 0%" : `${b.rate}%`}</td>
+                  <td className="text-center tabular-nums text-ink-500">{b.count}</td>
+                  <td className="text-right tabular-nums">{formatINR(b.taxable)}</td>
+                  <td className="text-right tabular-nums">{formatINR(b.cgst)}</td>
+                  <td className="text-right tabular-nums">{formatINR(b.sgst)}</td>
+                  <td className="text-right tabular-nums">{formatINR(b.igst)}</td>
+                  <td className="text-right font-semibold tabular-nums text-gold-600">{formatINR(b.tax)}</td>
+                </tr>
+              ))}
+              {buckets.length === 0 && <tr><td colSpan={7} className="py-10 text-center text-sm text-ink-400">No invoices in this view.</td></tr>}
             </tbody>
+            {buckets.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-ink-200 font-bold text-ink-900">
+                  <td className="py-3.5">Total</td>
+                  <td className="text-center tabular-nums">{totals.count}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.taxable)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.cgst)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.sgst)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.igst)}</td>
+                  <td className="text-right tabular-nums text-gold-600">{formatINR(totals.tax)}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-ink-400">Walk-in (offline) bills are treated as intra-state supply; online orders as inter-state. GST is extracted from GST-inclusive sale values at {rate}%.</p>
+        <p className="mt-3 text-[11px] text-ink-400">Sourced from the invoice ledger across all channels (POS, web, service). Each invoice is bucketed by its GST slab; taxable value is net of tax.</p>
       </Card>
     </div>
   );
