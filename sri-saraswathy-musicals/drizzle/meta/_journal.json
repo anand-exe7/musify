@@ -50,6 +50,13 @@
       "when": 1789403959506,
       "tag": "0006_powerful_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789404376411,
+      "tag": "0007_funny_ben_urich",
+      "breakpoints": true
     }
   ]
 }

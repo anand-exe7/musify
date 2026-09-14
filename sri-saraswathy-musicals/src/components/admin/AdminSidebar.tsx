@@ -19,6 +19,7 @@ import {
   Building2,
   PackagePlus,
   Handshake,
+  Wallet,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ import { useAuth } from "@/lib/store/auth";
 const items = [
   { href: "/admin/billing", label: "Billing", icon: CreditCard, staff: true },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/expenses", label: "Expenses", icon: Wallet, staff: true },
   { href: "/admin/gst", label: "GST & Tax", icon: Receipt },
   { href: "/admin/invoices", label: "Invoices", icon: FileText, staff: true },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, staff: true },

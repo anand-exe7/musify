@@ -315,6 +315,25 @@ export const repairTickets = pgTable("repair_tickets", {
   invoiceNo: text("invoice_no"),
 });
 
+/**
+ * Shop expenditures (rent, salaries, stock purchases, utilities …). Money is
+ * whole rupees as `integer`, matching the rest of the app. `paymentMode` is one
+ * of CASH / UPI / CARD / BANK / OTHER; `category` is free text so custom
+ * categories can be added on the fly. `branch` scopes an expense to a shop.
+ */
+export const expenses = pgTable("expenses", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  category: text("category").notNull().default("Miscellaneous"),
+  amount: integer("amount").notNull().default(0),
+  paymentMode: text("payment_mode").notNull().default("CASH"),
+  notes: text("notes"),
+  /** User-facing spend date (supports backdating); a plain date string. */
+  expenseDate: text("expense_date").notNull(),
+  createdAt: text("created_at").notNull(),
+  branch: text("branch").notNull(),
+});
+
 export const inquiries = pgTable("inquiries", {
   id: text("id").primaryKey(),
   createdAt: text("created_at").notNull(),
@@ -374,6 +393,7 @@ export type InvoiceRow = typeof invoices.$inferSelect;
 export type VendorRow = typeof vendors.$inferSelect;
 export type BranchRow = typeof branches.$inferSelect;
 export type StockInwardRow = typeof stockInward.$inferSelect;
+export type ExpenseRow = typeof expenses.$inferSelect;
 export type PosBillRow = typeof posBills.$inferSelect;
 export type InventoryProductRow = typeof inventoryProducts.$inferSelect;
 export type CouponRow = typeof coupons.$inferSelect;
