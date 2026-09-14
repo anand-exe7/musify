@@ -6,10 +6,12 @@
  * INQ — customer inquiries (`inquiries`)
  * REP — repair tickets (`repair_tickets`)
  * SER — service invoices (`repair_tickets.invoiceNo`)
+ * VEN — vendors (`vendors`)
+ * INW — stock-inward records (`stock_inward`)
  */
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD";
+export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW";
 
 function randomSuffix(len = 5): string {
   let s = "";

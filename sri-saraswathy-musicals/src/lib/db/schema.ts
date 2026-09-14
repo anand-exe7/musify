@@ -152,12 +152,52 @@ export const invoices = pgTable("invoices", {
 
 export const vendors = pgTable("vendors", {
   id: text("id").primaryKey(),
+  /** Human-friendly unique vendor code used for quick lookup at stock-inward. */
+  code: text("code").unique(),
   name: text("name").notNull(),
   gst: text("gst").notNull().default(""),
   phone: text("phone").notNull().default(""),
   email: text("email").notNull().default(""),
+  address: text("address").notNull().default(""),
+  createdAt: text("created_at").notNull().default(""),
   outstanding: integer("outstanding").notNull().default(0),
   totalPurchases: integer("total_purchases").notNull().default(0),
+});
+
+/**
+ * Goods-received log. Each row is one line of a stock-inward: a quantity of a
+ * product received from a vendor into a branch at a point in time, with its
+ * purchase cost. Submitting an inward also bumps the inventory on-hand and the
+ * product's `cost`. `productName`/`variant` are snapshots for display.
+ */
+export const stockInward = pgTable("stock_inward", {
+  id: text("id").primaryKey(),
+  vendorId: text("vendor_id").notNull(),
+  productId: text("product_id").notNull(),
+  productName: text("product_name").notNull().default(""),
+  variant: text("variant").notNull().default(""),
+  quantity: integer("quantity").notNull().default(0),
+  unitCost: integer("unit_cost").notNull().default(0),
+  branch: text("branch").notNull(),
+  createdBy: text("created_by").notNull().default(""),
+  inwardAt: text("inward_at").notNull(),
+});
+
+/**
+ * Physical shop branches. The primary key is the branch *key* ("Branch 1" /
+ * "Branch 2") that every `branch` text column across the app already stores, so
+ * this table is a source of truth (name, address, per-branch GSTIN) without
+ * needing to rewrite those columns into UUID foreign keys.
+ */
+export const branches = pgTable("branches", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  city: text("city").notNull().default("Chennai"),
+  address: text("address").notNull().default(""),
+  /** Per-branch GSTIN; blank falls back to the business-wide GSTIN. */
+  gstin: text("gstin").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  active: boolean("active").notNull().default(true),
 });
 
 /* ─────────────────────────  POS / inventory  ───────────────────────── */
@@ -219,6 +259,9 @@ export const inventoryProducts = pgTable("inventory_products", {
   hsn: text("hsn").notNull().default(""),
   /** Derived convenience flag for filters — `true` when `gstRate` is set. */
   isGstApplicable: boolean("is_gst_applicable").notNull().default(true),
+  /** Purchase cost per unit (₹), set from the latest stock-inward. Drives the
+   *  profit calc (profit = selling − cost). 0 until goods are received. */
+  cost: integer("cost").notNull().default(0),
   variants: jsonb("variants")
     .$type<
       { attr: string; finish: string; price: number; weight: number; stock: number; disabled?: boolean }[]
@@ -329,6 +372,8 @@ export type StaffRow = typeof staff.$inferSelect;
 export type OrderRow = typeof orders.$inferSelect;
 export type InvoiceRow = typeof invoices.$inferSelect;
 export type VendorRow = typeof vendors.$inferSelect;
+export type BranchRow = typeof branches.$inferSelect;
+export type StockInwardRow = typeof stockInward.$inferSelect;
 export type PosBillRow = typeof posBills.$inferSelect;
 export type InventoryProductRow = typeof inventoryProducts.$inferSelect;
 export type CouponRow = typeof coupons.$inferSelect;

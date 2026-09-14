@@ -36,6 +36,20 @@
       "when": 1789401357699,
       "tag": "0004_fixed_wrecking_crew",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789403241541,
+      "tag": "0005_daily_odin",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789403959506,
+      "tag": "0006_powerful_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

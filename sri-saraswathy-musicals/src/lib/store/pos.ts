@@ -67,6 +67,8 @@ export interface InvProduct {
   gstRate?: number | null;
   hsn?: string;
   isGstApplicable?: boolean;
+  /** Purchase cost per unit (₹), maintained by stock-inward. Drives profit. */
+  cost?: number;
   variants: Variant[];
 }
 

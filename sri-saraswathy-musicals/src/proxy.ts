@@ -26,7 +26,12 @@ export async function proxy(request: NextRequest) {
     if (!session) return redirectToLogin(request);
     // Full admins ("all") and branch-scoped staff both reach /admin; the admin
     // UI itself narrows what a branch user sees. Plain customers are turned away.
-    if (adminAccessOf(session) === null) return NextResponse.redirect(new URL("/?denied=admin", request.url));
+    const access = adminAccessOf(session);
+    if (access === null) return NextResponse.redirect(new URL("/?denied=admin", request.url));
+    // Branch staff land on the POS billing screen, not the full dashboard.
+    if (access !== "all" && (pathname === "/admin" || pathname === "/admin/")) {
+      return NextResponse.redirect(new URL("/admin/billing", request.url));
+    }
     return NextResponse.next();
   }
 

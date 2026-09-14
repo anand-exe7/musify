@@ -16,24 +16,33 @@ import {
   MessageSquare,
   Receipt,
   FileText,
+  Building2,
+  PackagePlus,
+  Handshake,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRepair, alertLevel } from "@/lib/store/repair";
 import { useInquiry } from "@/lib/store/inquiry";
+import { useAuth } from "@/lib/store/auth";
 
+// `staff: true` marks the operational pages a branch-scoped user may open. The
+// rest (analytics, catalog config, users, branches) stay full-admin only.
 const items = [
-  { href: "/admin/billing", label: "Billing", icon: CreditCard },
+  { href: "/admin/billing", label: "Billing", icon: CreditCard, staff: true },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/gst", label: "GST & Tax", icon: Receipt },
-  { href: "/admin/invoices", label: "Invoices", icon: FileText },
-  { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
-  { href: "/admin/service", label: "Service / Repairs", icon: Wrench },
-  { href: "/admin/inquiries", label: "Inquiries", icon: MessageSquare },
+  { href: "/admin/invoices", label: "Invoices", icon: FileText, staff: true },
+  { href: "/admin/orders", label: "Orders", icon: ShoppingCart, staff: true },
+  { href: "/admin/service", label: "Service / Repairs", icon: Wrench, staff: true },
+  { href: "/admin/inquiries", label: "Inquiries", icon: MessageSquare, staff: true },
   { href: "/admin/inventory", label: "Inventory", icon: Package },
+  { href: "/admin/stock-inward", label: "Stock Inward", icon: PackagePlus, staff: true },
+  { href: "/admin/vendors", label: "Vendors", icon: Handshake },
   { href: "/admin/categories", label: "Categories", icon: Tags },
   { href: "/admin/coupons", label: "Coupons", icon: Ticket },
   { href: "/admin/delivery", label: "Delivery", icon: Truck },
+  { href: "/admin/branches", label: "Branches", icon: Building2 },
   { href: "/admin/users", label: "Users", icon: Users },
 ];
 
@@ -55,8 +64,14 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const tickets = useRepair((s) => s.tickets);
   const inquiries = useInquiry((s) => s.inquiries);
+  const adminAccess = useAuth((s) => s.adminAccess);
+  const authHydrated = useAuth((s) => s.hydrated);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Branch-scoped staff get the trimmed operational menu; admins get everything.
+  const branchStaff = authHydrated && adminAccess !== "all" && adminAccess !== null;
+  const visibleItems = branchStaff ? items.filter((i) => i.staff) : items;
 
   const repairAlerts = mounted
     ? tickets.filter((t) => {
@@ -74,7 +89,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {items.map((i) => {
+      {visibleItems.map((i) => {
         const active = pathname?.startsWith(i.href);
         const Icon = i.icon;
         const badge = badgeFor(i.href);

@@ -104,10 +104,14 @@ export interface User {
 
 export interface Vendor {
   id: string;
+  /** Unique lookup code (e.g. "V-001"); optional on legacy rows. */
+  code?: string | null;
   name: string;
   gst: string;
   phone: string;
   email: string;
+  address?: string;
+  createdAt?: string;
   outstanding: number;
   totalPurchases: number;
 }
