@@ -300,11 +300,46 @@ const staffSeed = [
   { id: "s5", name: "Priya Sundaram", email: "priya.cash@sarasvathymusicals.com", role: "Cashier", active: true, branch: "Branch 1" },
 ];
 
+// Professional Couriers Chennai — Domestic Surface Transit tariff, effective
+// 01.01.2026. Rates are ₹ per parcel, inclusive of GST. Air Transit (OBC),
+// Surface Cargo and Pro Premium (express) slabs are deliberately excluded.
 const zoneSeed = [
-  { id: "z1", name: "Chennai (within 15 km)", charge: 0, eta: "Same day" },
-  { id: "z2", name: "Bengaluru (within 15 km)", charge: 0, eta: "Same day" },
-  { id: "z3", name: "Tamil Nadu · Karnataka", charge: 250, eta: "2–3 days" },
-  { id: "z4", name: "Rest of India", charge: 600, eta: "4–7 days" },
+  {
+    id: "z-tn",
+    name: "Tamil Nadu",
+    states: ["Tamil Nadu"],
+    charge: 0,
+    eta: "1–2 days",
+    uptoGm250: 90,
+    uptoGm500: 105,
+    perAddl500: 40,
+    above5kgPerKg: 70,
+    above10kgPerKg: 50,
+  },
+  {
+    id: "z-south",
+    name: "Kerala · Karnataka · Andhra Pradesh · Telangana",
+    states: ["Kerala", "Karnataka", "Andhra Pradesh", "Telangana"],
+    charge: 0,
+    eta: "3–4 days",
+    uptoGm250: 95,
+    uptoGm500: 115,
+    perAddl500: 45,
+    above5kgPerKg: 80,
+    above10kgPerKg: 55,
+  },
+  {
+    id: "z-rest",
+    name: "Rest of India",
+    states: [],
+    charge: 0,
+    eta: "5–7 days",
+    uptoGm250: 95,
+    uptoGm500: 115,
+    perAddl500: 45,
+    above5kgPerKg: 80,
+    above10kgPerKg: 55,
+  },
 ];
 
 /* ─────────────────────────────  Runner  ────────────────────────────── */

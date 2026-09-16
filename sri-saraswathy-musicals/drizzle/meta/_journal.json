@@ -57,6 +57,13 @@
       "when": 1789404376411,
       "tag": "0007_funny_ben_urich",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789573265458,
+      "tag": "0008_parallel_stick",
+      "breakpoints": true
     }
   ]
 }

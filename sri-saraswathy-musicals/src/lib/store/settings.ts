@@ -4,8 +4,17 @@ import { create } from "zustand";
 export interface Zone {
   id: string;
   name: string;
+  /** Indian states this zone covers. Empty = fallback for anywhere unlisted. */
+  states: string[];
+  /** Legacy flat rate — ignored when the tier fields are set. */
   charge: number;
   eta: string;
+  /** Surface-transit slabs (₹, GST-inclusive) mirroring Professional Couriers. */
+  uptoGm250: number;
+  uptoGm500: number;
+  perAddl500: number;
+  above5kgPerKg: number;
+  above10kgPerKg: number;
 }
 
 type Scalars = {

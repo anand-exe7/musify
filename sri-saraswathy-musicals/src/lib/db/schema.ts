@@ -369,11 +369,27 @@ export const deliverySettings = pgTable("delivery_settings", {
   storePickup: boolean("store_pickup").notNull().default(true),
 });
 
+/**
+ * Courier tariff zones. Each row is one destination band with its state list
+ * (the ship-state → zone lookup) and the five surface-transit slabs the
+ * courier bills at: ≤250 g, ≤500 g, each additional 500 g up to 5 kg, per kg
+ * from 5–10 kg, and per kg above 10 kg. All rupees, GST-inclusive.
+ * Legacy `charge` is retained as a flat fallback used only when the tier
+ * fields are all zero (e.g. an admin-drawn custom zone).
+ */
 export const deliveryZones = pgTable("delivery_zones", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  /** Indian states this zone applies to. Empty = catch-all / rest-of-India. */
+  states: jsonb("states").$type<string[]>().notNull().default([]),
+  /** Legacy flat rate — kept for backwards-compat; ignored when tier fields are set. */
   charge: integer("charge").notNull().default(0),
   eta: text("eta").notNull().default(""),
+  uptoGm250: integer("upto_gm_250").notNull().default(0),
+  uptoGm500: integer("upto_gm_500").notNull().default(0),
+  perAddl500: integer("per_addl_500").notNull().default(0),
+  above5kgPerKg: integer("above_5kg_per_kg").notNull().default(0),
+  above10kgPerKg: integer("above_10kg_per_kg").notNull().default(0),
 });
 
 /** Named integer counters for server-generated sequences (e.g. service-invoice serial). */

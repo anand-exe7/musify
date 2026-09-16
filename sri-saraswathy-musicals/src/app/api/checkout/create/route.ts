@@ -35,7 +35,7 @@ export function POST(request: NextRequest) {
   return handle(async () => {
     const user = await requireUser();
     const body = await readJson<CreateBody>(request);
-    const priced = await priceOrder(body.items, body.delivery);
+    const priced = await priceOrder(body.items, body.delivery, body.shipState);
 
     const customerName = (body.customerName || user.name || "").trim();
     const email = (body.email || user.email || "").trim();
