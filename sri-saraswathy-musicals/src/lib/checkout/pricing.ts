@@ -69,7 +69,8 @@ export async function priceOrder(
     const qty = Math.max(1, Math.floor(i.quantity));
     const lineAmount = product.price * qty;
     subtotal += lineAmount;
-    gstAccum += (lineAmount * product.gstRate) / 100;
+    const rate = product.isGstApplicable !== false ? product.gstRate : 0;
+    gstAccum += (lineAmount * rate) / 100;
     return { productId: product.id, quantity: qty, price: product.price };
   });
 

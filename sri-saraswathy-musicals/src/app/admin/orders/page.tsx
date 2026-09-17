@@ -180,12 +180,12 @@ export default function OrdersPage() {
                 <td className="px-5">
                   <div className="flex items-center justify-end gap-1">
                     <Link
-                      href={b.source === "service" ? `/invoice/service/${b.id}` : `/invoice/${b.id}`}
+                      href={`/invoice/${b.id}`}
                       target="_blank"
-                      title={b.source === "service" ? "View service invoice" : "View order bill"}
+                      title="View invoice"
                       className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600"
                     >
-                      <Eye className="h-3.5 w-3.5" /> {b.source === "service" ? "Invoice" : "Bill"} <ExternalLink className="h-3 w-3 text-ink-300" />
+                      <Eye className="h-3.5 w-3.5" /> Invoice <ExternalLink className="h-3 w-3 text-ink-300" />
                     </Link>
                     {b.source === "offline" && (
                       <button onClick={() => setConfirmId(b.id)} title="Delete POS bill" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">

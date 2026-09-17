@@ -2,16 +2,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Printer, Link2, Check } from "lucide-react";
-import type { RepairTicket } from "@/lib/store/repair";
-import { ServiceInvoiceSheet, SERVICE_INVOICE_PRINT_CSS } from "@/components/invoice/ServiceInvoiceSheet";
+import type { Invoice } from "@/types";
+import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 
 /**
- * Customer-facing service (repair) invoice. Rendered from the DB by the server
- * page, so anyone with the link can view it without signing in — this is what
- * the WhatsApp "Send via WhatsApp" link points at.
+ * Public share wrapper for the tax invoice. Anyone with the link (opaque ref
+ * id) can open it without signing in. Admin-only routes get their own toolbar.
  */
-export function ServiceInvoiceView({ ticket }: { ticket: RepairTicket }) {
+export function InvoiceShareView({ invoice }: { invoice: Invoice }) {
   const [copied, setCopied] = useState(false);
+  const isBillOfSupply = (invoice.cgst ?? 0) + (invoice.sgst ?? 0) + (invoice.igst ?? 0) === 0;
 
   const copyLink = async () => {
     try {
@@ -25,7 +25,7 @@ export function ServiceInvoiceView({ ticket }: { ticket: RepairTicket }) {
 
   return (
     <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
-      <style>{SERVICE_INVOICE_PRINT_CSS}</style>
+      <style>{TAX_INVOICE_PRINT_CSS}</style>
 
       {/* Toolbar (hidden on print) */}
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -49,11 +49,10 @@ export function ServiceInvoiceView({ ticket }: { ticket: RepairTicket }) {
         </div>
       </div>
 
-      {/* Invoice sheet */}
-      <ServiceInvoiceSheet ticket={ticket} />
+      <TaxInvoiceSheet invoice={invoice} />
 
       <p className="mx-auto mt-4 max-w-3xl text-center text-[11px] text-ink-400 print:hidden">
-        Shareable service invoice — anyone with this link can view it.
+        Shareable {isBillOfSupply ? "bill of supply" : "tax invoice"} — anyone with this link can view it.
       </p>
     </div>
   );

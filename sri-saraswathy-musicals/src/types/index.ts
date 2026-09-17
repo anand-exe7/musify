@@ -18,6 +18,9 @@ export interface Product {
   price: number;
   mrp: number;
   gstRate: number;
+  /** When `false`, this product is exempt from GST — checkout adds no tax and
+   *  the invoice records the line at rate 0. Defaults to `true` on the schema. */
+  isGstApplicable?: boolean;
   hsn: string;
   stock: number;
   rating: number;

@@ -15,6 +15,7 @@ export function toProduct(r: ProductRow): Product {
     price: r.price,
     mrp: r.mrp,
     gstRate: r.gstRate,
+    isGstApplicable: r.isGstApplicable,
     hsn: r.hsn,
     stock: r.stock,
     rating: r.rating,
@@ -44,6 +45,7 @@ export function toRow(p: Product): typeof products.$inferInsert {
     price: p.price,
     mrp: p.mrp,
     gstRate: p.gstRate,
+    isGstApplicable: p.isGstApplicable ?? true,
     hsn: p.hsn,
     stock: p.stock,
     rating: p.rating,
@@ -111,6 +113,7 @@ export async function updateProduct(
   if (p.price !== undefined) values.price = p.price;
   if (p.mrp !== undefined) values.mrp = p.mrp;
   if (p.gstRate !== undefined) values.gstRate = p.gstRate;
+  if (p.isGstApplicable !== undefined) values.isGstApplicable = p.isGstApplicable;
   if (p.hsn !== undefined) values.hsn = p.hsn;
   if (p.stock !== undefined) values.stock = p.stock;
   if (p.rating !== undefined) values.rating = p.rating;

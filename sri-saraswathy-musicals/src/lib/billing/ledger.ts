@@ -66,7 +66,11 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
     let igst = 0;
     const items = order.items.map((it) => {
       const p = byId.get(it.productId);
-      const rate = p?.gstRate ?? gstCfg.standardRate;
+      // Non-GST products (isGstApplicable=false) contribute to subtotal but are
+      // never taxed, so mixed carts (taxable + exempt) come out right on the
+      // invoice — CGST/SGST/IGST only accumulate from taxable lines.
+      const taxable = p ? p.isGstApplicable !== false : true;
+      const rate = taxable ? (p?.gstRate ?? gstCfg.standardRate) : 0;
       const amount = it.price * it.quantity;
       const g = (amount * rate) / 100;
       if (intra) {

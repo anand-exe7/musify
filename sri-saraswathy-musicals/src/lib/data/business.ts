@@ -69,10 +69,12 @@ export function waLink(phone: string, text: string): string {
 }
 
 /**
- * Absolute, customer-facing link to a repair ticket's service invoice
- * (`/invoice/service/<ticketId>`) — the public page anyone with the link can
- * open without signing in. Prefers the live browser origin; falls back to the
- * configured app URL when built on the server.
+ * Absolute, customer-facing link to a repair ticket's tax invoice
+ * (`/invoice/<ticketId>`) — the public page anyone with the link can open
+ * without signing in. The URL uses the ticket's opaque random id so links
+ * aren't enumerable; the sequential GST invoice number is shown inside.
+ * Prefers the live browser origin; falls back to the configured app URL when
+ * built on the server.
  */
 export function serviceInvoiceUrl(ticketId: string): string {
   const base =
@@ -80,5 +82,5 @@ export function serviceInvoiceUrl(ticketId: string): string {
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_URL ||
     "";
-  return `${base}/invoice/service/${ticketId}`;
+  return `${base}/invoice/${ticketId}`;
 }
