@@ -64,6 +64,13 @@
       "when": 1789573265458,
       "tag": "0008_parallel_stick",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789825745436,
+      "tag": "0009_faithful_captain_flint",
+      "breakpoints": true
     }
   ]
 }

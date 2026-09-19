@@ -11,9 +11,10 @@ import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
-import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock } from "lucide-react";
+import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
+import type { UserAddress } from "@/types";
 
 const steps = ["Address", "Delivery", "Payment", "Review"];
 
@@ -41,13 +42,15 @@ export default function CheckoutPage() {
     name: "",
     phone: "",
     email: "",
-    pincode: "600020",
-    line1: "12 Adyar Main Road",
-    line2: "Near LB Road Metro",
-    city: "Chennai",
+    pincode: "",
+    line1: "",
+    line2: "",
+    city: "",
   });
   const setAddrField = (k: keyof typeof addr) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setAddr((a) => ({ ...a, [k]: e.target.value }));
+
+  const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
 
   // Prefill name/email from the signed-in account once it hydrates.
   useEffect(() => {
@@ -57,6 +60,11 @@ export default function CheckoutPage() {
       name: a.name || user.name,
       email: a.email || user.email,
     }));
+    // Fetch saved addresses.
+    fetch("/api/addresses")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: UserAddress[]) => setSavedAddresses(list))
+      .catch(() => {});
   }, [user]);
 
   if (!mounted || productsLoading) {
@@ -228,6 +236,42 @@ export default function CheckoutPage() {
           {step === 0 && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Delivery address</h2>
+              {savedAddresses.length > 0 && (
+                <div className="mt-5">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Saved addresses</p>
+                  <div className="space-y-2">
+                    {savedAddresses.map((sa) => (
+                      <button
+                        key={sa.id}
+                        type="button"
+                        onClick={() => {
+                          setAddr({
+                            name: sa.name,
+                            phone: sa.phone,
+                            email: addr.email,
+                            pincode: sa.pincode,
+                            line1: sa.line1,
+                            line2: sa.line2 ?? "",
+                            city: sa.city,
+                          });
+                          if (sa.state) setShipState(sa.state);
+                        }}
+                        className="flex w-full items-start gap-3 border border-ink-200 bg-ivory-50 p-3 text-left text-sm transition-colors hover:border-gold-400 hover:bg-gold-50/30"
+                      >
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
+                        <div>
+                          <p className="font-medium text-ink-900">{sa.name}</p>
+                          <p className="text-xs text-ink-500">{sa.line1}, {sa.city} {sa.pincode}</p>
+                        </div>
+                        {sa.isDefault && (
+                          <span className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-widest text-gold-600">Default</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[11px] text-ink-400">Or fill in a new address below:</p>
+                </div>
+              )}
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <Field label="Full name" value={addr.name} onChange={setAddrField("name")} />
                 <Field label="Phone" value={addr.phone} onChange={setAddrField("phone")} />

@@ -86,6 +86,24 @@ export const users = pgTable("users", {
     .default({ billing: false, inventory: false, analytics: false, users: false }),
 });
 
+/** Saved delivery addresses for a customer account. */
+export const userAddresses = pgTable("user_addresses", {
+  id: text("id").primaryKey(),
+  /** The customer who owns this address (users.id). */
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull().default(""),
+  /** Label: "home", "office", or custom free text. */
+  type: text("type").notNull().default("home"),
+  line1: text("line1").notNull().default(""),
+  line2: text("line2").notNull().default(""),
+  city: text("city").notNull().default(""),
+  state: text("state").notNull().default("Tamil Nadu"),
+  pincode: text("pincode").notNull().default(""),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: text("created_at").notNull().default(""),
+});
+
 /** Simpler admin staff roster (see `store/staff.ts`) — kept distinct from `users`. */
 export const staff = pgTable("staff", {
   id: text("id").primaryKey(),
@@ -418,3 +436,4 @@ export type InquiryRow = typeof inquiries.$inferSelect;
 export type GstSettingsRow = typeof gstSettings.$inferSelect;
 export type DeliverySettingsRow = typeof deliverySettings.$inferSelect;
 export type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
+export type UserAddressRow = typeof userAddresses.$inferSelect;

@@ -118,3 +118,19 @@ export interface Vendor {
   outstanding: number;
   totalPurchases: number;
 }
+
+export interface UserAddress {
+  id: string;
+  userId: string;
+  name: string;
+  phone: string;
+  /** Label: "home", "office", or custom text */
+  type: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault: boolean;
+  createdAt: string;
+}
