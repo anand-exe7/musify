@@ -5,6 +5,20 @@
 
 /** Base URL of the app, used to build the OAuth redirect URI. */
 export function appUrl(): string {
+  // If we are in the browser, always use the current origin
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin;
+  }
+  
+  // Server-side fallbacks (Vercel automatic env vars)
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  
+  // Custom env or localhost
   return (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
