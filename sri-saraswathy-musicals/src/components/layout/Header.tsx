@@ -9,7 +9,7 @@ import { Logo } from "@/components/ui/Logo";
 import { useCart } from "@/lib/store/cart";
 import { useAuth } from "@/lib/store/auth";
 import { useCategories, useProducts } from "@/lib/client/catalog";
-import { cn } from "@/lib/utils";
+import { cn, formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 
 interface NavItem {
@@ -450,7 +450,7 @@ export function Header() {
                             </p>
                           </div>
                           <span className="tabular text-sm text-ink-700">
-                            ₹{p.price.toLocaleString("en-IN")}
+                            {formatINR(p.price)}
                           </span>
                         </Link>
                       </li>

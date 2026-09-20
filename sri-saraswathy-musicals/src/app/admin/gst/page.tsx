@@ -164,7 +164,7 @@ export default function GstPage() {
 }
 
 function PreviewTable({ rate, labels }: { rate: number; labels: { cgstLabel: string; sgstLabel: string; igstLabel: string } }) {
-  const base = 10000;
+  const base = 1000000; // ₹10,000 in paise — illustrative base for the preview
   const gst = (base * rate) / 100;
   return (
     <div className="grid grid-cols-2 gap-3 text-sm">
@@ -221,20 +221,22 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
 
   const exportCsv = () => {
     const branchLabel = branch === "all" ? "All-Branches" : branch;
+    // CSV money columns are in rupees (paise ÷ 100), 2 decimals — matches filings.
+    const r2 = (paise: number) => (paise / 100).toFixed(2);
     const header: (string | number)[][] = [
       [`GST Summary — ${branchLabel} — ${periodLabel}`],
       [`Generated`, new Date().toLocaleString("en-IN")],
       [],
       ["Rate-wise summary"],
       ["GST Rate %", "Invoices", "Taxable Value", labels.cgstLabel, labels.sgstLabel, labels.igstLabel, "Total Tax", "Invoice Value"],
-      ...buckets.map((b) => [b.rate, b.count, b.taxable, b.cgst, b.sgst, b.igst, b.tax, b.invoiceValue]),
-      ["Total", totals.count, totals.taxable, totals.cgst, totals.sgst, totals.igst, totals.tax, totals.invoiceValue],
+      ...buckets.map((b) => [b.rate, b.count, r2(b.taxable), r2(b.cgst), r2(b.sgst), r2(b.igst), r2(b.tax), r2(b.invoiceValue)]),
+      ["Total", totals.count, r2(totals.taxable), r2(totals.cgst), r2(totals.sgst), r2(totals.igst), r2(totals.tax), r2(totals.invoiceValue)],
       [],
       ["Invoice-wise detail"],
       ["Invoice No", "Date", "Branch", "Customer", "Source", "GST Rate %", "Taxable", labels.cgstLabel, labels.sgstLabel, labels.igstLabel, "Total"],
       ...scoped.map((inv) => [
         inv.number, inv.date, inv.branch, inv.customer, inv.source ?? "", invoiceRateOf(inv),
-        inv.subtotal, inv.cgst || 0, inv.sgst || 0, inv.igst || 0, inv.total,
+        r2(inv.subtotal), r2(inv.cgst || 0), r2(inv.sgst || 0), r2(inv.igst || 0), r2(inv.total),
       ]),
     ];
     const blob = new Blob([toCsv(header)], { type: "text/csv;charset=utf-8" });

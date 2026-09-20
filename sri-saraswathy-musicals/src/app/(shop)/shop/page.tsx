@@ -15,7 +15,8 @@ function ShopContent() {
   const { categories } = useCategories();
   const activeCategory = params.get("category") || "all";
   const [sort, setSort] = useState<SortKey>("featured");
-  const [priceMax, setPriceMax] = useState<number>(2000000);
+  // Price bounds are in paise (₹20,00,000 = 200000000 paise).
+  const [priceMax, setPriceMax] = useState<number>(200000000);
   const [origin, setOrigin] = useState<"all" | "indian" | "western">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -107,12 +108,12 @@ function ShopContent() {
             <option value="western">Western</option>
           </select>
           <div className="flex items-center gap-3 text-xs uppercase tracking-[0.16em] text-ink-600">
-            <span>Under ₹{(priceMax / 1000).toFixed(0)}k</span>
+            <span>Under ₹{(priceMax / 100000).toFixed(0)}k</span>
             <input
               type="range"
-              min={5000}
-              max={2000000}
-              step={5000}
+              min={500000}
+              max={200000000}
+              step={500000}
               value={priceMax}
               onChange={(e) => setPriceMax(Number(e.target.value))}
               className="h-1 w-40 accent-gold-500"
@@ -180,8 +181,8 @@ function ShopContent() {
                 </div>
               </div>
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink-500">Max price · ₹{(priceMax/1000).toFixed(0)}k</p>
-                <input type="range" min={5000} max={2000000} step={5000} value={priceMax} onChange={(e) => setPriceMax(Number(e.target.value))} className="h-1 w-full accent-gold-500" />
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink-500">Max price · ₹{(priceMax/100000).toFixed(0)}k</p>
+                <input type="range" min={500000} max={200000000} step={500000} value={priceMax} onChange={(e) => setPriceMax(Number(e.target.value))} className="h-1 w-full accent-gold-500" />
               </div>
               <button onClick={() => setFiltersOpen(false)} className="btn-gold-solid w-full">
                 Show {filtered.length} results

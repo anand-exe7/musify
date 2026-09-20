@@ -13,7 +13,8 @@ import {
 } from "@/lib/store/repair";
 import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/RepairTicketModal";
 import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
-import { formatINR, cn } from "@/lib/utils";
+import { formatINR, rupeeInput, cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 
 function toDateInput(iso?: string) {
   if (!iso) return "";
@@ -257,11 +258,11 @@ export default function TicketDetailPage() {
               </div>
               <div>
                 <label className={label}>Final Cost (₹, pre-GST)</label>
-                <input type="number" value={edit.finalCost || ""} onChange={(e) => setEdit({ finalCost: Number(e.target.value) })} className={field} placeholder={String(t.estimate)} />
+                <MoneyInput value={edit.finalCost || 0} onChange={(paise) => setEdit({ finalCost: paise })} className={field} placeholder={rupeeInput(t.estimate)} />
               </div>
               <div>
                 <label className={label}>Advance / Paid (₹)</label>
-                <input type="number" value={edit.advance || ""} onChange={(e) => setEdit({ advance: Number(e.target.value) })} className={field} placeholder="0" />
+                <MoneyInput value={edit.advance || 0} onChange={(paise) => setEdit({ advance: paise })} className={field} placeholder="0" />
               </div>
               <div>
                 <label className={label}>GST</label>

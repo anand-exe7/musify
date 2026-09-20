@@ -132,7 +132,7 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
         <div className="mt-7 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-[16rem]">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Amount in words</p>
-            <p className="mt-1.5 text-sm font-medium italic leading-relaxed text-ink-700">{amountInWords(invoice.total)} Rupees Only</p>
+            <p className="mt-1.5 text-sm font-medium italic leading-relaxed text-ink-700">{amountInWords(invoice.total)}</p>
           </div>
           <dl className="w-full space-y-2 text-sm sm:max-w-xs">
             <div className="flex justify-between px-3 text-ink-600"><dt>Subtotal</dt><dd className="tabular-nums">{formatINR(invoice.subtotal)}</dd></div>

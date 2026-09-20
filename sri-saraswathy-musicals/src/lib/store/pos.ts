@@ -50,16 +50,38 @@ export interface Variant {
   disabled?: boolean;
 }
 
+/**
+ * The unified catalog product — the single model the admin edits and the
+ * storefront reads. Money fields (`basePrice`, `mrp`, `cost`, `variants[].price`)
+ * are in **paise**. Website-facing fields (slug, brand, origin, mrp, tagline,
+ * gallery, specs, features, featured/bestSeller) live here too so a product
+ * created in admin renders on the storefront with no second entry.
+ */
 export interface InvProduct {
   id: string;
   name: string;
   category: string; // display label
   department: string;
+  /** Storefront URL slug (unique). */
+  slug?: string;
+  brand?: string;
+  /** Storefront origin filter. */
+  origin?: "indian" | "western";
   photo?: string;
-  basePrice: number;
+  photos?: string[];
+  images?: string[];
+  basePrice: number; // paise — the base selling price (storefront `price`)
+  mrp?: number; // paise — list price for the strikethrough
   baseWeight: number;
   description: string;
+  tagline?: string;
+  rating?: number;
+  reviews?: number;
+  specs?: { label: string; value: string }[];
+  features?: string[];
   active: boolean; // shown to customers
+  featured?: boolean;
+  bestSeller?: boolean;
   discountLabel?: string;
   newArrival?: boolean;
   lowStockAt: number;
@@ -67,7 +89,7 @@ export interface InvProduct {
   gstRate?: number | null;
   hsn?: string;
   isGstApplicable?: boolean;
-  /** Purchase cost per unit (₹), maintained by stock-inward. Drives profit. */
+  /** Purchase cost per unit (paise), maintained by stock-inward. Drives profit. */
   cost?: number;
   variants: Variant[];
 }

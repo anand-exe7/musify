@@ -12,6 +12,7 @@ import {
 import type { Branch } from "@/lib/store/pos";
 import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 
 /** Date input helper — ISO ⇄ yyyy-mm-dd */
 function toDateInput(iso?: string) {
@@ -247,11 +248,11 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
               </div>
               <div>
                 <label className={label}>Cost Estimate (₹)</label>
-                <input type="number" value={d.estimate || ""} onChange={(e) => set({ estimate: Number(e.target.value) })} className={field} placeholder="0" />
+                <MoneyInput value={d.estimate || 0} onChange={(paise) => set({ estimate: paise })} className={field} placeholder="0" />
               </div>
               <div>
                 <label className={label}>Advance Collected (₹)</label>
-                <input type="number" value={d.advance || ""} onChange={(e) => set({ advance: Number(e.target.value) })} className={field} placeholder="0" />
+                <MoneyInput value={d.advance || 0} onChange={(paise) => set({ advance: paise })} className={field} placeholder="0" />
               </div>
             </div>
             {d.estimate > 0 && (

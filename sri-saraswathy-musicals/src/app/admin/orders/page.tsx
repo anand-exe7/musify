@@ -63,8 +63,10 @@ export default function OrdersPage() {
   }, [sales, type, date, custom, query, sort]);
 
   const exportCSV = () => {
+    // Money columns are exported in rupees (paise ÷ 100) at 2 decimals.
+    const r2 = (paise: number) => (paise / 100).toFixed(2);
     const head = ["Invoice", "Customer", "Phone", "Type", "Branch", "Coupon", "Discount", "Delivery", "Total", "Date", "Status"];
-    const body = rows.map((b) => [b.id, b.customerName, b.phone, b.source, b.branch, b.coupon ?? "", b.discount, b.delivery, b.total, fmtDate(b.createdAt), b.status]);
+    const body = rows.map((b) => [b.id, b.customerName, b.phone, b.source, b.branch, b.coupon ?? "", r2(b.discount), r2(b.delivery), r2(b.total), fmtDate(b.createdAt), b.status]);
     const csv = [head, ...body].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");

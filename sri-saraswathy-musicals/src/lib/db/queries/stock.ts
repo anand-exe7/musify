@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { stockInward, inventoryProducts } from "@/lib/db/schema";
+import { stockInward, products } from "@/lib/db/schema";
 import { row, rows } from "./_util";
 
 export interface StockInwardRecord {
@@ -41,8 +41,8 @@ export async function getInwards(): Promise<StockInwardRecord[]> {
 export async function createInward(input: StockInwardInput): Promise<StockInwardRecord> {
   const [prod] = await db
     .select()
-    .from(inventoryProducts)
-    .where(eq(inventoryProducts.id, input.productId))
+    .from(products)
+    .where(eq(products.id, input.productId))
     .limit(1);
 
   const variants = prod?.variants ?? [];
@@ -70,9 +70,9 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
       i === input.variantIndex ? { ...x, stock: (Number(x.stock) || 0) + input.quantity } : x,
     );
     await db
-      .update(inventoryProducts)
+      .update(products)
       .set({ variants: nextVariants, cost: input.unitCost })
-      .where(eq(inventoryProducts.id, input.productId));
+      .where(eq(products.id, input.productId));
   }
 
   return row<StockInwardRecord>(saved);

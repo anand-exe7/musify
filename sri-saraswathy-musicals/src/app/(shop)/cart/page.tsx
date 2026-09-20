@@ -14,10 +14,11 @@ type Coupon = { label: string; type: "percent" | "flat"; value: number; min?: nu
 
 // Demo coupon codes.
 const COUPONS: Record<string, Coupon> = {
+  // `value` for a flat coupon and `min` are in paise; percent `value` is a rate.
   SARASWATHY10: { label: "10% off", type: "percent", value: 10 },
   WELCOME15: { label: "15% off your first order", type: "percent", value: 15 },
-  FLAT500: { label: "₹500 off", type: "flat", value: 500, min: 3000 },
-  ENCORE20: { label: "20% off", type: "percent", value: 20, min: 10000 },
+  FLAT500: { label: "₹500 off", type: "flat", value: 50000, min: 300000 },
+  ENCORE20: { label: "20% off", type: "percent", value: 20, min: 1000000 },
 };
 
 const BURST_NOTES = ["♪", "♫", "♩", "♬", "𝅘𝅥𝅮"];
@@ -104,7 +105,7 @@ export default function CartPage() {
   const intra = isIntraState(shipState, homeState);
   const gst = gstBreakup(gstLines, intra);
   const gstTotal = gst.total;
-  const shipping = subtotal > 5000 || subtotal === 0 ? 0 : 200;
+  const shipping = subtotal > 500000 || subtotal === 0 ? 0 : 20000; // paise: free over ₹5,000, else ₹200
   const couponActive = coupon && (!coupon.min || subtotal >= coupon.min);
   const discount = couponActive
     ? coupon!.type === "percent"

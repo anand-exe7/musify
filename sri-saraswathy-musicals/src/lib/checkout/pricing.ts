@@ -43,7 +43,7 @@ function pickZone(zones: Zone[], shipState: string): Zone | undefined {
  * ladder (uptoGm250 → uptoGm500 → perAddl500 → above5kgPerKg → above10kgPerKg).
  */
 async function shippingFor(method: DeliveryMethod, shipState: string): Promise<number> {
-  if (method === "express") return 500;
+  if (method === "express") return 50000; // ₹500 flat, in paise
   if (method === "white-glove") return 0;
   const zone = pickZone(await getZones(), shipState);
   if (!zone) return 0;

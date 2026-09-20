@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useSettings, type Zone } from "@/lib/store/settings";
 import { IN_STATES } from "@/lib/store/gst";
 import { cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Plus, Trash2, Truck, ChevronDown } from "lucide-react";
 
 export default function DeliveryPage() {
@@ -37,10 +38,9 @@ export default function DeliveryPage() {
   };
 
   const num = (z: Zone, key: keyof Pick<Zone, "uptoGm250" | "uptoGm500" | "perAddl500" | "above5kgPerKg" | "above10kgPerKg">) => (
-    <input
-      type="number"
+    <MoneyInput
       value={z[key]}
-      onChange={(e) => { s.updateZone(z.id, { [key]: Number(e.target.value) }); flash(); }}
+      onChange={(paise) => { s.updateZone(z.id, { [key]: paise }); flash(); }}
       className={cell}
     />
   );
@@ -145,7 +145,7 @@ export default function DeliveryPage() {
 
         <p className="mt-4 text-xs text-ink-400">
           Rows match on the buyer&rsquo;s shipping state; a zone with no states is the fallback for
-          anywhere unlisted. Rates are in whole rupees, GST-inclusive.
+          anywhere unlisted. Rates are in rupees (2 decimals), GST-inclusive.
         </p>
       </div>
     </div>

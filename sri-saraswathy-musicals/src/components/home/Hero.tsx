@@ -12,6 +12,7 @@ import {
 import { ArrowRight } from "lucide-react";
 import { useRef } from "react";
 import { useProducts } from "@/lib/client/catalog";
+import { formatINR } from "@/lib/utils";
 
 export function Hero() {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -334,7 +335,7 @@ export function Hero() {
                       {featured?.name}
                     </p>
                     <p className="mt-0.5 text-sm font-bold text-ink-900">
-                      ₹{featured?.price.toLocaleString("en-IN")}
+                      {featured ? formatINR(featured.price) : ""}
                     </p>
                   </div>
                 </div>

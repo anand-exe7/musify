@@ -15,7 +15,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePOS, productStock, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
-import { formatINR, cn } from "@/lib/utils";
+import { formatINR, toPaise, cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 
 interface Row {
   id: string;
@@ -89,7 +90,9 @@ export default function BillingPage() {
     if (subtotal < coupon.minOrder) return 0;
     return Math.round((subtotal * coupon.discountPct) / 100);
   }, [coupon, subtotal]);
-  const manualDiscount = discType === "%" ? Math.round((subtotal * (Number(discVal) || 0)) / 100) : Number(discVal) || 0;
+  // `discVal` is entered as a plain number: a percentage when `%`, otherwise a
+  // rupee amount that we convert to paise. `subtotal` is already in paise.
+  const manualDiscount = discType === "%" ? Math.round((subtotal * (Number(discVal) || 0)) / 100) : toPaise(discVal);
   const totalDiscount = Math.min(subtotal, couponDiscount + manualDiscount);
   const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
   const change = cash === "" ? 0 : Number(cash) - grand;
@@ -338,11 +341,9 @@ export default function BillingPage() {
                   <div className="flex items-center gap-2 sm:shrink-0">
                     <div className="relative flex-1 sm:w-28 sm:flex-none">
                       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={r.price || ""}
-                        onChange={(e) => setRow(r.id, { price: Number(e.target.value) })}
+                      <MoneyInput
+                        value={r.price || 0}
+                        onChange={(paise) => setRow(r.id, { price: paise })}
                         placeholder="Price"
                         className={cn(fieldCls, "pl-7")}
                       />
@@ -470,7 +471,7 @@ export default function BillingPage() {
               )}
               <div className="flex items-center justify-between text-ink-600">
                 <span>Delivery</span>
-                <input type="number" value={delivery || ""} onChange={(e) => setDelivery(Number(e.target.value))} placeholder="0" className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-right text-sm focus:border-gold-500 focus:outline-none" />
+                <MoneyInput value={delivery || 0} onChange={(paise) => setDelivery(paise)} placeholder="0" className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-right text-sm focus:border-gold-500 focus:outline-none" />
               </div>
 
               {gstMode && tax.gst > 0 && (
@@ -495,8 +496,8 @@ export default function BillingPage() {
             {source === "offline" && (
               <div className="mt-4 rounded-xl border border-ink-100 bg-[#FAF7EF] p-3">
                 <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Cash Payment</label>
-                <input type="number" value={cash} onChange={(e) => setCash(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Amount received (₹)" className={cn(fieldCls, "py-2.5")} />
-                {cash !== "" && grand > 0 && (
+                <MoneyInput value={cash === "" ? 0 : cash} onChange={(paise) => setCash(paise)} placeholder="Amount received (₹)" className={cn(fieldCls, "py-2.5")} />
+                {cash !== "" && cash > 0 && grand > 0 && (
                   <p className={cn("mt-2 text-xs font-medium", change >= 0 ? "text-success" : "text-danger")}>
                     {change >= 0 ? `Change to return: ${formatINR(change)}` : `Short by ${formatINR(-change)}`}
                   </p>

@@ -13,7 +13,8 @@
  * • Date/time fields are kept as `text` and round-tripped verbatim — the app
  *   stores a mix of ISO strings and display-formatted strings and feeds them
  *   straight into the UI, so preserving the exact string avoids reformatting.
- * • Money is stored in whole rupees as `integer` (the app never uses paise).
+ * • Money is stored as an `integer` number of **paise** (₹1 = 100 paise) so all
+ *   arithmetic is exact; UI/`formatINR` convert to rupees for display.
  */
 import {
   pgTable,
@@ -26,21 +27,43 @@ import {
 
 /* ─────────────────────────────  Catalog  ───────────────────────────── */
 
+/**
+ * The single, unified product catalog — the one table the admin dashboard edits
+ * and the storefront reads, in real time. It merges what used to be two tables:
+ * the marketing/storefront `products` and the POS `inventory_products`. There is
+ * no sync step; toggling `active` off hides a product from the storefront at
+ * once. Money columns (`price`, `mrp`, `cost`, and `variants[].price`) are paise.
+ *
+ * `price` is the base selling price (the old inventory `basePrice`). On-hand
+ * stock lives on the variants; a product's storefront availability is the sum of
+ * its enabled variants' stock.
+ */
 export const products = pgTable("products", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
-  brand: text("brand").notNull(),
+  brand: text("brand").notNull().default(""),
   category: text("category").notNull(),
-  origin: text("origin").notNull(),
-  price: integer("price").notNull(),
-  mrp: integer("mrp").notNull(),
-  gstRate: integer("gst_rate").notNull(),
-  hsn: text("hsn").notNull(),
-  /** `false` marks a non-GST storefront product (kept alongside the required
-   *  `gstRate` so existing checkout pricing is untouched — filters read this). */
+  /** Storefront origin filter: "indian" | "western". */
+  origin: text("origin").notNull().default("indian"),
+  /** POS grouping label (Indian / Western / Unisex). */
+  department: text("department").notNull().default(""),
+  /** Base selling price in paise (was inventory `basePrice`). */
+  price: integer("price").notNull().default(0),
+  /** List price in paise for the strikethrough; 0 or ≤ price means "no MRP". */
+  mrp: integer("mrp").notNull().default(0),
+  /** Default GST rate (%); `null` marks a **non-GST** (exempt) product. */
+  gstRate: integer("gst_rate"),
+  /** Derived convenience flag — `true` when the product is taxable. */
   isGstApplicable: boolean("is_gst_applicable").notNull().default(true),
-  stock: integer("stock").notNull().default(0),
+  hsn: text("hsn").notNull().default(""),
+  /** Purchase cost per unit in paise, maintained by stock-inward. Drives profit. */
+  cost: integer("cost").notNull().default(0),
+  baseWeight: integer("base_weight").notNull().default(0),
+  /** Storefront kill switch — `false` hides the product from customers. */
+  active: boolean("active").notNull().default(true),
+  discountLabel: text("discount_label"),
+  lowStockAt: integer("low_stock_at").notNull().default(4),
   rating: doublePrecision("rating").notNull().default(0),
   reviews: integer("reviews").notNull().default(0),
   tagline: text("tagline").notNull().default(""),
@@ -53,6 +76,13 @@ export const products = pgTable("products", {
   featured: boolean("featured").notNull().default(false),
   bestSeller: boolean("best_seller").notNull().default(false),
   isNew: boolean("is_new").notNull().default(false),
+  /** Purchasable variants. `price` is paise; `stock` is on-hand for that variant. */
+  variants: jsonb("variants")
+    .$type<
+      { attr: string; finish: string; price: number; weight: number; stock: number; disabled?: boolean }[]
+    >()
+    .notNull()
+    .default([]),
 });
 
 export const categories = pgTable("categories", {
@@ -251,43 +281,6 @@ export const posBills = pgTable("pos_bills", {
   payment: text("payment"),
 });
 
-/** Rich inventory product with variants (see `store/pos.ts` — `InvProduct`). */
-export const inventoryProducts = pgTable("inventory_products", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  category: text("category").notNull(),
-  department: text("department").notNull().default(""),
-  photo: text("photo"),
-  basePrice: integer("base_price").notNull().default(0),
-  baseWeight: integer("base_weight").notNull().default(0),
-  description: text("description").notNull().default(""),
-  active: boolean("active").notNull().default(true),
-  discountLabel: text("discount_label"),
-  newArrival: boolean("new_arrival").notNull().default(false),
-  lowStockAt: integer("low_stock_at").notNull().default(4),
-  /**
-   * Default GST rate (%) applied when this product is billed as a GST sale.
-   * `null` means the product is **non-GST** — it is never taxed, even on a GST
-   * bill. The rate is only a default: it can be overridden per line at the POS.
-   * Defaults to 18 so existing/seeded stock is taxable out of the box; mark a
-   * product Non-GST (null) in the product form to exempt it.
-   */
-  gstRate: integer("gst_rate").default(18),
-  /** HSN/SAC code for the GST tax invoice (optional; blank until filled in). */
-  hsn: text("hsn").notNull().default(""),
-  /** Derived convenience flag for filters — `true` when `gstRate` is set. */
-  isGstApplicable: boolean("is_gst_applicable").notNull().default(true),
-  /** Purchase cost per unit (₹), set from the latest stock-inward. Drives the
-   *  profit calc (profit = selling − cost). 0 until goods are received. */
-  cost: integer("cost").notNull().default(0),
-  variants: jsonb("variants")
-    .$type<
-      { attr: string; finish: string; price: number; weight: number; stock: number; disabled?: boolean }[]
-    >()
-    .notNull()
-    .default([]),
-});
-
 export const coupons = pgTable("coupons", {
   code: text("code").primaryKey(),
   discountPct: integer("discount_pct").notNull().default(0),
@@ -381,9 +374,10 @@ export const gstSettings = pgTable("gst_settings", {
 /** Single-row delivery configuration (see `store/settings.ts`). Row id is `"default"`. */
 export const deliverySettings = pgTable("delivery_settings", {
   id: text("id").primaryKey().default("default"),
-  freeThreshold: integer("free_threshold").notNull().default(25000),
-  standardCharge: integer("standard_charge").notNull().default(250),
-  expressCharge: integer("express_charge").notNull().default(600),
+  // Money in paise: ₹25,000 free-shipping threshold, ₹250 standard, ₹600 express.
+  freeThreshold: integer("free_threshold").notNull().default(2500000),
+  standardCharge: integer("standard_charge").notNull().default(25000),
+  expressCharge: integer("express_charge").notNull().default(60000),
   storePickup: boolean("store_pickup").notNull().default(true),
 });
 
@@ -429,7 +423,8 @@ export type BranchRow = typeof branches.$inferSelect;
 export type StockInwardRow = typeof stockInward.$inferSelect;
 export type ExpenseRow = typeof expenses.$inferSelect;
 export type PosBillRow = typeof posBills.$inferSelect;
-export type InventoryProductRow = typeof inventoryProducts.$inferSelect;
+/** The unified catalog is the single source for inventory too. */
+export type InventoryProductRow = typeof products.$inferSelect;
 export type CouponRow = typeof coupons.$inferSelect;
 export type RepairTicketRow = typeof repairTickets.$inferSelect;
 export type InquiryRow = typeof inquiries.$inferSelect;

@@ -77,7 +77,8 @@ export default function CheckoutPage() {
   const intra = isIntraState(shipState, homeState);
   const gst = gstBreakup(gstLines, intra);
   const gstTotal = gst.total;
-  const shipCost = delivery === "express" ? 500 : delivery === "white-glove" ? 0 : subtotal > 5000 ? 0 : 200;
+  // Paise: express ₹500, white-glove free, else free over ₹5,000 or ₹200.
+  const shipCost = delivery === "express" ? 50000 : delivery === "white-glove" ? 0 : subtotal > 500000 ? 0 : 20000;
   const total = subtotal + gstTotal + shipCost;
 
   if (cartItems.length === 0 && !placed) {

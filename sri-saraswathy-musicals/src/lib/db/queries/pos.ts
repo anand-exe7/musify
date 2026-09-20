@@ -1,7 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { posBills, inventoryProducts, coupons, posCategories } from "@/lib/db/schema";
+import { posBills, products, coupons, posCategories, type ProductRow } from "@/lib/db/schema";
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
+import { slugify } from "@/lib/utils";
 import { row, rows, definedOnly } from "./_util";
 
 /* ─────────────────────────────  Bills  ─────────────────────────────── */
@@ -26,38 +27,146 @@ export async function deleteBill(id: string): Promise<boolean> {
 }
 
 /* ────────────────────────  Inventory products  ─────────────────────── */
+/* Inventory *is* the unified `products` table — the admin and the storefront   */
+/* share one row per product. These map between that row and the full           */
+/* `InvProduct` model the admin UI works with (`price` ⇄ `basePrice`,           */
+/* `isNew` ⇄ `newArrival`).                                                      */
+
+function toInvProduct(r: ProductRow): InvProduct {
+  return {
+    id: r.id,
+    name: r.name,
+    category: r.category,
+    department: r.department,
+    slug: r.slug,
+    brand: r.brand,
+    origin: (r.origin as "indian" | "western") ?? undefined,
+    photo: r.photo ?? undefined,
+    photos: r.photos ?? undefined,
+    images: r.images,
+    basePrice: r.price,
+    mrp: r.mrp,
+    baseWeight: r.baseWeight,
+    description: r.description,
+    tagline: r.tagline,
+    rating: r.rating,
+    reviews: r.reviews,
+    specs: r.specs,
+    features: r.features,
+    active: r.active,
+    featured: r.featured,
+    bestSeller: r.bestSeller,
+    discountLabel: r.discountLabel ?? undefined,
+    newArrival: r.isNew,
+    lowStockAt: r.lowStockAt,
+    gstRate: r.gstRate,
+    hsn: r.hsn,
+    isGstApplicable: r.isGstApplicable,
+    cost: r.cost,
+    variants: r.variants,
+  };
+}
+
+/** Build a full insert row for a new product created from the admin form. */
+function toInsertRow(p: InvProduct): typeof products.$inferInsert {
+  const gstRate = p.gstRate === undefined ? 18 : p.gstRate;
+  return {
+    id: p.id,
+    slug: p.slug?.trim() || `${slugify(p.name || "product")}-${p.id}`,
+    name: p.name,
+    brand: p.brand ?? "",
+    category: p.category,
+    origin: p.origin ?? "indian",
+    department: p.department ?? "",
+    price: p.basePrice ?? 0,
+    mrp: p.mrp ?? 0,
+    gstRate,
+    isGstApplicable: gstRate != null,
+    hsn: p.hsn ?? "",
+    cost: p.cost ?? 0,
+    baseWeight: p.baseWeight ?? 0,
+    active: p.active ?? true,
+    discountLabel: p.discountLabel ?? null,
+    lowStockAt: p.lowStockAt ?? 4,
+    rating: p.rating ?? 0,
+    reviews: p.reviews ?? 0,
+    tagline: p.tagline ?? "",
+    description: p.description ?? "",
+    specs: p.specs ?? [],
+    features: p.features ?? [],
+    images: p.images ?? [],
+    photo: p.photo ?? null,
+    photos: p.photos ?? null,
+    featured: p.featured ?? false,
+    bestSeller: p.bestSeller ?? false,
+    isNew: p.newArrival ?? false,
+    variants: p.variants ?? [],
+  };
+}
+
+/** Translate a partial `InvProduct` patch to unified `products` columns. */
+function toColumnPatch(patch: Partial<InvProduct>): Partial<typeof products.$inferInsert> {
+  const v: Partial<typeof products.$inferInsert> = {};
+  const p = patch;
+  if (p.slug !== undefined) v.slug = p.slug;
+  if (p.name !== undefined) v.name = p.name;
+  if (p.brand !== undefined) v.brand = p.brand;
+  if (p.category !== undefined) v.category = p.category;
+  if (p.origin !== undefined) v.origin = p.origin;
+  if (p.department !== undefined) v.department = p.department;
+  if (p.basePrice !== undefined) v.price = p.basePrice;
+  if (p.mrp !== undefined) v.mrp = p.mrp;
+  if (p.gstRate !== undefined) {
+    v.gstRate = p.gstRate;
+    v.isGstApplicable = p.gstRate != null;
+  }
+  if (p.isGstApplicable !== undefined && p.gstRate === undefined) v.isGstApplicable = p.isGstApplicable;
+  if (p.hsn !== undefined) v.hsn = p.hsn;
+  if (p.cost !== undefined) v.cost = p.cost;
+  if (p.baseWeight !== undefined) v.baseWeight = p.baseWeight;
+  if (p.active !== undefined) v.active = p.active;
+  if (p.discountLabel !== undefined) v.discountLabel = p.discountLabel ?? null;
+  if (p.lowStockAt !== undefined) v.lowStockAt = p.lowStockAt;
+  if (p.rating !== undefined) v.rating = p.rating;
+  if (p.reviews !== undefined) v.reviews = p.reviews;
+  if (p.tagline !== undefined) v.tagline = p.tagline;
+  if (p.description !== undefined) v.description = p.description;
+  if (p.specs !== undefined) v.specs = p.specs;
+  if (p.features !== undefined) v.features = p.features;
+  if (p.images !== undefined) v.images = p.images;
+  if (p.photo !== undefined) v.photo = p.photo ?? null;
+  if (p.photos !== undefined) v.photos = p.photos ?? null;
+  if (p.featured !== undefined) v.featured = p.featured;
+  if (p.bestSeller !== undefined) v.bestSeller = p.bestSeller;
+  if (p.newArrival !== undefined) v.isNew = p.newArrival;
+  if (p.variants !== undefined) v.variants = p.variants;
+  return v;
+}
 
 export async function getInventory(): Promise<InvProduct[]> {
-  return rows<InvProduct>(await db.select().from(inventoryProducts));
+  return (await db.select().from(products)).map(toInvProduct);
 }
 
 export async function createInventoryProduct(p: InvProduct): Promise<InvProduct> {
-  const [r] = await db.insert(inventoryProducts).values(p).returning();
-  return row<InvProduct>(r);
+  const [r] = await db.insert(products).values(toInsertRow(p)).returning();
+  return toInvProduct(r);
 }
 
 export async function updateInventoryProduct(
   id: string,
   patch: Partial<InvProduct>,
 ): Promise<InvProduct | undefined> {
-  const set = definedOnly(patch) as Partial<typeof inventoryProducts.$inferInsert>;
+  const set = toColumnPatch(patch);
   if (Object.keys(set).length === 0) {
-    const [r] = await db.select().from(inventoryProducts).where(eq(inventoryProducts.id, id)).limit(1);
-    return r ? row<InvProduct>(r) : undefined;
+    const [r] = await db.select().from(products).where(eq(products.id, id)).limit(1);
+    return r ? toInvProduct(r) : undefined;
   }
-  const [r] = await db
-    .update(inventoryProducts)
-    .set(set)
-    .where(eq(inventoryProducts.id, id))
-    .returning();
-  return r ? row<InvProduct>(r) : undefined;
+  const [r] = await db.update(products).set(set).where(eq(products.id, id)).returning();
+  return r ? toInvProduct(r) : undefined;
 }
 
 export async function deleteInventoryProduct(id: string): Promise<boolean> {
-  const r = await db
-    .delete(inventoryProducts)
-    .where(eq(inventoryProducts.id, id))
-    .returning({ id: inventoryProducts.id });
+  const r = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id });
   return r.length > 0;
 }
 

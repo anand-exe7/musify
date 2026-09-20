@@ -10,6 +10,10 @@ import {
   fmt2, type Gstr1Data, type Gstr3bData, type GstTotals,
 } from "@/lib/gst/report";
 
+/** Format an integer **paise** money figure as a rupee amount at 2dp (returns
+ *  differ from `fmt2`, which is a plain 2-decimal formatter used for rates). */
+const inr2 = (paise: number): string => fmt2((Number(paise) || 0) / 100);
+
 /**
  * Isolates `#report-sheet` for print and gives the sheet its statutory look
  * (black text on white, bordered tables) independent of the app theme.
@@ -147,28 +151,28 @@ export function Gstr1Sheet({
                   <td>{r.gstin}</td>
                   <td>{r.invoiceNo}</td>
                   <td className="num">{r.invoiceDate}</td>
-                  <td className="num">{fmt2(r.invoiceValue)}</td>
+                  <td className="num">{inr2(r.invoiceValue)}</td>
                   <td className="num">{fmt2(r.rate)}</td>
                   <td className="num">{fmt2(r.cessRate)}</td>
-                  <td className="num">{fmt2(r.taxableValue)}</td>
-                  <td className="num">{fmt2(r.integratedTax)}</td>
-                  <td className="num">{fmt2(r.centralTax)}</td>
-                  <td className="num">{fmt2(r.stateTax)}</td>
-                  <td className="num">{fmt2(r.cess)}</td>
+                  <td className="num">{inr2(r.taxableValue)}</td>
+                  <td className="num">{inr2(r.integratedTax)}</td>
+                  <td className="num">{inr2(r.centralTax)}</td>
+                  <td className="num">{inr2(r.stateTax)}</td>
+                  <td className="num">{inr2(r.cess)}</td>
                   <td>{r.placeOfSupply}</td>
                 </tr>
               ))
             )}
             <tr className="totals">
               <td colSpan={3}>Totals</td>
-              <td className="num">{fmt2(t.invoiceValue)}</td>
+              <td className="num">{inr2(t.invoiceValue)}</td>
               <td></td>
               <td></td>
-              <td className="num">{fmt2(t.taxableValue)}</td>
-              <td className="num">{fmt2(t.integratedTax)}</td>
-              <td className="num">{fmt2(t.centralTax)}</td>
-              <td className="num">{fmt2(t.stateTax)}</td>
-              <td className="num">{fmt2(t.cess)}</td>
+              <td className="num">{inr2(t.taxableValue)}</td>
+              <td className="num">{inr2(t.integratedTax)}</td>
+              <td className="num">{inr2(t.centralTax)}</td>
+              <td className="num">{inr2(t.stateTax)}</td>
+              <td className="num">{inr2(t.cess)}</td>
               <td></td>
             </tr>
           </tbody>
@@ -200,14 +204,14 @@ export function Gstr1Sheet({
           <tbody>
             <tr className="totals">
               <td colSpan={5}>Totals</td>
-              <td className="num">{fmt2(0)}</td>
+              <td className="num">{inr2(0)}</td>
               <td></td>
               <td></td>
-              <td className="num">{fmt2(0)}</td>
-              <td className="num">{fmt2(0)}</td>
-              <td className="num">{fmt2(0)}</td>
-              <td className="num">{fmt2(0)}</td>
-              <td className="num">{fmt2(0)}</td>
+              <td className="num">{inr2(0)}</td>
+              <td className="num">{inr2(0)}</td>
+              <td className="num">{inr2(0)}</td>
+              <td className="num">{inr2(0)}</td>
+              <td className="num">{inr2(0)}</td>
               <td></td>
             </tr>
           </tbody>
@@ -223,7 +227,7 @@ export function Gstr1Sheet({
 
 /** 3B prints computed figures at 2dp but bare zeros as "0.0", like the form. */
 function f3b(n: number): string {
-  return n === 0 ? "0.0" : fmt2(n);
+  return n === 0 ? "0.0" : inr2(n);
 }
 
 function OutwardRow({ label, v }: { label: string; v: GstTotals }) {
