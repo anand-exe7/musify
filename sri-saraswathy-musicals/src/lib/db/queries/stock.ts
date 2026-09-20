@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { stockInward, products } from "@/lib/db/schema";
+import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/store/pos";
 import { row, rows } from "./_util";
 
 export interface StockInwardRecord {
@@ -64,10 +65,14 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
 
   const [saved] = await db.insert(stockInward).values(record).returning();
 
-  // Apply to inventory: bump the variant's on-hand and refresh the product cost.
+  // Apply to inventory: add the received qty to the target branch's bucket on
+  // the chosen variant, and refresh the product's cost. Other branch buckets
+  // and other variants are untouched.
   if (prod && v) {
+    const branch = input.branch as Branch;
+    const existing = variantStockAt(v, branch);
     const nextVariants = variants.map((x, i) =>
-      i === input.variantIndex ? { ...x, stock: (Number(x.stock) || 0) + input.quantity } : x,
+      i === input.variantIndex ? setVariantStockAt(x, branch, existing + input.quantity) : x,
     );
     await db
       .update(products)

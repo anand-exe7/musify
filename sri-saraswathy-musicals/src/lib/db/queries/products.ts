@@ -1,13 +1,27 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
-import type { Category, Origin, Product } from "@/types";
+import { variantStock } from "@/lib/store/pos";
+import type { Category, Origin, Product, ProductVariant } from "@/types";
+
+/** Turn a DB variant (per-branch buckets, possibly legacy `stock`) into the
+ *  storefront-facing shape: a single summed `stock` count across every branch. */
+function toStorefrontVariants(vs: ProductRow["variants"]): ProductVariant[] {
+  return (vs ?? []).map((v) => ({
+    attr: v.attr,
+    finish: v.finish,
+    price: v.price,
+    weight: v.weight,
+    stock: variantStock(v),
+    disabled: v.disabled,
+  }));
+}
 
 /** On-hand available to the storefront = sum of enabled variants' stock. */
 function availableStock(variants: ProductRow["variants"]): number {
   return (variants ?? [])
     .filter((v) => !v.disabled)
-    .reduce((n, v) => n + (Number(v.stock) || 0), 0);
+    .reduce((n, v) => n + variantStock(v), 0);
 }
 
 /** Map a unified catalog row to the storefront `Product` shape. Stock is derived
@@ -26,6 +40,7 @@ export function toProduct(r: ProductRow): Product {
     isGstApplicable: r.isGstApplicable,
     hsn: r.hsn,
     stock: availableStock(r.variants),
+    variants: toStorefrontVariants(r.variants),
     rating: r.rating,
     reviews: r.reviews,
     tagline: r.tagline,
@@ -69,9 +84,10 @@ function toInsertRow(p: Product): typeof products.$inferInsert {
     featured: p.featured ?? false,
     bestSeller: p.bestSeller ?? false,
     isNew: p.new ?? false,
-    variants: [
-      { attr: "Standard", finish: "", price: p.price, weight: 0, stock: p.stock ?? 0 },
-    ],
+    variants:
+      p.variants && p.variants.length > 0
+        ? p.variants
+        : [{ attr: "Standard", finish: "", price: p.price, weight: 0, stock: p.stock ?? 0, disabled: false }],
   };
 }
 

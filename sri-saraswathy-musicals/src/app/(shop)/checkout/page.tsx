@@ -9,6 +9,7 @@ import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
 import { useShallow } from "zustand/react/shallow";
 import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
+import { findVariant, variantLabel } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock, MapPin } from "lucide-react";
@@ -71,9 +72,17 @@ export default function CheckoutPage() {
     return <div className="container-narrow py-32 text-center text-ink-400">Loading checkout…</div>;
   }
 
-  const cartItems = items.map((i) => ({ ...i, product: byId.get(i.productId) })).filter((i) => i.product);
-  const subtotal = cartItems.reduce((n, i) => n + (i.product?.price ?? 0) * i.quantity, 0);
-  const gstLines = cartItems.map((i) => ({ amount: (i.product?.price ?? 0) * i.quantity, rate: i.product?.gstRate ?? 0 }));
+  const cartItems = items
+    .map((i) => {
+      const product = byId.get(i.productId);
+      if (!product) return null;
+      const variant = findVariant(product.variants ?? [], i.variantKey);
+      const unitPrice = variant?.price ?? product.price;
+      return { ...i, product, variant, unitPrice };
+    })
+    .filter((i): i is NonNullable<typeof i> => i !== null);
+  const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
+  const gstLines = cartItems.map((i) => ({ amount: i.unitPrice * i.quantity, rate: i.product.gstRate ?? 0 }));
   const intra = isIntraState(shipState, homeState);
   const gst = gstBreakup(gstLines, intra);
   const gstTotal = gst.total;
@@ -119,7 +128,7 @@ export default function CheckoutPage() {
     setPlacing(true);
 
     const payload = {
-      items: cartItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      items: cartItems.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
       delivery,
       payment,
       shipState,
@@ -320,8 +329,8 @@ export default function CheckoutPage() {
               <h2 className="heading-serif text-xl text-ink-900">Delivery method</h2>
               <div className="mt-6 space-y-3">
                 <DeliveryOption id="white-glove" active={delivery === "white-glove"} onClick={() => setDelivery("white-glove")} title="White-glove" desc="Instrument delivered, unpacked and set up in your home. 2 to 4 working days." price="Free" recommended />
-                <DeliveryOption id="standard" active={delivery === "standard"} onClick={() => setDelivery("standard")} title="Standard" desc="Insured courier. 3 to 5 working days." price={subtotal > 5000 ? "Free" : formatINR(200)} />
-                <DeliveryOption id="express" active={delivery === "express"} onClick={() => setDelivery("express")} title="Express" desc="Next-business-day, tier-1 cities only." price={formatINR(500)} />
+                <DeliveryOption id="standard" active={delivery === "standard"} onClick={() => setDelivery("standard")} title="Standard" desc="Insured courier. 3 to 5 working days." price={subtotal > 500000 ? "Free" : formatINR(20000)} />
+                <DeliveryOption id="express" active={delivery === "express"} onClick={() => setDelivery("express")} title="Express" desc="Next-business-day, tier-1 cities only." price={formatINR(50000)} />
               </div>
             </motion.div>
           )}
@@ -360,16 +369,19 @@ export default function CheckoutPage() {
               <h2 className="heading-serif text-xl text-ink-900">Review your order</h2>
               <div className="mt-6 divide-y divide-ink-100 border border-ink-100 bg-ivory-50">
                 {cartItems.map((i) => (
-                  <div key={i.productId} className="flex items-center gap-4 p-4">
+                  <div key={`${i.productId}::${i.variantKey}`} className="flex items-center gap-4 p-4">
                     <div className="relative h-16 w-16 shrink-0 overflow-hidden bg-ink-100">
-                      <ProductImage product={i.product!} sizes="64px" />
+                      <ProductImage product={i.product} sizes="64px" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-[10px] uppercase tracking-widest text-gold-600">{i.product!.brand}</p>
-                      <p className="heading-serif text-base text-ink-900">{i.product!.name}</p>
-                      <p className="text-xs text-ink-400">Qty {i.quantity} · HSN {i.product!.hsn}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-gold-600">{i.product.brand}</p>
+                      <p className="heading-serif text-base text-ink-900">{i.product.name}</p>
+                      {i.variant && (i.product.variants?.length ?? 0) > 1 && (
+                        <p className="text-xs text-ink-600">{variantLabel(i.variant)}</p>
+                      )}
+                      <p className="text-xs text-ink-400">Qty {i.quantity}</p>
                     </div>
-                    <p className="tabular text-sm text-ink-900">{formatINR(i.product!.price * i.quantity)}</p>
+                    <p className="tabular text-sm text-ink-900">{formatINR(i.unitPrice * i.quantity)}</p>
                   </div>
                 ))}
               </div>

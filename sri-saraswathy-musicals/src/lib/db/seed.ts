@@ -50,12 +50,19 @@ const CATEGORY_LABEL: Record<string, string> = {
 function unifiedProducts() {
   return catalog.map((p, i) => {
     const twoWay = i % 3 === 0 && p.stock > 4;
+    // Per-branch buckets (Phase 4): split each variant's on-hand roughly evenly
+    // between the two branches so the transfer / branch-scoped screens have
+    // something to work with out of the box.
+    const split = (total: number) => ({
+      "Branch 1": Math.ceil(total / 2),
+      "Branch 2": Math.floor(total / 2),
+    });
     const variants = twoWay
       ? [
-          { attr: "Standard", finish: "Natural", price: P(p.price), weight: 1400, stock: Math.ceil(p.stock / 2) },
-          { attr: "Deluxe", finish: "Rosewood", price: P(p.price + 2500), weight: 1600, stock: Math.floor(p.stock / 2) },
+          { attr: "Standard", finish: "Natural", price: P(p.price), weight: 1400, stockByBranch: split(Math.ceil(p.stock / 2)) },
+          { attr: "Deluxe", finish: "Rosewood", price: P(p.price + 2500), weight: 1600, stockByBranch: split(Math.floor(p.stock / 2)) },
         ]
-      : [{ attr: "Standard", finish: "Natural", price: P(p.price), weight: 1400, stock: p.stock }];
+      : [{ attr: "Standard", finish: "Natural", price: P(p.price), weight: 1400, stockByBranch: split(p.stock) }];
     return {
       id: p.id,
       slug: p.slug,

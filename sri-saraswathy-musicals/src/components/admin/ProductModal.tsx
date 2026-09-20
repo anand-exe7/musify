@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { X, Plus, Trash2, ImagePlus } from "lucide-react";
 import { usePOS, type InvProduct, type Variant } from "@/lib/store/pos";
+import { useAuth } from "@/lib/store/auth";
 import { cn, slugify } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 
@@ -53,6 +54,10 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   const addProduct = usePOS((s) => s.addProduct);
   const updateProduct = usePOS((s) => s.updateProduct);
   const CATEGORIES = usePOS((s) => s.categories);
+  // Phase 7: non-admin staff (branch managers, cashiers) can edit stock and
+  // descriptions but not price fields — base, MRP, or per-variant price.
+  const isAdmin = useAuth((s) => s.isAdmin);
+  const priceLocked = !isAdmin;
   const isNew = !product;
   const [draft, setDraft] = useState<InvProduct>(product ? structuredClone(product) : blankProduct());
   const fileRef = useRef<HTMLInputElement>(null);
@@ -137,7 +142,16 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={label}>Category</label><select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
                 <div><label className={label}>Department</label><select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>{DEPTS.map((c) => <option key={c}>{c}</option>)}</select></div>
-                <div><label className={label}>Base Price (₹)</label><MoneyInput value={draft.basePrice || 0} onChange={(paise) => set({ basePrice: paise })} className={field} /></div>
+                <div>
+                  <label className={label}>Base Price (₹){priceLocked && <span className="ml-1 text-[9px] text-ink-400">· admin only</span>}</label>
+                  <MoneyInput
+                    value={draft.basePrice || 0}
+                    onChange={(paise) => set({ basePrice: paise })}
+                    disabled={priceLocked}
+                    title={priceLocked ? "Only admins can change prices" : undefined}
+                    className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")}
+                  />
+                </div>
                 <div><label className={label}>Base Weight (g)</label><input type="number" value={draft.baseWeight || ""} onChange={(e) => set({ baseWeight: Number(e.target.value) })} className={field} /></div>
               </div>
               <label className={cn(label, "mt-4")}>Discount Label</label>
@@ -214,8 +228,16 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
                 </select>
               </div>
               <div>
-                <label className={label}>MRP (₹) — strikethrough price</label>
-                <MoneyInput value={draft.mrp || 0} onChange={(paise) => set({ mrp: paise })} className={field} />
+                <label className={label}>
+                  MRP (₹) — strikethrough price{priceLocked && <span className="ml-1 text-[9px] text-ink-400">· admin only</span>}
+                </label>
+                <MoneyInput
+                  value={draft.mrp || 0}
+                  onChange={(paise) => set({ mrp: paise })}
+                  disabled={priceLocked}
+                  title={priceLocked ? "Only admins can change prices" : undefined}
+                  className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")}
+                />
               </div>
               <div className="md:col-span-2">
                 <label className={label}>Tagline</label>
@@ -280,7 +302,7 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
                     <tr key={i} className={cn(v.disabled && "opacity-50")}>
                       <td className="pr-2 py-1.5"><input value={v.attr} onChange={(e) => setVariant(i, { attr: e.target.value })} className="w-28 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
+                      <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><input type="number" value={v.stock} onChange={(e) => setVariant(i, { stock: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>

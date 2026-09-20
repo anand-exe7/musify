@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
-import { usePOS, productStock, stockState, type InvProduct } from "@/lib/store/pos";
+import { usePOS, productStock, stockState, variantStock, type InvProduct } from "@/lib/store/pos";
+import { useAuth } from "@/lib/store/auth";
 import { ProductModal } from "@/components/admin/ProductModal";
 import { formatINR, cn } from "@/lib/utils";
 import { Bell, Plus, Pencil, Trash2, AlertTriangle, X } from "lucide-react";
@@ -31,8 +32,9 @@ export default function InventoryPage() {
   const alerts = useMemo(() => {
     const list: { product: InvProduct; variant: string; stock: number; state: "low" | "out" }[] = [];
     invProducts.forEach((p) => p.variants.filter((v) => !v.disabled).forEach((v) => {
-      if (v.stock <= 0) list.push({ product: p, variant: `${v.attr} · ${v.finish}`, stock: 0, state: "out" });
-      else if (v.stock <= p.lowStockAt) list.push({ product: p, variant: `${v.attr} · ${v.finish}`, stock: v.stock, state: "low" });
+      const stock = variantStock(v);
+      if (stock <= 0) list.push({ product: p, variant: `${v.attr} · ${v.finish}`, stock: 0, state: "out" });
+      else if (stock <= p.lowStockAt) list.push({ product: p, variant: `${v.attr} · ${v.finish}`, stock, state: "low" });
     }));
     return list;
   }, [invProducts]);

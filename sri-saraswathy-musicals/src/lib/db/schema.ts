@@ -76,10 +76,21 @@ export const products = pgTable("products", {
   featured: boolean("featured").notNull().default(false),
   bestSeller: boolean("best_seller").notNull().default(false),
   isNew: boolean("is_new").notNull().default(false),
-  /** Purchasable variants. `price` is paise; `stock` is on-hand for that variant. */
+  /** Purchasable variants. `price` is paise. `stockByBranch` splits on-hand by
+   *  branch — introduced in Phase 4. Legacy rows may still carry `stock` and are
+   *  read via `variantStockAt` in `store/pos.ts`. */
   variants: jsonb("variants")
     .$type<
-      { attr: string; finish: string; price: number; weight: number; stock: number; disabled?: boolean }[]
+      {
+        attr: string;
+        finish: string;
+        price: number;
+        weight: number;
+        stockByBranch?: Partial<Record<"Branch 1" | "Branch 2", number>>;
+        /** @deprecated kept for backward compatibility with pre-Phase-4 rows. */
+        stock?: number;
+        disabled?: boolean;
+      }[]
     >()
     .notNull()
     .default([]),
@@ -229,6 +240,24 @@ export const stockInward = pgTable("stock_inward", {
   branch: text("branch").notNull(),
   createdBy: text("created_by").notNull().default(""),
   inwardAt: text("inward_at").notNull(),
+});
+
+/**
+ * Inter-branch stock movement (Phase 4). Each row records one variant leaving
+ * `fromBranch` and arriving at `toBranch`; the same POST that saves the row
+ * also flips the two branch buckets in `products.variants[i].stockByBranch`.
+ */
+export const stockTransfers = pgTable("stock_transfers", {
+  id: text("id").primaryKey(),
+  productId: text("product_id").notNull(),
+  productName: text("product_name").notNull().default(""),
+  variant: text("variant").notNull().default(""),
+  quantity: integer("quantity").notNull().default(0),
+  fromBranch: text("from_branch").notNull(),
+  toBranch: text("to_branch").notNull(),
+  note: text("note").notNull().default(""),
+  createdBy: text("created_by").notNull().default(""),
+  transferredAt: text("transferred_at").notNull(),
 });
 
 /**
@@ -421,6 +450,7 @@ export type InvoiceRow = typeof invoices.$inferSelect;
 export type VendorRow = typeof vendors.$inferSelect;
 export type BranchRow = typeof branches.$inferSelect;
 export type StockInwardRow = typeof stockInward.$inferSelect;
+export type StockTransferRow = typeof stockTransfers.$inferSelect;
 export type ExpenseRow = typeof expenses.$inferSelect;
 export type PosBillRow = typeof posBills.$inferSelect;
 /** The unified catalog is the single source for inventory too. */

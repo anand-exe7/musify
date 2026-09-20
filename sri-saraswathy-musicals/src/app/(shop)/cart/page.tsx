@@ -5,6 +5,7 @@ import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
 import { useShallow } from "zustand/react/shallow";
 import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
+import { findVariant, variantLabel } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
 import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -97,11 +98,17 @@ export default function CartPage() {
   }
 
   const cartItems = items
-    .map((i) => ({ ...i, product: byId.get(i.productId) }))
-    .filter((i) => i.product);
+    .map((i) => {
+      const product = byId.get(i.productId);
+      if (!product) return null;
+      const variant = findVariant(product.variants ?? [], i.variantKey);
+      const unitPrice = variant?.price ?? product.price;
+      return { ...i, product, variant, unitPrice };
+    })
+    .filter((i): i is NonNullable<typeof i> => i !== null);
 
-  const subtotal = cartItems.reduce((n, i) => n + (i.product?.price ?? 0) * i.quantity, 0);
-  const gstLines = cartItems.map((i) => ({ amount: (i.product?.price ?? 0) * i.quantity, rate: i.product?.gstRate ?? 0 }));
+  const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
+  const gstLines = cartItems.map((i) => ({ amount: i.unitPrice * i.quantity, rate: i.product.gstRate ?? 0 }));
   const intra = isIntraState(shipState, homeState);
   const gst = gstBreakup(gstLines, intra);
   const gstTotal = gst.total;
@@ -168,7 +175,7 @@ export default function CartPage() {
           <AnimatePresence mode="popLayout">
             {cartItems.map((i) => (
               <motion.div
-                key={i.productId}
+                key={`${i.productId}::${i.variantKey}`}
                 layout
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -176,31 +183,34 @@ export default function CartPage() {
                 transition={{ duration: 0.3 }}
                 className="flex gap-4 border border-ink-100 bg-ivory-50 p-4 md:p-5"
               >
-                <Link href={`/product/${i.product!.slug}`} className="relative h-24 w-24 shrink-0 overflow-hidden bg-ink-100 md:h-32 md:w-32">
-                  <ProductImage product={i.product!} sizes="128px" />
+                <Link href={`/product/${i.product.slug}`} className="relative h-24 w-24 shrink-0 overflow-hidden bg-ink-100 md:h-32 md:w-32">
+                  <ProductImage product={i.product} sizes="128px" />
                 </Link>
                 <div className="flex min-w-0 flex-1 flex-col justify-between">
                   <div className="flex justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-widest text-gold-600">{i.product!.brand}</p>
-                      <Link href={`/product/${i.product!.slug}`}>
-                        <p className="heading-serif truncate text-lg text-ink-900">{i.product!.name}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-gold-600">{i.product.brand}</p>
+                      <Link href={`/product/${i.product.slug}`}>
+                        <p className="heading-serif truncate text-lg text-ink-900">{i.product.name}</p>
                       </Link>
-                      <p className="mt-0.5 text-xs text-ink-400">HSN {i.product!.hsn} · {i.product!.gstRate}% GST</p>
+                      {i.variant && (i.product.variants?.length ?? 0) > 1 && (
+                        <p className="mt-0.5 text-xs text-ink-600">{variantLabel(i.variant)}</p>
+                      )}
+                      <p className="mt-0.5 text-xs text-ink-400">Incl. {i.product.gstRate}% GST</p>
                     </div>
-                    <button onClick={() => removeItem(i.productId)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center text-ink-400 hover:text-danger">
+                    <button onClick={() => removeItem(i.productId, i.variantKey)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center text-ink-400 hover:text-danger">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
                   <div className="mt-3 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
                     <div className="flex shrink-0 items-center border border-ink-200">
-                      <button onClick={() => updateQuantity(i.productId, i.quantity - 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Minus className="h-3 w-3" /></button>
+                      <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity - 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Minus className="h-3 w-3" /></button>
                       <span className="tabular w-8 text-center text-sm">{i.quantity}</span>
-                      <button onClick={() => updateQuantity(i.productId, i.quantity + 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Plus className="h-3 w-3" /></button>
+                      <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity + 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Plus className="h-3 w-3" /></button>
                     </div>
                     <div className="ml-auto text-right">
-                      <p className="tabular font-display text-lg text-ink-900">{formatINR(i.product!.price * i.quantity)}</p>
-                      {i.quantity > 1 && <p className="tabular text-xs text-ink-400">{formatINR(i.product!.price)} each</p>}
+                      <p className="tabular font-display text-lg text-ink-900">{formatINR(i.unitPrice * i.quantity)}</p>
+                      {i.quantity > 1 && <p className="tabular text-xs text-ink-400">{formatINR(i.unitPrice)} each</p>}
                     </div>
                   </div>
                 </div>

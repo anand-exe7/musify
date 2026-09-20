@@ -8,16 +8,24 @@ import { getAllProducts } from "@/lib/db/queries/products";
 import { getZones } from "@/lib/db/queries/settings";
 import { HttpError } from "@/lib/api/http";
 import type { Zone } from "@/lib/store/settings";
+import { findVariant, variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
 
 export type DeliveryMethod = "standard" | "white-glove" | "express";
 
 export interface CartLineInput {
   productId: string;
+  variantKey?: string;
   quantity: number;
 }
 
 export interface PricedOrder {
-  items: { productId: string; quantity: number; price: number }[];
+  items: {
+    productId: string;
+    variantKey: string;
+    variantLabel: string;
+    quantity: number;
+    price: number;
+  }[];
   subtotal: number;
   gst: number;
   shipping: number;
@@ -66,12 +74,24 @@ export async function priceOrder(
   const priced = items.map((i) => {
     const product = byId.get(i.productId);
     if (!product) throw new HttpError(400, `Unknown product: ${i.productId}`);
+    const productVariants = product.variants ?? [];
+    const variant =
+      (i.variantKey && findVariant(productVariants, i.variantKey)) ||
+      productVariants.find((v) => !v.disabled) ||
+      productVariants[0];
     const qty = Math.max(1, Math.floor(i.quantity));
-    const lineAmount = product.price * qty;
+    const unitPrice = variant?.price || product.price;
+    const lineAmount = unitPrice * qty;
     subtotal += lineAmount;
     const rate = product.isGstApplicable !== false ? product.gstRate : 0;
     gstAccum += (lineAmount * rate) / 100;
-    return { productId: product.id, quantity: qty, price: product.price };
+    return {
+      productId: product.id,
+      variantKey: variant ? keyOf(variant) : "",
+      variantLabel: variant ? variantLabel(variant) : "",
+      quantity: qty,
+      price: unitPrice,
+    };
   });
 
   const gst = Math.round(gstAccum);

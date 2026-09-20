@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posBills, products, coupons, posCategories, type ProductRow } from "@/lib/db/schema";
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
+import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/store/pos";
 import { slugify } from "@/lib/utils";
 import { row, rows, definedOnly } from "./_util";
 
@@ -18,6 +19,23 @@ export async function getBill(id: string): Promise<Bill | undefined> {
 
 export async function createBill(b: Bill): Promise<Bill> {
   const [r] = await db.insert(posBills).values(b).returning();
+  // Decrement stock at the bill's branch for every line that was picked from
+  // the catalog (has productId + variantIndex). Freeform lines don't touch it.
+  // One product per DB roundtrip keeps this simple — POS bills are short.
+  const branch = b.branch as Branch;
+  for (const it of b.items) {
+    if (!it.productId || typeof it.variantIndex !== "number" || (it.qty ?? 0) <= 0) continue;
+    const [prod] = await db.select().from(products).where(eq(products.id, it.productId)).limit(1);
+    if (!prod) continue;
+    const variants = prod.variants ?? [];
+    const v = variants[it.variantIndex];
+    if (!v) continue;
+    const onHand = variantStockAt(v, branch);
+    const nextVariants = variants.map((x, i) =>
+      i === it.variantIndex ? setVariantStockAt(x, branch, Math.max(0, onHand - it.qty)) : x,
+    );
+    await db.update(products).set({ variants: nextVariants }).where(eq(products.id, it.productId));
+  }
   return row<Bill>(r);
 }
 

@@ -2,11 +2,13 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Heart, ShoppingBag } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { ProductImage } from "@/components/ui/ProductImage";
 import type { Product } from "@/types";
 import { formatINR } from "@/lib/utils";
 import { useCart } from "@/lib/store/cart";
 import { useWishlist } from "@/lib/store/wishlist";
+import { defaultVariant, variantKey as keyOf } from "@/lib/catalog/variants";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -16,15 +18,26 @@ interface Props {
 }
 
 export function ProductCard({ product: p, index = 0 }: Props) {
+  const router = useRouter();
   const addItem = useCart((s) => s.addItem);
   const { toggle, has } = useWishlist();
   const wishlisted = has(p.id);
   const [added, setAdded] = useState(false);
+  // Quick-add is only unambiguous when there's a single option; otherwise we
+  // send the shopper to the product page to pick a variant.
+  const variants = p.variants ?? [];
+  const selectable = variants.filter((v) => !v.disabled);
+  const singleVariant = selectable.length === 1 ? selectable[0] : undefined;
+  const displayPrice = defaultVariant(variants)?.price ?? p.price;
 
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    addItem(p.id, 1);
+    if (!singleVariant) {
+      router.push(`/product/${p.slug}`);
+      return;
+    }
+    addItem(p.id, keyOf(singleVariant), 1);
     setAdded(true);
     setTimeout(() => setAdded(false), 1400);
   };
@@ -98,8 +111,11 @@ export function ProductCard({ product: p, index = 0 }: Props) {
 
           <div className="flex items-end justify-between gap-2 border-t border-ink-100 pt-3">
             <div>
-              <p className="tabular font-display text-base text-ink-900 md:text-lg">{formatINR(p.price)}</p>
-              {p.mrp > p.price && (
+              <p className="tabular font-display text-base text-ink-900 md:text-lg">
+                {selectable.length > 1 && <span className="mr-1 text-[10px] uppercase tracking-widest text-ink-400">From</span>}
+                {formatINR(displayPrice)}
+              </p>
+              {p.mrp > displayPrice && (
                 <p className="tabular text-[10px] text-ink-400 line-through">{formatINR(p.mrp)}</p>
               )}
             </div>
