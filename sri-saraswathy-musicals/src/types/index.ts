@@ -8,6 +8,17 @@ export type Category =
 
 export type Origin = "western" | "indian";
 
+/** A purchasable option under a product (size/finish combo). Money in paise;
+ *  `stock` is on-hand across every branch (per-branch buckets land in Phase 4). */
+export interface ProductVariant {
+  attr: string;
+  finish: string;
+  price: number;
+  weight: number;
+  stock: number;
+  disabled?: boolean;
+}
+
 export interface Product {
   id: string;
   slug: string;
@@ -22,7 +33,10 @@ export interface Product {
    *  the invoice records the line at rate 0. Defaults to `true` on the schema. */
   isGstApplicable?: boolean;
   hsn: string;
+  /** Storefront on-hand = sum of enabled variants' stock. */
   stock: number;
+  /** The purchasable options. DB rows always carry this; seed literals may omit it. */
+  variants?: ProductVariant[];
   rating: number;
   reviews: number;
   tagline: string;
@@ -37,8 +51,11 @@ export interface Product {
   new?: boolean;
 }
 
+/** A cart line is identified by (productId, variantKey). One product with two
+ *  variants selected shows up as two independent lines. */
 export interface CartItem {
   productId: string;
+  variantKey: string;
   quantity: number;
 }
 
@@ -54,7 +71,7 @@ export interface Order {
   paymentId?: string;
   shipState?: string;
   branch?: "Branch 1" | "Branch 2";
-  items: { productId: string; quantity: number; price: number }[];
+  items: { productId: string; variantKey?: string; variantLabel?: string; quantity: number; price: number }[];
   subtotal: number;
   gst: number;
   shipping: number;

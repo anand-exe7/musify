@@ -7,6 +7,7 @@ import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { genDocId } from "@/lib/ids";
 import type { Vendor } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 
 interface InwardRow {
   id: string;
@@ -214,7 +215,7 @@ export default function StockInwardPage() {
               </div>
               <div>
                 <label className={label}>Unit cost (₹)</label>
-                <input type="number" min={0} value={unitCost || ""} onChange={(e) => setUnitCost(Number(e.target.value))} className={field} placeholder="Purchase price" />
+                <MoneyInput value={unitCost} onChange={(paise) => setUnitCost(paise)} className={field} placeholder="Purchase price" />
               </div>
             </div>
           )}

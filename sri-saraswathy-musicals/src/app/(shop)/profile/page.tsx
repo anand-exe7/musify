@@ -9,6 +9,7 @@ import { formatINR } from "@/lib/utils";
 import { useAuth } from "@/lib/store/auth";
 import { useWishlist } from "@/lib/store/wishlist";
 import { useCart } from "@/lib/store/cart";
+import { variantKey as keyOf } from "@/lib/catalog/variants";
 import type { Order, User as UserType, UserAddress } from "@/types";
 import {
   User,
@@ -658,7 +659,14 @@ export default function ProfilePage() {
                         <p className="mt-1 tabular font-display text-base text-ink-900">{formatINR(p.price)}</p>
                         <div className="mt-3 flex items-center gap-2">
                           <button
-                            onClick={() => addToCart(p.id, 1)}
+                            onClick={() => {
+                              const enabled = (p.variants ?? []).filter((v) => !v.disabled);
+                              if (enabled.length !== 1) {
+                                router.push(`/product/${p.slug}`);
+                                return;
+                              }
+                              addToCart(p.id, keyOf(enabled[0]), 1);
+                            }}
                             disabled={p.stock === 0}
                             className="flex items-center gap-1.5 border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-40"
                           >

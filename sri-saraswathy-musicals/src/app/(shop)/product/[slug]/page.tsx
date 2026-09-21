@@ -1,5 +1,5 @@
 "use client";
-import { useState, use, useEffect } from "react";
+import { useState, use, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { notFound } from "next/navigation";
@@ -7,7 +7,8 @@ import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { useCart } from "@/lib/store/cart";
-import { formatINR } from "@/lib/utils";
+import { formatINR, cn } from "@/lib/utils";
+import { variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
 import { Minus, Plus, ChevronRight, Truck, Award, Store, ShoppingBag, Check, X, ArrowRight } from "lucide-react";
 
 export default function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -20,7 +21,27 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const [activePhoto, setActivePhoto] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState(false);
+  const [selectedVariantKey, setSelectedVariantKey] = useState<string | null>(null);
   const addItem = useCart((s) => s.addItem);
+
+  // Selectable variants (skip disabled). First enabled variant is the default;
+  // the user's pick wins once they interact.
+  const allVariants = useMemo(() => product?.variants ?? [], [product]);
+  const selectableVariants = useMemo(
+    () => allVariants.filter((v) => !v.disabled),
+    [allVariants],
+  );
+  const activeVariant = useMemo(() => {
+    if (!product) return undefined;
+    if (selectedVariantKey) {
+      const hit = selectableVariants.find((v) => keyOf(v) === selectedVariantKey);
+      if (hit) return hit;
+    }
+    return selectableVariants[0] ?? allVariants[0];
+  }, [product, allVariants, selectableVariants, selectedVariantKey]);
+  const unitPrice = activeVariant?.price ?? product?.price ?? 0;
+  const variantStock = activeVariant?.stock ?? 0;
+  const hasMultipleVariants = selectableVariants.length > 1;
   const gallery = (product?.photos && product.photos.length > 0 ? product.photos : [product?.photo].filter(Boolean) as string[]).slice(0, 4);
 
   const related = product
@@ -49,7 +70,8 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   if (!product) notFound();
 
   const handleAdd = () => {
-    addItem(product.id, qty);
+    if (!activeVariant) return;
+    addItem(product.id, keyOf(activeVariant), qty);
     setModalOpen(true);
     setToast(true);
   };
@@ -144,27 +166,65 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
           {/* Price */}
           <div className="mt-6 flex items-end gap-3 border-y border-ink-100 py-6">
-            <span className="tabular font-display text-4xl text-ink-900 md:text-5xl">{formatINR(product.price)}</span>
-            {product.mrp > product.price && (
+            <span className="tabular font-display text-4xl text-ink-900 md:text-5xl">{formatINR(unitPrice)}</span>
+            {product.mrp > unitPrice && (
               <>
                 <span className="tabular pb-1 text-lg text-ink-400 line-through">{formatINR(product.mrp)}</span>
                 <span className="tabular pb-1 text-sm font-semibold text-success">
-                  {Math.round(((product.mrp - product.price) / product.mrp) * 100)}% off
+                  {Math.round(((product.mrp - unitPrice) / product.mrp) * 100)}% off
                 </span>
               </>
             )}
           </div>
           <p className="mt-2 text-xs uppercase tracking-widest text-ink-500">
-            Incl. {product.gstRate}% GST · HSN {product.hsn}
+            Incl. {product.gstRate}% GST
           </p>
 
-          {/* Stock */}
+          {/* Variant picker — only when the product has more than one option. */}
+          {hasMultipleVariants && (
+            <div className="mt-6">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink-500">
+                Option{activeVariant ? ` · ${variantLabel(activeVariant)}` : ""}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {selectableVariants.map((v) => {
+                  const k = keyOf(v);
+                  const isActive = activeVariant && keyOf(activeVariant) === k;
+                  const soldOut = (v.stock ?? 0) <= 0;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => {
+                        setSelectedVariantKey(k);
+                        setQty(1);
+                      }}
+                      disabled={soldOut}
+                      className={cn(
+                        "border px-3 py-2 text-xs transition-all",
+                        isActive
+                          ? "border-gold-500 bg-gold-50/50 text-ink-900"
+                          : "border-ink-200 text-ink-700 hover:border-gold-400",
+                        soldOut && "line-through opacity-50",
+                      )}
+                    >
+                      <span className="font-medium">{variantLabel(v)}</span>
+                      {v.price !== product.price && (
+                        <span className="tabular ml-2 text-ink-500">{formatINR(v.price)}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stock — of the selected variant. */}
           <div className="mt-4 flex items-center gap-2 text-sm">
-            <span className={`inline-block h-2 w-2 rounded-full ${product.stock > 3 ? "bg-success" : product.stock > 0 ? "bg-warning" : "bg-danger"}`} />
-            {product.stock > 3 ? (
+            <span className={`inline-block h-2 w-2 rounded-full ${variantStock > 3 ? "bg-success" : variantStock > 0 ? "bg-warning" : "bg-danger"}`} />
+            {variantStock > 3 ? (
               <span className="text-ink-700">In stock · Ships in 2-3 days</span>
-            ) : product.stock > 0 ? (
-              <span className="text-warning">Only {product.stock} left</span>
+            ) : variantStock > 0 ? (
+              <span className="text-warning">Only {variantStock} left</span>
             ) : (
               <span className="text-danger">Currently unavailable</span>
             )}
@@ -177,11 +237,11 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 <Minus className="h-3.5 w-3.5" />
               </button>
               <span className="tabular w-10 text-center font-medium">{qty}</span>
-              <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="grid h-full w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Increase">
+              <button onClick={() => setQty(Math.min(variantStock, qty + 1))} className="grid h-full w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Increase">
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
-            <button onClick={handleAdd} disabled={product.stock === 0} className="btn-gold-solid h-12 flex-1 py-0 disabled:cursor-not-allowed disabled:opacity-50">
+            <button onClick={handleAdd} disabled={variantStock === 0} className="btn-gold-solid h-12 flex-1 py-0 disabled:cursor-not-allowed disabled:opacity-50">
               <ShoppingBag className="h-4 w-4" />
               Add to cart
             </button>
@@ -329,9 +389,11 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] uppercase tracking-widest text-gold-600">{product.brand}</p>
                   <p className="heading-serif truncate text-lg text-ink-900">{product.name}</p>
-                  <p className="mt-0.5 text-xs text-ink-400">Qty {qty}</p>
+                  <p className="mt-0.5 text-xs text-ink-400">
+                    {activeVariant && hasMultipleVariants ? `${variantLabel(activeVariant)} · ` : ""}Qty {qty}
+                  </p>
                 </div>
-                <p className="tabular font-display text-lg text-ink-900">{formatINR(product.price * qty)}</p>
+                <p className="tabular font-display text-lg text-ink-900">{formatINR(unitPrice * qty)}</p>
               </div>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">

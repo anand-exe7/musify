@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { usePOS, type Coupon } from "@/lib/store/pos";
 import { formatINR, cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Info, RefreshCw, Search, Wand2 } from "lucide-react";
 
 function toDMY(v: string) {
@@ -76,7 +77,7 @@ export default function CouponsPage() {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div><label className={label}>Discount % *</label><input type="number" value={pct} onChange={(e) => setPct(e.target.value === "" ? "" : Number(e.target.value))} placeholder="e.g. 15" className={field} /></div>
-            <div><label className={label}>Min Order (₹)</label><input type="number" value={minOrder} onChange={(e) => setMinOrder(e.target.value === "" ? "" : Number(e.target.value))} placeholder="e.g. 1000" className={field} /></div>
+            <div><label className={label}>Min Order (₹)</label><MoneyInput value={minOrder === "" ? 0 : minOrder} onChange={(paise) => setMinOrder(paise)} placeholder="e.g. 1000" className={field} /></div>
             <div><label className={label}>Expiry Date</label><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={field} /></div>
             <div><label className={label}>Usage Limit</label><input type="number" value={limit} onChange={(e) => setLimit(e.target.value === "" ? "" : Number(e.target.value))} placeholder="e.g. 50" className={field} /></div>
           </div>

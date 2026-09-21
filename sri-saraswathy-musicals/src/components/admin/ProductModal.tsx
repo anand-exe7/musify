@@ -2,7 +2,9 @@
 import { useRef, useState } from "react";
 import { X, Plus, Trash2, ImagePlus } from "lucide-react";
 import { usePOS, type InvProduct, type Variant } from "@/lib/store/pos";
-import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/store/auth";
+import { cn, slugify } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 
 const DEPTS = ["Indian", "Western", "Unisex"];
 
@@ -10,13 +12,24 @@ function blankProduct(): InvProduct {
   return {
     id: `p${Date.now()}`,
     name: "",
+    slug: "",
+    brand: "",
+    origin: "indian",
     category: "Strings",
     department: "Indian",
     photo: undefined,
     basePrice: 0,
+    mrp: 0,
     baseWeight: 500,
     description: "",
+    tagline: "",
+    rating: 0,
+    reviews: 0,
+    specs: [],
+    features: [],
     active: true,
+    featured: false,
+    bestSeller: false,
     discountLabel: "",
     newArrival: false,
     lowStockAt: 4,
@@ -41,6 +54,10 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   const addProduct = usePOS((s) => s.addProduct);
   const updateProduct = usePOS((s) => s.updateProduct);
   const CATEGORIES = usePOS((s) => s.categories);
+  // Phase 7: non-admin staff (branch managers, cashiers) can edit stock and
+  // descriptions but not price fields — base, MRP, or per-variant price.
+  const isAdmin = useAuth((s) => s.isAdmin);
+  const priceLocked = !isAdmin;
   const isNew = !product;
   const [draft, setDraft] = useState<InvProduct>(product ? structuredClone(product) : blankProduct());
   const fileRef = useRef<HTMLInputElement>(null);
@@ -61,16 +78,29 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   };
 
   const save = () => {
+    const name = draft.name.trim() || "Untitled product";
+    const photos = draft.photos && draft.photos.length > 0 ? draft.photos : draft.photo ? [draft.photo] : [];
     const clean: InvProduct = {
       ...draft,
-      name: draft.name.trim() || "Untitled product",
+      name,
+      slug: (draft.slug?.trim() || slugify(name)) || draft.id,
       basePrice: Number(draft.basePrice) || 0,
       isGstApplicable: draft.gstRate != null,
+      photos,
+      images: draft.images ?? [],
+      specs: (draft.specs ?? []).filter((s) => s.label.trim() || s.value.trim()),
+      features: (draft.features ?? []).filter((f) => f.trim()),
     };
     if (isNew) addProduct(clean);
     else updateProduct(clean.id, clean);
     onClose();
   };
+
+  // Storefront field helpers.
+  const setSpec = (i: number, patch: Partial<{ label: string; value: string }>) =>
+    setDraft((d) => ({ ...d, specs: (d.specs ?? []).map((s, idx) => (idx === i ? { ...s, ...patch } : s)) }));
+  const addSpec = () => setDraft((d) => ({ ...d, specs: [...(d.specs ?? []), { label: "", value: "" }] }));
+  const removeSpec = (i: number) => setDraft((d) => ({ ...d, specs: (d.specs ?? []).filter((_, idx) => idx !== i) }));
 
   const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
   const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
@@ -112,7 +142,16 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={label}>Category</label><select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
                 <div><label className={label}>Department</label><select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>{DEPTS.map((c) => <option key={c}>{c}</option>)}</select></div>
-                <div><label className={label}>Base Price (₹)</label><input type="number" value={draft.basePrice || ""} onChange={(e) => set({ basePrice: Number(e.target.value) })} className={field} /></div>
+                <div>
+                  <label className={label}>Base Price (₹){priceLocked && <span className="ml-1 text-[9px] text-ink-400">· admin only</span>}</label>
+                  <MoneyInput
+                    value={draft.basePrice || 0}
+                    onChange={(paise) => set({ basePrice: paise })}
+                    disabled={priceLocked}
+                    title={priceLocked ? "Only admins can change prices" : undefined}
+                    className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")}
+                  />
+                </div>
                 <div><label className={label}>Base Weight (g)</label><input type="number" value={draft.baseWeight || ""} onChange={(e) => set({ baseWeight: Number(e.target.value) })} className={field} /></div>
               </div>
               <label className={cn(label, "mt-4")}>Discount Label</label>
@@ -166,6 +205,86 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
             </div>
           </div>
 
+          {/* Storefront listing — the fields the customer-facing website shows */}
+          <div className="mt-6 rounded-xl border border-ink-100 bg-[#FAF7EF] p-4">
+            <div className="mb-3">
+              <p className="text-sm font-bold text-ink-900">Storefront Listing</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">How this product appears on the customer website</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className={label}>Brand</label>
+                <input value={draft.brand ?? ""} onChange={(e) => set({ brand: e.target.value })} className={field} placeholder="e.g. Tanjore Classic" />
+              </div>
+              <div>
+                <label className={label}>URL Slug</label>
+                <input value={draft.slug ?? ""} onChange={(e) => set({ slug: e.target.value })} className={field} placeholder={slugify(draft.name || "auto-from-name")} />
+              </div>
+              <div>
+                <label className={label}>Origin</label>
+                <select value={draft.origin ?? "indian"} onChange={(e) => set({ origin: e.target.value as "indian" | "western" })} className={field}>
+                  <option value="indian">Indian</option>
+                  <option value="western">Western</option>
+                </select>
+              </div>
+              <div>
+                <label className={label}>
+                  MRP (₹) — strikethrough price{priceLocked && <span className="ml-1 text-[9px] text-ink-400">· admin only</span>}
+                </label>
+                <MoneyInput
+                  value={draft.mrp || 0}
+                  onChange={(paise) => set({ mrp: paise })}
+                  disabled={priceLocked}
+                  title={priceLocked ? "Only admins can change prices" : undefined}
+                  className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className={label}>Tagline</label>
+                <input value={draft.tagline ?? ""} onChange={(e) => set({ tagline: e.target.value })} className={field} placeholder="A short line shown under the name" />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-ink-700">
+                <input type="checkbox" checked={!!draft.featured} onChange={(e) => set({ featured: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Featured
+              </label>
+              <label className="flex items-center gap-2 text-sm text-ink-700">
+                <input type="checkbox" checked={!!draft.bestSeller} onChange={(e) => set({ bestSeller: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Bestseller
+              </label>
+            </div>
+
+            {/* Specs */}
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <label className={label}>Specifications</label>
+                <button onClick={addSpec} className="flex items-center gap-1 rounded-lg border border-ink-200 px-2 py-1 text-[11px] font-semibold text-ink-600 hover:border-gold-500 hover:text-gold-600"><Plus className="h-3 w-3" /> Add spec</button>
+              </div>
+              <div className="space-y-2">
+                {(draft.specs ?? []).map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input value={s.label} onChange={(e) => setSpec(i, { label: e.target.value })} placeholder="Label (e.g. Wood)" className={cn(field, "flex-1")} />
+                    <input value={s.value} onChange={(e) => setSpec(i, { value: e.target.value })} placeholder="Value (e.g. Jackwood)" className={cn(field, "flex-1")} />
+                    <button onClick={() => removeSpec(i)} className="grid h-8 w-8 shrink-0 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                ))}
+                {(draft.specs ?? []).length === 0 && <p className="text-[11px] text-ink-400">No specifications added.</p>}
+              </div>
+            </div>
+
+            {/* Features */}
+            <div className="mt-4">
+              <label className={label}>Features (one per line)</label>
+              <textarea
+                value={(draft.features ?? []).join("\n")}
+                onChange={(e) => set({ features: e.target.value.split("\n") })}
+                rows={4}
+                className={cn(field, "resize-none")}
+                placeholder={"Hand-carved resonator\nProfessional concert grade\nIncludes padded case"}
+              />
+            </div>
+          </div>
+
           {/* Variants */}
           <div className="mt-6 rounded-xl border border-ink-100 bg-[#FAF7EF] p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -183,7 +302,7 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
                     <tr key={i} className={cn(v.disabled && "opacity-50")}>
                       <td className="pr-2 py-1.5"><input value={v.attr} onChange={(e) => setVariant(i, { attr: e.target.value })} className="w-28 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><input type="number" value={v.price || ""} onChange={(e) => setVariant(i, { price: Number(e.target.value) })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
+                      <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><input type="number" value={v.stock} onChange={(e) => setVariant(i, { stock: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>

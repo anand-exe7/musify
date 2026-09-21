@@ -35,9 +35,10 @@ interface SettingsState extends Scalars {
 }
 
 const DEFAULTS: Scalars = {
-  freeThreshold: 25000,
-  standardCharge: 250,
-  expressCharge: 600,
+  // Money in paise: ₹25,000 free-shipping threshold, ₹250 standard, ₹600 express.
+  freeThreshold: 2500000,
+  standardCharge: 25000,
+  expressCharge: 60000,
   storePickup: true,
 };
 

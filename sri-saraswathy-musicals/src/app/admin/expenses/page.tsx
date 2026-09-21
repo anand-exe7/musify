@@ -12,6 +12,7 @@ import { inPeriod, type Period } from "@/lib/store/pos";
 import { useBranchScope } from "@/lib/store/branch";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: "today", label: "Today" },
@@ -223,7 +224,7 @@ export default function ExpensesPage() {
             <div className="space-y-4">
               <div><label className={label}>What for?</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. October Shop Rent" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className={label}>Amount (₹)</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value === "" ? "" : Number(e.target.value) })} className={field} /></div>
+                <div><label className={label}>Amount (₹)</label><MoneyInput value={form.amount === "" ? 0 : form.amount} onChange={(paise) => setForm({ ...form, amount: paise })} className={field} /></div>
                 <div><label className={label}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={field} /></div>
               </div>
               <div>

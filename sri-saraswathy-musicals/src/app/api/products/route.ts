@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import {
-  getAllProducts,
+  getStorefrontProducts,
   getProductsByCategory,
   getFeaturedProducts,
   getBestSellers,
@@ -12,6 +12,7 @@ import type { Product } from "@/types";
 export const dynamic = "force-dynamic";
 
 // GET /api/products?category=&featured=&bestSeller=
+// Storefront-facing: only `active` products are returned (the admin kill switch).
 export function GET(request: NextRequest) {
   return handle(async () => {
     const sp = request.nextUrl.searchParams;
@@ -19,7 +20,7 @@ export function GET(request: NextRequest) {
     if (sp.get("bestSeller") === "true") return ok(await getBestSellers());
     const category = sp.get("category");
     if (category) return ok(await getProductsByCategory(category));
-    return ok(await getAllProducts());
+    return ok(await getStorefrontProducts());
   });
 }
 

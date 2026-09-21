@@ -15,6 +15,10 @@ export interface BillItem {
   /** GST rate (%) snapshotted at bill time. `null`/absent ⇒ line billed non-GST. */
   gstRate?: number | null;
   hsn?: string;
+  /** Set when the line was picked from the catalog — enables server-side stock
+   *  decrement of that variant at the bill's `branch`. Freeform lines omit. */
+  productId?: string;
+  variantIndex?: number;
 }
 
 export interface Bill {
@@ -46,20 +50,46 @@ export interface Variant {
   finish: string; // e.g. colour / wood
   price: number;
   weight: number;
-  stock: number;
+  /** Per-branch on-hand. Legacy rows may carry a flat `stock: number` instead;
+   *  `variantStock` / `variantStockAt` read either shape. */
+  stockByBranch?: Partial<Record<Branch, number>>;
+  /** @deprecated Legacy single-bucket stock, treated as sitting in Branch 1. */
+  stock?: number;
   disabled?: boolean;
 }
 
+/**
+ * The unified catalog product — the single model the admin edits and the
+ * storefront reads. Money fields (`basePrice`, `mrp`, `cost`, `variants[].price`)
+ * are in **paise**. Website-facing fields (slug, brand, origin, mrp, tagline,
+ * gallery, specs, features, featured/bestSeller) live here too so a product
+ * created in admin renders on the storefront with no second entry.
+ */
 export interface InvProduct {
   id: string;
   name: string;
   category: string; // display label
   department: string;
+  /** Storefront URL slug (unique). */
+  slug?: string;
+  brand?: string;
+  /** Storefront origin filter. */
+  origin?: "indian" | "western";
   photo?: string;
-  basePrice: number;
+  photos?: string[];
+  images?: string[];
+  basePrice: number; // paise — the base selling price (storefront `price`)
+  mrp?: number; // paise — list price for the strikethrough
   baseWeight: number;
   description: string;
+  tagline?: string;
+  rating?: number;
+  reviews?: number;
+  specs?: { label: string; value: string }[];
+  features?: string[];
   active: boolean; // shown to customers
+  featured?: boolean;
+  bestSeller?: boolean;
   discountLabel?: string;
   newArrival?: boolean;
   lowStockAt: number;
@@ -67,7 +97,7 @@ export interface InvProduct {
   gstRate?: number | null;
   hsn?: string;
   isGstApplicable?: boolean;
-  /** Purchase cost per unit (₹), maintained by stock-inward. Drives profit. */
+  /** Purchase cost per unit (paise), maintained by stock-inward. Drives profit. */
   cost?: number;
   variants: Variant[];
 }
@@ -227,8 +257,32 @@ if (typeof window !== "undefined") {
 
 /* ─────────────────────────  Derived helpers  ─────────────────────── */
 
+/** On-hand at a specific branch for one variant. Tolerates the legacy shape:
+ *  a variant that pre-dates per-branch buckets carries `stock: number`, which
+ *  is treated as sitting in Branch 1 (see the seed / stock-inward path). */
+export function variantStockAt(v: Variant, branch: Branch): number {
+  if (v.stockByBranch && typeof v.stockByBranch[branch] === "number") {
+    return Number(v.stockByBranch[branch]) || 0;
+  }
+  return branch === "Branch 1" ? Number(v.stock) || 0 : 0;
+}
+
+/** Total on-hand across every branch for one variant. */
+export function variantStock(v: Variant): number {
+  if (v.stockByBranch) {
+    return (Number(v.stockByBranch["Branch 1"]) || 0) + (Number(v.stockByBranch["Branch 2"]) || 0);
+  }
+  return Number(v.stock) || 0;
+}
+
+/** On-hand at one branch across every enabled variant of a product. */
+export function productStockAt(p: InvProduct, branch: Branch): number {
+  return p.variants.filter((v) => !v.disabled).reduce((n, v) => n + variantStockAt(v, branch), 0);
+}
+
+/** Total on-hand for a product (all branches, enabled variants). */
 export function productStock(p: InvProduct): number {
-  return p.variants.filter((v) => !v.disabled).reduce((n, v) => n + (Number(v.stock) || 0), 0);
+  return p.variants.filter((v) => !v.disabled).reduce((n, v) => n + variantStock(v), 0);
 }
 
 export function stockState(p: InvProduct): "out" | "low" | "in" {
@@ -236,6 +290,20 @@ export function stockState(p: InvProduct): "out" | "low" | "in" {
   if (s <= 0) return "out";
   if (s <= p.lowStockAt) return "low";
   return "in";
+}
+
+/** Set the `branch` bucket to `qty`, preserving other buckets. Migrates a
+ *  legacy `stock` field into the map. Returns a new object; never mutates. */
+export function setVariantStockAt(v: Variant, branch: Branch, qty: number): Variant {
+  const legacyBranch1 = v.stockByBranch ? undefined : Number(v.stock) || 0;
+  const next: Partial<Record<Branch, number>> = {
+    ...(v.stockByBranch ?? {}),
+    ...(legacyBranch1 !== undefined ? { "Branch 1": legacyBranch1 } : {}),
+    [branch]: Math.max(0, Math.round(qty)),
+  };
+  const { stock: _drop, ...rest } = v;
+  void _drop;
+  return { ...rest, stockByBranch: next };
 }
 
 export type Period = "all" | "today" | "week" | "month" | "year" | "custom";

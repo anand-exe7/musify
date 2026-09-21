@@ -24,8 +24,14 @@ import { invoices as invoiceData, vendors as vendorData, customerOrders } from "
 
 const iso = (d: string) => new Date(d).toISOString();
 
-/* ─────────────────────  Derived: inventory products  ───────────────── */
+/** Rupees → integer paise. All seed literals below are written in rupees and
+ *  converted here, so the DB is populated in the app's paise money unit. */
+const P = (rupees: number) => Math.round((Number(rupees) || 0) * 100);
 
+/* ───────────────────────  Unified catalog rows  ────────────────────── */
+
+// The category vocabulary is the storefront slug (what the `Category` type and
+// URL filters use); the label is only for the POS category list's display.
 const CATEGORY_LABEL: Record<string, string> = {
   "indian-classical": "Indian Classical",
   string: "Strings",
@@ -35,28 +41,58 @@ const CATEGORY_LABEL: Record<string, string> = {
   accessories: "Accessories",
 };
 
-function inventoryFromCatalog() {
+/**
+ * Build the unified `products` rows from the marketing catalog: every storefront
+ * field plus the POS/inventory fields (department, variants, cost, lowStockAt).
+ * Money is converted to paise. Variants carry on-hand stock; some products get a
+ * second "Deluxe" variant so the multi-variant paths have data.
+ */
+function unifiedProducts() {
   return catalog.map((p, i) => {
     const twoWay = i % 3 === 0 && p.stock > 4;
+    // Per-branch buckets (Phase 4): split each variant's on-hand roughly evenly
+    // between the two branches so the transfer / branch-scoped screens have
+    // something to work with out of the box.
+    const split = (total: number) => ({
+      "Branch 1": Math.ceil(total / 2),
+      "Branch 2": Math.floor(total / 2),
+    });
     const variants = twoWay
       ? [
-          { attr: "Standard", finish: "Natural", price: p.price, weight: 1400, stock: Math.ceil(p.stock / 2) },
-          { attr: "Deluxe", finish: "Rosewood", price: p.price + 2500, weight: 1600, stock: Math.floor(p.stock / 2) },
+          { attr: "Standard", finish: "Natural", price: P(p.price), weight: 1400, stockByBranch: split(Math.ceil(p.stock / 2)) },
+          { attr: "Deluxe", finish: "Rosewood", price: P(p.price + 2500), weight: 1600, stockByBranch: split(Math.floor(p.stock / 2)) },
         ]
-      : [{ attr: "Standard", finish: "Natural", price: p.price, weight: 1400, stock: p.stock }];
+      : [{ attr: "Standard", finish: "Natural", price: P(p.price), weight: 1400, stockByBranch: split(p.stock) }];
     return {
       id: p.id,
+      slug: p.slug,
       name: p.name,
-      category: CATEGORY_LABEL[p.category] ?? p.category,
+      brand: p.brand,
+      category: p.category,
+      origin: p.origin,
       department: p.origin === "indian" ? "Indian" : "Western",
-      photo: p.photo ?? null,
-      basePrice: p.price,
+      price: P(p.price),
+      mrp: P(p.mrp),
+      gstRate: p.gstRate,
+      isGstApplicable: p.isGstApplicable ?? true,
+      hsn: p.hsn,
+      cost: 0,
       baseWeight: 1400,
-      description: p.description,
       active: true,
       discountLabel: p.mrp > p.price ? "In-store offer" : null,
-      newArrival: p.new ?? false,
       lowStockAt: 4,
+      rating: p.rating,
+      reviews: p.reviews,
+      tagline: p.tagline,
+      description: p.description,
+      specs: p.specs,
+      features: p.features,
+      images: p.images,
+      photo: p.photo ?? null,
+      photos: p.photos ?? null,
+      featured: p.featured ?? false,
+      bestSeller: p.bestSeller ?? false,
+      isNew: p.new ?? false,
       variants,
     };
   });
@@ -355,7 +391,6 @@ async function main() {
     invoices,
     vendors,
     posBills,
-    inventoryProducts,
     coupons,
     posCategories,
     repairTickets,
@@ -376,7 +411,6 @@ async function main() {
     db.delete(invoices),
     db.delete(vendors),
     db.delete(posBills),
-    db.delete(inventoryProducts),
     db.delete(coupons),
     db.delete(posCategories),
     db.delete(repairTickets),
@@ -387,16 +421,8 @@ async function main() {
     db.delete(counters),
   ]);
 
-  console.log("Inserting catalog…");
-  await db.insert(products).values(
-    catalog.map((p) => ({
-      id: p.id, slug: p.slug, name: p.name, brand: p.brand, category: p.category, origin: p.origin,
-      price: p.price, mrp: p.mrp, gstRate: p.gstRate, hsn: p.hsn, stock: p.stock, rating: p.rating,
-      reviews: p.reviews, tagline: p.tagline, description: p.description, specs: p.specs,
-      features: p.features, images: p.images, photo: p.photo ?? null, photos: p.photos ?? null,
-      featured: p.featured ?? false, bestSeller: p.bestSeller ?? false, isNew: p.new ?? false,
-    })),
-  );
+  console.log("Inserting unified catalog…");
+  await db.insert(products).values(unifiedProducts());
 
   await db.insert(categories).values(categoryData.map((c) => ({ ...c })));
 
@@ -411,26 +437,60 @@ async function main() {
 
   await db.insert(staff).values(staffSeed);
 
-  await db.insert(orders).values(customerOrders.map((o) => ({ ...o })));
+  // Money in the imported demo data is in rupees; convert every money field to paise.
+  await db.insert(orders).values(
+    customerOrders.map((o) => ({
+      ...o,
+      items: o.items.map((it) => ({ ...it, price: P(it.price) })),
+      subtotal: P(o.subtotal), gst: P(o.gst), shipping: P(o.shipping), total: P(o.total),
+    })),
+  );
 
-  await db.insert(invoices).values(invoiceData.map((v) => ({ ...v })));
+  await db.insert(invoices).values(
+    invoiceData.map((v) => ({
+      ...v,
+      items: v.items.map((it) => ({ ...it, rate: P(it.rate), amount: P(it.amount) })),
+      subtotal: P(v.subtotal), cgst: P(v.cgst), sgst: P(v.sgst),
+      igst: P(v.igst ?? 0), total: P(v.total),
+    })),
+  );
 
-  await db.insert(vendors).values(vendorData.map((v) => ({ ...v })));
+  await db.insert(vendors).values(
+    vendorData.map((v) => ({ ...v, outstanding: P(v.outstanding), totalPurchases: P(v.totalPurchases) })),
+  );
 
-  console.log("Inserting POS / inventory…");
-  await db.insert(posBills).values(posBillSeed);
-  await db.insert(inventoryProducts).values(inventoryFromCatalog());
-  await db.insert(coupons).values(couponSeed);
-  await db.insert(posCategories).values(Object.values(CATEGORY_LABEL).map((name) => ({ name })));
+  console.log("Inserting POS…");
+  await db.insert(posBills).values(
+    posBillSeed.map((b) => ({
+      ...b,
+      items: b.items.map((it) => ({ ...it, price: P(it.price) })),
+      subtotal: P(b.subtotal), discount: P(b.discount), delivery: P(b.delivery), total: P(b.total),
+    })),
+  );
+  await db.insert(coupons).values(couponSeed.map((c) => ({ ...c, minOrder: P(c.minOrder) })));
+  // POS category list shares the storefront slug vocabulary (the unified column).
+  await db.insert(posCategories).values(Object.keys(CATEGORY_LABEL).map((name) => ({ name })));
 
   console.log("Inserting service / inquiries…");
-  await db.insert(repairTickets).values(repairSeed);
+  await db.insert(repairTickets).values(
+    repairSeed.map((t) => ({
+      ...t,
+      estimate: P(t.estimate), finalCost: P(t.finalCost), advance: P(t.advance),
+    })),
+  );
   await db.insert(inquiries).values(inquirySeed);
 
   console.log("Inserting settings…");
   await db.insert(gstSettings).values({ id: "default" });
   await db.insert(deliverySettings).values({ id: "default" });
-  await db.insert(deliveryZones).values(zoneSeed);
+  await db.insert(deliveryZones).values(
+    zoneSeed.map((z) => ({
+      ...z,
+      charge: P(z.charge),
+      uptoGm250: P(z.uptoGm250), uptoGm500: P(z.uptoGm500), perAddl500: P(z.perAddl500),
+      above5kgPerKg: P(z.above5kgPerKg), above10kgPerKg: P(z.above10kgPerKg),
+    })),
+  );
 
   console.log("✓ Seed complete.");
 }
