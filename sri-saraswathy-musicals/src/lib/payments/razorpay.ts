@@ -1,7 +1,7 @@
 /**
  * Razorpay server helpers — client-facing storefront checkout only. (Admin
- * billing/POS does not use Razorpay.) Amounts are in whole rupees at our layer;
- * Razorpay works in paise, so we convert at the boundary.
+ * billing/POS does not use Razorpay.) Amounts are in paise everywhere (our
+ * layer and Razorpay's), so no conversion is needed at the boundary.
  */
 import crypto from "crypto";
 import Razorpay from "razorpay";
@@ -28,10 +28,10 @@ function razorpay(): Razorpay {
   return client;
 }
 
-/** Create a Razorpay order for `amountRupees`. Returns the id/amount/currency. */
-export async function createRazorpayOrder(amountRupees: number, receipt: string) {
+/** Create a Razorpay order for `amountPaise`. Returns the id/amount/currency. */
+export async function createRazorpayOrder(amountPaise: number, receipt: string) {
   const order = await razorpay().orders.create({
-    amount: Math.round(amountRupees * 100),
+    amount: Math.round(amountPaise),
     currency: "INR",
     receipt,
   });

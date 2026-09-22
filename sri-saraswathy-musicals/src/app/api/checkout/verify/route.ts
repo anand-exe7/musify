@@ -3,7 +3,7 @@ import { handle, created, HttpError, readJson } from "@/lib/api/http";
 import { requireUser } from "@/lib/auth/server";
 import { verifyDraft } from "@/lib/checkout/draft";
 import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
-import { createOrder, nextOrderId } from "@/lib/db/queries/orders";
+import { createOrder, getOrderByPaymentId, nextOrderId } from "@/lib/db/queries/orders";
 import { sendOrderConfirmation } from "@/lib/email/resend";
 import { recordOrderInvoice } from "@/lib/billing/ledger";
 import type { Order } from "@/types";
@@ -35,6 +35,11 @@ export function POST(request: NextRequest) {
       signature: body.razorpay_signature,
     });
     if (!valid) throw new HttpError(400, "Payment could not be verified.");
+
+    // Replay guard: if this payment id already produced an order (verify was
+    // called twice, or webhook + verify raced), return the existing one.
+    const existing = await getOrderByPaymentId(body.razorpay_payment_id);
+    if (existing) return created({ orderId: existing.id });
 
     const order: Order = {
       id: await nextOrderId(),

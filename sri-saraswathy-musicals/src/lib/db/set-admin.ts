@@ -25,17 +25,36 @@ async function main() {
     console.error("Usage: npm run admin:set -- <email> [--revoke]");
     process.exit(1);
   }
-  const value = !revoke;
-
   const { db } = await import("./index");
   const { users } = await import("./schema");
   const { eq } = await import("drizzle-orm");
 
+  // A full admin promotion mirrors the "admin" preset in the users admin UI
+  // ([app/admin/users/page.tsx]): isAdmin + role="admin" + no branch pin + full
+  // permissions + active. Demotion flips them back to a plain active customer.
+  const adminPatch = {
+    isAdmin: true,
+    role: "admin",
+    branch: null,
+    active: true,
+    permissions: { billing: true, inventory: true, analytics: true, users: true },
+  } as const;
+  const customerPatch = {
+    isAdmin: false,
+    role: "customer",
+    branch: null,
+    active: true,
+    permissions: { billing: false, inventory: false, analytics: false, users: false },
+  } as const;
+  const patch = revoke ? customerPatch : adminPatch;
+
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
   if (existing) {
-    await db.update(users).set({ isAdmin: value }).where(eq(users.id, existing.id));
-    console.log(`✓ ${email} — is_admin = ${value} (${existing.name})`);
+    await db.update(users).set(patch).where(eq(users.id, existing.id));
+    console.log(
+      `✓ ${email} — ${revoke ? "revoked admin" : "granted admin"} (${existing.name}); role=${patch.role}, isAdmin=${patch.isAdmin}`,
+    );
     return;
   }
 
@@ -50,11 +69,8 @@ async function main() {
     name: email.split("@")[0],
     email,
     phone: "",
-    role: "admin",
-    active: true,
-    isAdmin: true,
     lastLogin: "",
-    permissions: { billing: true, inventory: true, analytics: true, users: true },
+    ...adminPatch,
   });
   console.log(`✓ Created admin placeholder for ${email}. It links to their Google account on first sign-in.`);
 }

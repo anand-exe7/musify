@@ -45,18 +45,33 @@ async function renderOrderEmail(order: Order): Promise<string> {
   </div>`;
 }
 
-/** Send an order-confirmation email to the customer. No-op if unconfigured. */
+/** Send an order-confirmation email to the customer. No-op if unconfigured.
+ *  NOTE: Resend's sandbox sender (`onboarding@resend.dev`) will only deliver
+ *  to the address that owns the Resend account. Set `ORDER_FROM_EMAIL` to an
+ *  address on a domain you've verified in Resend to reach real customers. */
 export async function sendOrderConfirmation(order: Order, to: string | undefined | null): Promise<void> {
-  if (!emailConfigured() || !to) return;
+  if (!emailConfigured()) {
+    console.warn(`[email] skipped order #${order.id}: RESEND_API_KEY is not set`);
+    return;
+  }
+  if (!to) {
+    console.warn(`[email] skipped order #${order.id}: no recipient email on the order`);
+    return;
+  }
   try {
     const resend = new Resend(process.env.RESEND_API_KEY as string);
-    await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromAddress(),
       to,
       subject: `Your Sri Saraswathy Musicals order #${order.id} is confirmed`,
       html: await renderOrderEmail(order),
     });
+    if (error) {
+      console.error(`[email] order #${order.id} → ${to} rejected by Resend:`, error);
+      return;
+    }
+    console.info(`[email] order #${order.id} sent to ${to} (id=${data?.id ?? "?"})`);
   } catch (err) {
-    console.error("[email] order confirmation failed:", err);
+    console.error(`[email] order #${order.id} → ${to} failed:`, err);
   }
 }

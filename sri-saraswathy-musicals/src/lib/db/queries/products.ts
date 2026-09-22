@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
-import { variantStock } from "@/lib/store/pos";
+import { variantStock } from "@/lib/stock";
 import type { Category, Origin, Product, ProductVariant } from "@/types";
 
 /** Turn a DB variant (per-branch buckets, possibly legacy `stock`) into the

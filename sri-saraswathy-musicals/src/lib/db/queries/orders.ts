@@ -14,6 +14,15 @@ export async function getOrder(id: string): Promise<Order | undefined> {
   return r ? row<Order>(r) : undefined;
 }
 
+/** Look up an already-recorded order by its Razorpay payment id. Used by
+ *  `/api/checkout/verify` to short-circuit replayed calls with the same
+ *  signature, so one payment can't produce two orders. */
+export async function getOrderByPaymentId(paymentId: string): Promise<Order | undefined> {
+  if (!paymentId) return undefined;
+  const [r] = await db.select().from(orders).where(eq(orders.paymentId, paymentId)).limit(1);
+  return r ? row<Order>(r) : undefined;
+}
+
 /** Orders placed by a specific signed-in customer, newest first. */
 export async function getOrdersByUser(userId: string): Promise<Order[]> {
   return rows<Order>(

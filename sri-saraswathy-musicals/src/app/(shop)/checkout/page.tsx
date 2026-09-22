@@ -12,7 +12,7 @@ import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
-import { ChevronRight, Check, CreditCard, Smartphone, Landmark, Banknote, Lock, MapPin } from "lucide-react";
+import { ChevronRight, Check, Lock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
 import type { UserAddress } from "@/types";
@@ -34,7 +34,7 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
   const [branch, setBranch] = useState<"Branch 1" | "Branch 2">("Branch 1");
-  const [payment, setPayment] = useState<"upi" | "card" | "bank" | "cod">("upi");
+  const payment = "card" as const;
   const [delivery, setDelivery] = useState<"standard" | "white-glove" | "express">("white-glove");
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
@@ -338,29 +338,19 @@ export default function CheckoutPage() {
           {step === 2 && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Payment method</h2>
-              <div className="mt-6 grid gap-3 md:grid-cols-2">
-                <PayOption id="upi" icon={Smartphone} active={payment === "upi"} onClick={() => setPayment("upi")} title="UPI" desc="Google Pay, PhonePe, Paytm" />
-                <PayOption id="card" icon={CreditCard} active={payment === "card"} onClick={() => setPayment("card")} title="Card" desc="Visa · Mastercard · Rupay · Amex" />
-                <PayOption id="bank" icon={Landmark} active={payment === "bank"} onClick={() => setPayment("bank")} title="Net banking" desc="All major banks supported" />
-                <PayOption id="cod" icon={Banknote} active={payment === "cod"} onClick={() => setPayment("cod")} title="Pay on delivery" desc="Cash or card at your door" />
-              </div>
-
-              {payment === "card" && (
-                <div className="mt-6 space-y-4 border border-ink-100 bg-ivory-100/40 p-5">
-                  <Field label="Card number" placeholder="1234 5678 9012 3456" />
-                  <div className="grid grid-cols-3 gap-4">
-                    <Field label="MM/YY" placeholder="12/28" />
-                    <Field label="CVV" placeholder="123" />
-                    <Field label="ZIP" placeholder="600020" />
+              <div className="mt-6 border border-gold-500 bg-gold-50/40 p-5">
+                <div className="flex items-start gap-4">
+                  <div className="grid h-10 w-10 place-items-center border border-gold-500 bg-ivory-50">
+                    <Lock className="h-4 w-4 text-gold-600" />
                   </div>
-                  <p className="flex items-center gap-2 text-xs text-ink-500"><Lock className="h-3 w-3" /> Encrypted · PCI DSS compliant</p>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-ink-900">Razorpay secure checkout</p>
+                    <p className="mt-1 text-xs text-ink-500">
+                      Pay with UPI, cards, net banking, or wallets in the Razorpay window on the next step.
+                    </p>
+                  </div>
                 </div>
-              )}
-              {payment === "upi" && (
-                <div className="mt-6 border border-ink-100 bg-ivory-100/40 p-5">
-                  <Field label="UPI ID" placeholder="yourname@bank" />
-                </div>
-              )}
+              </div>
             </motion.div>
           )}
 
@@ -389,7 +379,7 @@ export default function CheckoutPage() {
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
                 <p className="text-ink-500">Delivery <span className="text-ink-900">{delivery}</span></p>
                 <p className="text-ink-500">Branch <span className="text-ink-900">{branch}</span></p>
-                <p className="text-ink-500">Payment <span className="text-ink-900 uppercase">{payment}</span></p>
+                <p className="text-ink-500">Payment <span className="text-ink-900">Razorpay</span></p>
               </div>
             </motion.div>
           )}
@@ -404,7 +394,23 @@ export default function CheckoutPage() {
               ← Back
             </button>
             {step < steps.length - 1 ? (
-              <button onClick={() => setStep(step + 1)} className="btn-gold-solid">
+              <button
+                onClick={() => {
+                  if (step === 0) {
+                    const missing = !addr.name.trim() || !addr.phone.trim() || !addr.email.trim() || !addr.line1.trim() || !addr.city.trim() || !addr.pincode.trim();
+                    if (missing) {
+                      alert("Please fill in name, phone, email, and full address before continuing — we need the email to send your order confirmation.");
+                      return;
+                    }
+                    if (!/^\S+@\S+\.\S+$/.test(addr.email.trim())) {
+                      alert("That email doesn't look right — please double-check it.");
+                      return;
+                    }
+                  }
+                  setStep(step + 1);
+                }}
+                className="btn-gold-solid"
+              >
                 Continue
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
@@ -475,23 +481,6 @@ function DeliveryOption({ title, desc, price, active, onClick, recommended }: { 
         </div>
         <p className="tabular font-display text-sm text-ink-900">{price}</p>
       </div>
-    </button>
-  );
-}
-
-function PayOption({ title, desc, icon: Icon, active, onClick }: { id: string; title: string; desc: string; icon: any; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className={cn("flex items-start gap-3 border p-4 text-left transition-all", active ? "border-gold-500 bg-gold-50/40" : "border-ink-200 hover:border-ink-300")}>
-      <div className={cn("grid h-9 w-9 place-items-center border", active ? "border-gold-500 text-gold-600" : "border-ink-300 text-ink-500")}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="flex-1">
-        <p className="text-sm font-medium text-ink-900">{title}</p>
-        <p className="mt-0.5 text-xs text-ink-500">{desc}</p>
-      </div>
-      <span className={cn("grid h-4 w-4 place-items-center rounded-full border-2", active ? "border-gold-500" : "border-ink-300")}>
-        {active && <span className="h-2 w-2 rounded-full bg-gold-500" />}
-      </span>
     </button>
   );
 }

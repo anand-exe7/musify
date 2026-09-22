@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { stockInward, products } from "@/lib/db/schema";
-import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/store/pos";
+import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/stock";
 import { row, rows } from "./_util";
 
 export interface StockInwardRecord {

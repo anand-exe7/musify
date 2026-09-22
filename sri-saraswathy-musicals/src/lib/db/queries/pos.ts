@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posBills, products, coupons, posCategories, type ProductRow } from "@/lib/db/schema";
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
-import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/store/pos";
+import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/stock";
 import { slugify } from "@/lib/utils";
 import { row, rows, definedOnly } from "./_util";
 

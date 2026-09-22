@@ -1,11 +1,20 @@
 "use client";
 import { create } from "zustand";
 import { genDocId } from "@/lib/ids";
+import {
+  type Branch,
+  type BranchFilter,
+  type Variant,
+  variantStock,
+  variantStockAt,
+  setVariantStockAt,
+} from "@/lib/stock";
+
+export { variantStock, variantStockAt, setVariantStockAt };
+export type { Branch, BranchFilter, Variant };
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
-export type Branch = "Branch 1" | "Branch 2";
-export type BranchFilter = Branch | "all";
 export type Source = "offline" | "online" | "service";
 
 export interface BillItem {
@@ -43,19 +52,6 @@ export interface Bill {
   gst?: number;
   status: "completed" | "pending";
   payment?: string;
-}
-
-export interface Variant {
-  attr: string; // e.g. size / model
-  finish: string; // e.g. colour / wood
-  price: number;
-  weight: number;
-  /** Per-branch on-hand. Legacy rows may carry a flat `stock: number` instead;
-   *  `variantStock` / `variantStockAt` read either shape. */
-  stockByBranch?: Partial<Record<Branch, number>>;
-  /** @deprecated Legacy single-bucket stock, treated as sitting in Branch 1. */
-  stock?: number;
-  disabled?: boolean;
 }
 
 /**
@@ -257,24 +253,6 @@ if (typeof window !== "undefined") {
 
 /* ─────────────────────────  Derived helpers  ─────────────────────── */
 
-/** On-hand at a specific branch for one variant. Tolerates the legacy shape:
- *  a variant that pre-dates per-branch buckets carries `stock: number`, which
- *  is treated as sitting in Branch 1 (see the seed / stock-inward path). */
-export function variantStockAt(v: Variant, branch: Branch): number {
-  if (v.stockByBranch && typeof v.stockByBranch[branch] === "number") {
-    return Number(v.stockByBranch[branch]) || 0;
-  }
-  return branch === "Branch 1" ? Number(v.stock) || 0 : 0;
-}
-
-/** Total on-hand across every branch for one variant. */
-export function variantStock(v: Variant): number {
-  if (v.stockByBranch) {
-    return (Number(v.stockByBranch["Branch 1"]) || 0) + (Number(v.stockByBranch["Branch 2"]) || 0);
-  }
-  return Number(v.stock) || 0;
-}
-
 /** On-hand at one branch across every enabled variant of a product. */
 export function productStockAt(p: InvProduct, branch: Branch): number {
   return p.variants.filter((v) => !v.disabled).reduce((n, v) => n + variantStockAt(v, branch), 0);
@@ -290,20 +268,6 @@ export function stockState(p: InvProduct): "out" | "low" | "in" {
   if (s <= 0) return "out";
   if (s <= p.lowStockAt) return "low";
   return "in";
-}
-
-/** Set the `branch` bucket to `qty`, preserving other buckets. Migrates a
- *  legacy `stock` field into the map. Returns a new object; never mutates. */
-export function setVariantStockAt(v: Variant, branch: Branch, qty: number): Variant {
-  const legacyBranch1 = v.stockByBranch ? undefined : Number(v.stock) || 0;
-  const next: Partial<Record<Branch, number>> = {
-    ...(v.stockByBranch ?? {}),
-    ...(legacyBranch1 !== undefined ? { "Branch 1": legacyBranch1 } : {}),
-    [branch]: Math.max(0, Math.round(qty)),
-  };
-  const { stock: _drop, ...rest } = v;
-  void _drop;
-  return { ...rest, stockByBranch: next };
 }
 
 export type Period = "all" | "today" | "week" | "month" | "year" | "custom";
