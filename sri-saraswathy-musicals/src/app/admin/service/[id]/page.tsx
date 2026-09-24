@@ -7,7 +7,7 @@ import {
   AlertTriangle, Phone, Mail, Calendar, User as UserIcon, Save, History, IndianRupee,
 } from "lucide-react";
 import {
-  useRepair, alertLevel, daysUntil, statusMeta, REPAIR_STATUS, PRIORITY_META, TECHNICIANS,
+  useRepair, alertLevel, daysUntil, statusMeta, REPAIR_STATUS, PRIORITY_META,
   chargeBase, grossTotal, balanceDue, isClosed, isFixed,
   type RepairStatus, type RepairPriority, type RepairTicket,
 } from "@/lib/store/repair";
@@ -267,12 +267,6 @@ export default function TicketDetailPage() {
               <div>
                 <label className={label}>GST</label>
                 <input value={`${t.gstRate}%`} disabled className={cn(field, "cursor-not-allowed bg-ink-50 text-ink-400")} />
-              </div>
-              <div>
-                <label className={label}>Technician</label>
-                <select value={edit.technician} onChange={(e) => setEdit({ technician: e.target.value })} className={field}>
-                  {TECHNICIANS.map((x) => <option key={x}>{x}</option>)}
-                </select>
               </div>
               <div>
                 <label className={label}>Priority</label>

@@ -5,7 +5,6 @@ import {
   useRepair,
   genRepairId,
   REPAIR_CATEGORIES,
-  TECHNICIANS,
   type RepairTicket,
   type RepairPriority,
 } from "@/lib/store/repair";
@@ -234,12 +233,6 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
                   <option value="normal">Normal</option>
                   <option value="high">High</option>
                   <option value="urgent">Urgent</option>
-                </select>
-              </div>
-              <div>
-                <label className={label}>Assigned Technician</label>
-                <select value={d.technician} onChange={(e) => set({ technician: e.target.value })} className={field}>
-                  {TECHNICIANS.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>

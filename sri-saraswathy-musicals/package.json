@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/lib/db/seed.ts",
+    "inventory:add": "tsx src/lib/db/add-inventory.ts",
     "admin:set": "tsx src/lib/db/set-admin.ts"
   },
   "dependencies": {

@@ -132,10 +132,10 @@ export function balanceDue(t: RepairTicket): number {
   return Math.max(0, gross - (t.advance || 0));
 }
 
-/** Service charge inclusive of GST. */
+/** Service charge the customer pays. Prices are **GST-inclusive**, so the entered
+ *  finalCost/estimate already contains the tax — the gross is the charge itself. */
 export function grossTotal(t: RepairTicket): number {
-  const base = t.finalCost > 0 ? t.finalCost : t.estimate;
-  return Math.round(base * (1 + (t.gstRate || 0) / 100));
+  return t.finalCost > 0 ? t.finalCost : t.estimate;
 }
 
 export function chargeBase(t: RepairTicket): number {

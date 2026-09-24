@@ -166,7 +166,8 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
 /**
  * Write a GST tax invoice for a repair once it is billable — i.e. the work is
  * ready/completed or an invoice has been raised for it, and there is a charge.
- * The service charge is pre-GST; tax is added on top (SAC 9954, intra-state as
+ * The service charge is **GST-inclusive** (matching POS/retail): the tax is
+ * contained within the charge and backed out here (SAC 9954, intra-state as
  * both branches are in Tamil Nadu). Idempotent per ticket, so it can be called
  * on every repair update and only ever mints one number.
  */
@@ -179,9 +180,14 @@ export async function recordServiceInvoice(t: RepairTicket): Promise<void> {
     if (!billable) return;
     if (await getInvoiceByRefId(t.id)) return;
 
+    // `base` already includes GST. Extract the taxable value and the tax it
+    // contains, so subtotal + CGST + SGST == the charge the customer pays.
     const rate = t.gstRate || 0;
-    const total = Math.round(base * (1 + rate / 100));
-    const gst = total - base;
+    const total = base;
+    const taxable = rate > 0 ? Math.round(base / (1 + rate / 100)) : base;
+    const gst = total - taxable;
+    const cgst = Math.round(gst / 2);
+    const sgst = gst - cgst;
     const dateIso = t.completedAt || t.updatedAt || t.createdAt;
     const number = await nextInvoiceNumber(dateIso);
     const paid = total - (t.advance || 0) <= 0;
@@ -192,10 +198,12 @@ export async function recordServiceInvoice(t: RepairTicket): Promise<void> {
       date: dateIso,
       customer: t.customerName || "Service customer",
       branch: t.branch,
+      // Line rate/amount show the gross (GST-inclusive) charge, like POS lines;
+      // the taxable value surfaces in `subtotal`.
       items: [{ name: `Repair & service — ${t.productName}`, hsn: "9954", qty: 1, rate: base, gst: rate, amount: base }],
-      subtotal: base,
-      cgst: Math.round(gst / 2),
-      sgst: Math.round(gst / 2),
+      subtotal: taxable,
+      cgst,
+      sgst,
       igst: 0,
       total,
       paymentMode: "cash",
