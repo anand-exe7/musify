@@ -1,9 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, Search, X, ArrowRight } from "lucide-react";
+import { ArrowRightLeft, Search, ArrowRight, Trash2 } from "lucide-react";
 import { usePOS, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
-import { genDocId } from "@/lib/ids";
 import { cn } from "@/lib/utils";
 
 interface TransferRow {
@@ -16,6 +15,16 @@ interface TransferRow {
   note: string;
   transferredAt: string;
 }
+
+/** One editable table line; the product is resolved live so stock stays fresh. */
+interface Line {
+  key: string;
+  productId: string;
+  variantIndex: number;
+  qty: number;
+}
+
+const toInt = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
 
 function fmt(d: string) {
   const x = new Date(d);
@@ -36,10 +45,8 @@ export default function StockTransfersPage() {
 
   const [fromBranch, setFromBranch] = useState<Branch>(lockedSource ?? effectiveBranch(scopeSelected));
   const [toBranch, setToBranch] = useState<Branch>(OTHER_BRANCH[lockedSource ?? effectiveBranch(scopeSelected)]);
-  const [product, setProduct] = useState<InvProduct | null>(null);
   const [productTerm, setProductTerm] = useState("");
-  const [variantIndex, setVariantIndex] = useState(0);
-  const [qty, setQty] = useState(1);
+  const [lines, setLines] = useState<Line[]>([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -65,7 +72,7 @@ export default function StockTransfersPage() {
 
   const notify = (m: string) => {
     setToast(m);
-    setTimeout(() => setToast(null), 2800);
+    setTimeout(() => setToast(null), 3200);
   };
 
   const productMatches = useMemo(
@@ -76,35 +83,50 @@ export default function StockTransfersPage() {
     [invProducts, productTerm],
   );
 
-  const pickProduct = (p: InvProduct) => {
-    setProduct(p);
+  const addLine = (p: InvProduct) => {
+    setLines((ls) => [...ls, { key: crypto.randomUUID(), productId: p.id, variantIndex: 0, qty: 1 }]);
     setProductTerm("");
-    setVariantIndex(0);
-    setQty(1);
+  };
+  const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
+
+  const productOf = (l: Line) => invProducts.find((p) => p.id === l.productId);
+  const onHandAt = (l: Line, branch: Branch) => {
+    const v = productOf(l)?.variants[l.variantIndex];
+    return v ? variantStockAt(v, branch) : 0;
   };
 
-  const activeVariant = product?.variants[variantIndex];
-  const sourceOnHand = activeVariant ? variantStockAt(activeVariant, fromBranch) : 0;
-  const destOnHand = activeVariant ? variantStockAt(activeVariant, toBranch) : 0;
+  // Combined demand per product/variant, so the same item on two rows can't
+  // together exceed what the source branch holds.
+  const demand = new Map<string, number>();
+  for (const l of lines) {
+    const k = `${l.productId}#${l.variantIndex}`;
+    demand.set(k, (demand.get(k) ?? 0) + l.qty);
+  }
+  const lineError = (l: Line): string | null => {
+    if (!productOf(l)) return "Product not found";
+    if (l.qty < 1) return "Qty must be ≥ 1";
+    const src = onHandAt(l, fromBranch);
+    if (l.qty > src) return `Only ${src} at ${fromBranch}`;
+    if ((demand.get(`${l.productId}#${l.variantIndex}`) ?? 0) > src) return `Rows together exceed ${src} at ${fromBranch}`;
+    return null;
+  };
+  const totalQty = lines.reduce((n, l) => n + l.qty, 0);
+  const canSubmit = !saving && lines.length > 0 && fromBranch !== toBranch && lines.every((l) => !lineError(l));
 
   const submit = async () => {
-    if (!product) return notify("Pick a product first.");
     if (fromBranch === toBranch) return notify("Source and destination must differ.");
-    if (qty <= 0) return notify("Quantity must be at least 1.");
-    if (qty > sourceOnHand) return notify(`Only ${sourceOnHand} on hand at ${fromBranch}.`);
+    if (lines.length === 0) return notify("Add at least one product.");
+    if (lines.some(lineError)) return notify("Fix the highlighted lines first.");
     setSaving(true);
     try {
       const res = await fetch("/api/stock-transfers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: genDocId("TRF"),
-          productId: product.id,
-          variantIndex,
-          quantity: qty,
           fromBranch,
           toBranch,
           note,
+          lines: lines.map((l) => ({ productId: l.productId, variantIndex: l.variantIndex, quantity: l.qty })),
         }),
       });
       if (!res.ok) {
@@ -113,9 +135,8 @@ export default function StockTransfersPage() {
       }
       await hydratePOS();
       await loadTransfers();
-      notify(`Transferred ${qty} × ${product.name}`);
-      setProduct(null);
-      setQty(1);
+      notify(`Transferred ${totalQty} unit${totalQty === 1 ? "" : "s"} across ${lines.length} product${lines.length === 1 ? "" : "s"}`);
+      setLines([]);
       setNote("");
     } catch (err) {
       notify(err instanceof Error ? err.message : "Couldn't record the transfer.");
@@ -142,54 +163,41 @@ export default function StockTransfersPage() {
 
       <div className="mb-6 border-l-4 border-ink-900 pl-4">
         <h1 className="text-2xl font-bold text-ink-900">Stock Transfers</h1>
-        <p className="mt-1 text-sm text-ink-500">Move goods between branches — updates both on-hand buckets in one step.</p>
+        <p className="mt-1 text-sm text-ink-500">Move several products between branches at once — updates both on-hand buckets.</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-        {/* Form */}
+      <div className="space-y-6">
         <section className="space-y-5 rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
-          {/* Direction */}
-          <div>
-            <label className={label}>Direction</label>
-            <div className="flex items-center gap-2">
-              <select value={fromBranch} onChange={(e) => setFromBranch(e.target.value as Branch)} disabled={!!lockedSource} className={cn(field, "disabled:cursor-not-allowed disabled:opacity-70")}>
-                <option>Branch 1</option>
-                <option>Branch 2</option>
-              </select>
-              <button
-                onClick={swapDirection}
-                disabled={!!lockedSource}
-                title="Swap direction"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-ink-200 bg-ivory-50 text-ink-500 hover:bg-ink-900/5 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ArrowRightLeft className="h-4 w-4" />
-              </button>
-              <select value={toBranch} onChange={(e) => setToBranch(e.target.value as Branch)} className={field}>
-                <option>Branch 1</option>
-                <option>Branch 2</option>
-              </select>
-            </div>
-            {fromBranch === toBranch && (
-              <p className="mt-1 text-[11px] text-warning">Pick different source and destination branches.</p>
-            )}
-          </div>
-
-          {/* Product lookup */}
-          <div>
-            <label className={label}>Product to transfer</label>
-            {product ? (
-              <div className="flex items-center justify-between rounded-lg border border-gold-300 bg-gold-50/60 px-3 py-2.5">
-                <span className="text-sm font-semibold text-ink-900">
-                  {product.name}
-                  <span className="ml-2 text-xs font-normal text-ink-500">
-                    · {productStockAt(product, fromBranch)} at {fromBranch}
-                  </span>
-                </span>
-                <button onClick={() => setProduct(null)} className="grid h-6 w-6 place-items-center rounded text-ink-400 hover:bg-ink-900/5 hover:text-ink-900">
-                  <X className="h-4 w-4" />
+          <div className="grid gap-5 md:grid-cols-2">
+            {/* Direction */}
+            <div>
+              <label className={label}>Direction</label>
+              <div className="flex items-center gap-2">
+                <select value={fromBranch} onChange={(e) => setFromBranch(e.target.value as Branch)} disabled={!!lockedSource} className={cn(field, "disabled:cursor-not-allowed disabled:opacity-70")}>
+                  <option>Branch 1</option>
+                  <option>Branch 2</option>
+                </select>
+                <button
+                  onClick={swapDirection}
+                  disabled={!!lockedSource}
+                  title="Swap direction"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-ink-200 bg-ivory-50 text-ink-500 hover:bg-ink-900/5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
                 </button>
+                <select value={toBranch} onChange={(e) => setToBranch(e.target.value as Branch)} className={field}>
+                  <option>Branch 1</option>
+                  <option>Branch 2</option>
+                </select>
               </div>
-            ) : (
+              {fromBranch === toBranch && (
+                <p className="mt-1 text-[11px] text-warning">Pick different source and destination branches.</p>
+              )}
+            </div>
+
+            {/* Product lookup — each pick adds a table line */}
+            <div>
+              <label className={label}>Add product to this transfer</label>
               <div className="relative">
                 <div className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2.5 focus-within:border-gold-500">
                   <Search className="h-4 w-4 shrink-0 text-ink-400" />
@@ -198,57 +206,89 @@ export default function StockTransfersPage() {
                 {productMatches.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-ink-100 bg-white shadow-lg">
                     {productMatches.map((p) => (
-                      <button key={p.id} onClick={() => pickProduct(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gold-50">
+                      <button key={p.id} onClick={() => addLine(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gold-50">
                         <span className="font-medium text-ink-900">{p.name}</span>
-                        <span className="text-xs text-ink-400">
-                          {productStockAt(p, fromBranch)} at {fromBranch}
-                        </span>
+                        <span className="text-xs text-ink-400">{productStockAt(p, fromBranch)} at {fromBranch}</span>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Variant + qty */}
-          {product && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className={label}>Variant</label>
-                <select value={variantIndex} onChange={(e) => setVariantIndex(Number(e.target.value))} className={field}>
-                  {product.variants.map((v, i) => (
-                    <option key={i} value={i}>
-                      {v.attr}{v.finish ? ` · ${v.finish}` : ""} — {variantStockAt(v, fromBranch)} at {fromBranch}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={label}>Quantity</label>
-                <input type="number" min={1} max={sourceOnHand} value={qty || ""} onChange={(e) => setQty(Number(e.target.value))} className={field} />
-                <p className="mt-1 text-[11px] text-ink-400">
-                  {sourceOnHand} at {fromBranch} → {destOnHand} at {toBranch}
-                </p>
-              </div>
-              <div>
-                <label className={label}>After transfer</label>
-                <p className="rounded-lg border border-ink-100 bg-ivory-100/60 px-3 py-2.5 text-sm text-ink-700">
-                  {Math.max(0, sourceOnHand - qty)} → {destOnHand + qty}
-                </p>
-              </div>
-              <div className="col-span-2">
-                <label className={label}>Note (optional)</label>
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why is this moving?" className={field} />
-              </div>
-            </div>
-          )}
+          {/* Editable lines */}
+          <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+                  <th className="px-3 py-3">#</th>
+                  <th>Product</th>
+                  <th>Variant</th>
+                  <th className="w-28 pr-2 text-right">At {fromBranch}</th>
+                  <th className="w-24 pr-2 text-right">Qty</th>
+                  <th className="w-36 pr-2 text-right">After (src → dest)</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-50">
+                {lines.map((l, i) => {
+                  const p = productOf(l);
+                  const err = lineError(l);
+                  const src = onHandAt(l, fromBranch);
+                  const dst = onHandAt(l, toBranch);
+                  return (
+                    <tr key={l.key} className={cn("align-middle", err && "bg-danger/5")}>
+                      <td className="px-3 py-2 text-xs text-ink-400">{i + 1}</td>
+                      <td className="py-2 pr-2">
+                        <p className="font-medium text-ink-900">{p?.name ?? "—"}</p>
+                        {err && <p className="text-[11px] text-danger">{err}</p>}
+                      </td>
+                      <td className="pr-2">
+                        <select value={l.variantIndex} onChange={(e) => patch(l.key, { variantIndex: Number(e.target.value) })} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-xs focus:outline-none">
+                          {(p?.variants ?? []).map((v, vi) => (
+                            <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="pr-2 text-right tabular-nums text-ink-600">{src}</td>
+                      <td className="pr-2">
+                        <input type="number" min={1} max={src} step={1} value={l.qty || ""} onChange={(e) => patch(l.key, { qty: toInt(e.target.value) })} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-right text-sm tabular-nums focus:border-gold-500 focus:outline-none" />
+                      </td>
+                      <td className="pr-2 text-right text-xs tabular-nums text-ink-600">{Math.max(0, src - l.qty)} → {dst + l.qty}</td>
+                      <td className="pr-2">
+                        <button onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} aria-label="Remove line" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {lines.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-ink-400">Search above to add products to this transfer.</td></tr>
+                )}
+              </tbody>
+              {lines.length > 0 && (
+                <tfoot>
+                  <tr className="border-t border-ink-100 bg-[#FAF7EF] text-xs font-semibold text-ink-900">
+                    <td colSpan={4} className="px-3 py-3 text-right uppercase tracking-wider text-ink-500">Total units</td>
+                    <td className="pr-2 text-right tabular-nums">{totalQty}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
 
-          <div className="flex justify-end border-t border-ink-100 pt-4">
+          <div className="grid gap-3 border-t border-ink-100 pt-4 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div>
+              <label className={label}>Note (optional, applies to all lines)</label>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why is this moving?" className={field} />
+            </div>
             <button
               onClick={submit}
-              disabled={saving || !product || qty <= 0 || qty > sourceOnHand || fromBranch === toBranch}
-              className="flex items-center gap-2 rounded-xl bg-ink-900 px-5 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-50"
+              disabled={!canSubmit}
+              className="flex items-center justify-center gap-2 rounded-xl bg-ink-900 px-5 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-50"
             >
               <ArrowRight className="h-4 w-4" /> {saving ? "Transferring…" : "Transfer stock"}
             </button>
@@ -258,14 +298,14 @@ export default function StockTransfersPage() {
         {/* Recent transfers */}
         <section>
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-ink-500">Recent transfers</h2>
-          <div className="overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
+            <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
                   <th className="px-4 py-3">When</th>
                   <th>Product</th>
                   <th>Direction</th>
-                  <th className="text-right pr-4">Qty</th>
+                  <th className="pr-4 text-right">Qty</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-50">
@@ -280,7 +320,7 @@ export default function StockTransfersPage() {
                       {r.fromBranch} → {r.toBranch}
                       {r.note && <div className="text-[10px] text-ink-400">{r.note}</div>}
                     </td>
-                    <td className="pr-4 text-right font-semibold tabular-nums">+{r.quantity}</td>
+                    <td className="pr-4 text-right font-semibold tabular-nums">{r.quantity}</td>
                   </tr>
                 ))}
                 {transfers.length === 0 && (

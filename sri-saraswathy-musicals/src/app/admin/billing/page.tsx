@@ -26,6 +26,8 @@ interface Row {
   /** Snapshot GST rate for this line; `null` ⇒ non-GST line. */
   gstRate?: number | null;
   hsn?: string;
+  /** Per-line discount in paise (off price × qty). */
+  discount?: number;
   /** Set when picked from the catalog — lets the server decrement branch stock. */
   productId?: string;
   variantIndex?: number;
@@ -73,7 +75,10 @@ export default function BillingPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const activeRows = rows.filter((r) => r.name.trim() && r.price > 0);
+  const lineDiscount = (r: Row) => Math.min(r.price * r.qty, r.discount || 0);
   const subtotal = activeRows.reduce((n, r) => n + r.price * r.qty, 0);
+  const itemDiscounts = activeRows.reduce((n, r) => n + lineDiscount(r), 0);
+  const netSubtotal = subtotal - itemDiscounts;
   const itemCount = activeRows.reduce((n, r) => n + r.qty, 0);
 
   // GST-inclusive tax contained in the taxed lines (recomputed as rows change).
@@ -82,7 +87,8 @@ export default function BillingPage() {
     price: r.price,
     qty: r.qty,
     gstRate: r.gstRate ?? null,
-    hsn: r.hsn,
+    hsn: r.hsn?.trim() || undefined,
+    discount: lineDiscount(r) || undefined,
     productId: r.productId,
     variantIndex: r.variantIndex,
   }));
@@ -91,16 +97,16 @@ export default function BillingPage() {
   const coupon = coupons.find((c) => c.code === couponCode);
   const couponDiscount = useMemo(() => {
     if (!coupon) return 0;
-    if (subtotal < coupon.minOrder) return 0;
-    return Math.round((subtotal * coupon.discountPct) / 100);
-  }, [coupon, subtotal]);
+    if (netSubtotal < coupon.minOrder) return 0;
+    return Math.round((netSubtotal * coupon.discountPct) / 100);
+  }, [coupon, netSubtotal]);
   // `discVal` is entered as a plain number: a percentage when `%`, otherwise a
   // rupee amount that we convert to paise. `subtotal` is already in paise.
-  const manualDiscount = discType === "%" ? Math.round((subtotal * (Number(discVal) || 0)) / 100) : toPaise(discVal);
-  const totalDiscount = Math.min(subtotal, couponDiscount + manualDiscount);
+  const manualDiscount = discType === "%" ? Math.round((netSubtotal * (Number(discVal) || 0)) / 100) : toPaise(discVal);
+  const totalDiscount = Math.min(subtotal, itemDiscounts + couponDiscount + manualDiscount);
   const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
   const change = cash === "" ? 0 : Number(cash) - grand;
-  const couponBelowMin = coupon && subtotal > 0 && subtotal < coupon.minOrder;
+  const couponBelowMin = coupon && netSubtotal > 0 && netSubtotal < coupon.minOrder;
 
   // How many of each catalog product are already on the bill (for badges).
   const qtyInOrder = useMemo(() => {
@@ -207,7 +213,7 @@ export default function BillingPage() {
     // Public, shareable invoice the customer can open from the WhatsApp link
     // (resolves via /invoice/[id] → getBill, no admin sign-in needed).
     const link = `${window.location.origin}/invoice/${bill.id}`;
-    const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty)}`).join("\n");
+    const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty - (i.discount || 0))}${i.discount ? ` (after -${formatINR(i.discount)} disc.)` : ""}`).join("\n");
     const gstLines =
       bill.gstEnabled && (bill.gst ?? 0) > 0
         ? `Taxable: ${formatINR(bill.taxable ?? 0)}\n` +
@@ -325,7 +331,7 @@ export default function BillingPage() {
               {rows.map((r) => (
                 <div
                   key={r.id}
-                  className="flex flex-col gap-2 rounded-xl border border-ink-100 p-2.5 sm:flex-row sm:items-center sm:border-0 sm:p-0"
+                  className="flex flex-col gap-2 rounded-xl border border-ink-100 p-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:border-0 sm:p-0 xl:flex-nowrap"
                 >
                   <input
                     value={r.name}
@@ -368,6 +374,25 @@ export default function BillingPage() {
                     <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
                       <Trash2 className="h-4 w-4" />
                     </button>
+                  </div>
+                  <div className="flex items-center gap-2 sm:shrink-0">
+                    <input
+                      value={r.hsn ?? ""}
+                      onChange={(e) => setRow(r.id, { hsn: e.target.value })}
+                      placeholder="HSN"
+                      aria-label="HSN code"
+                      inputMode="numeric"
+                      className="w-24 rounded-xl border border-ink-200 bg-ivory-50 px-3 py-3 text-xs text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none"
+                    />
+                    <div className="relative w-28">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">− ₹</span>
+                      <MoneyInput
+                        value={r.discount || 0}
+                        onChange={(paise) => setRow(r.id, { discount: paise })}
+                        placeholder="Disc."
+                        className={cn(fieldCls, "pl-9 text-xs")}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -420,7 +445,7 @@ export default function BillingPage() {
                 {activeRows.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate text-ink-700">{r.name} <span className="text-ink-400">× {r.qty}</span></span>
-                    <span className="shrink-0 font-medium tabular-nums text-ink-900">{formatINR(r.price * r.qty)}</span>
+                    <span className="shrink-0 font-medium tabular-nums text-ink-900">{formatINR(r.price * r.qty - lineDiscount(r))}</span>
                   </li>
                 ))}
               </ul>
@@ -458,7 +483,7 @@ export default function BillingPage() {
               </div>
               {totalDiscount > 0 && (
                 <div className="flex items-center justify-between text-success">
-                  <span>Discount</span>
+                  <span>Discount{itemDiscounts > 0 ? ` (items ${formatINR(itemDiscounts)})` : ""}</span>
                   <span className="font-medium tabular-nums">- {formatINR(totalDiscount)}</span>
                 </div>
               )}

@@ -291,7 +291,7 @@ export const posBills = pgTable("pos_bills", {
     // `gstRate` is the rate (%) snapshotted onto the line at bill time — so a
     // later change to the product's default rate never rewrites history. `null`
     // / absent means the line was billed as non-GST.
-    .$type<{ name: string; price: number; qty: number; gstRate?: number | null; hsn?: string }[]>()
+    .$type<{ name: string; price: number; qty: number; gstRate?: number | null; hsn?: string; discount?: number; productId?: string; variantIndex?: number }[]>()
     .notNull()
     .default([]),
   subtotal: integer("subtotal").notNull().default(0),

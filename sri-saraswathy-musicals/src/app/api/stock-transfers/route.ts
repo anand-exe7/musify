@@ -3,7 +3,10 @@ import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import {
   getTransfers,
   createTransfer,
+  createTransferBatch,
+  TransferValidationError,
   type StockTransferInput,
+  type TransferBatchLine,
 } from "@/lib/db/queries/stockTransfers";
 import { requireAdminAccess, requireAdminUser, scopeByBranch } from "@/lib/auth/server";
 import type { Branch } from "@/lib/store/pos";
@@ -36,7 +39,18 @@ export function GET() {
 export function POST(request: NextRequest) {
   return handle(async () => {
     const { user, access } = await requireAdminUser();
-    const body = await readJson<Partial<StockTransferInput>>(request);
+    const body = await readJson<Partial<StockTransferInput> & { lines?: TransferBatchLine[] }>(request);
+    if (Array.isArray(body?.lines)) {
+      const from = (body.fromBranch as Branch) ?? "Branch 1";
+      const to = (body.toBranch as Branch) ?? "Branch 2";
+      if (access !== "all" && from !== access) return badRequest("You can only transfer from your own branch");
+      try {
+        return created(await createTransferBatch(body.lines, from, to, body.note ?? "", user.id));
+      } catch (e) {
+        if (e instanceof TransferValidationError) return badRequest(e.message);
+        throw e;
+      }
+    }
     if (!body?.id || !body.productId || typeof body.variantIndex !== "number") {
       return badRequest("Transfer requires `id`, `productId`, `variantIndex`");
     }

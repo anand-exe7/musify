@@ -137,7 +137,7 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       qty: i.qty,
       rate: i.price,
       gst: taxed ? Number(i.gstRate) || 0 : 0,
-      amount: i.price * i.qty,
+      amount: Math.max(0, i.price * i.qty - (i.discount || 0)),
     }));
 
     const number = await nextInvoiceNumber(bill.createdAt);

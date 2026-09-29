@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
-import { getInwards, createInward, type StockInwardInput } from "@/lib/db/queries/stock";
+import { getInwards, createInward, createInwardBatch, InwardValidationError, type StockInwardInput, type InwardBatchLine } from "@/lib/db/queries/stock";
+import type { Branch } from "@/lib/stock";
 import { requireAdminAccess, requireAdminUser, scopeByBranch } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,18 @@ export function GET() {
 export function POST(request: NextRequest) {
   return handle(async () => {
     const { user, access } = await requireAdminUser();
-    const body = await readJson<Partial<StockInwardInput>>(request);
+    const body = await readJson<Partial<StockInwardInput> & { lines?: InwardBatchLine[] }>(request);
+    // Multi-line receipt with per-branch split.
+    if (Array.isArray(body?.lines)) {
+      if (!body.vendorId) return badRequest("Inward requires `vendorId`");
+      try {
+        const recs = await createInwardBatch(body.vendorId, body.lines, user.id, access === "all" ? null : (access as Branch));
+        return created(recs);
+      } catch (e) {
+        if (e instanceof InwardValidationError) return badRequest(e.message);
+        throw e;
+      }
+    }
     if (!body?.id || !body.vendorId || !body.productId) {
       return badRequest("Inward requires `id`, `vendorId` and `productId`");
     }

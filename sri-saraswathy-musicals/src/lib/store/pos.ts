@@ -24,6 +24,8 @@ export interface BillItem {
   /** GST rate (%) snapshotted at bill time. `null`/absent ⇒ line billed non-GST. */
   gstRate?: number | null;
   hsn?: string;
+  /** Per-line discount in paise (off `price * qty`); GST is computed on the net. */
+  discount?: number;
   /** Set when the line was picked from the catalog — enables server-side stock
    *  decrement of that variant at the bill's `branch`. Freeform lines omit. */
   productId?: string;
@@ -355,7 +357,7 @@ export function billTax(items: BillItem[], gstEnabled: boolean): BillTax {
   if (gstEnabled) {
     for (const it of items) {
       const rate = Number(it.gstRate) || 0;
-      const { taxable: tv, tax: tx } = lineTax(it.price * it.qty, rate);
+      const { taxable: tv, tax: tx } = lineTax(Math.max(0, it.price * it.qty - (it.discount || 0)), rate);
       if (rate > 0) {
         taxable += tv;
         tax += tx;
