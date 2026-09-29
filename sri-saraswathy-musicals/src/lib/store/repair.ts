@@ -29,6 +29,7 @@ export interface RepairTicket {
   customerName: string;
   phone: string; // WhatsApp
   email?: string;
+  customerGstin?: string; // optional buyer GSTIN
   // Product
   productName: string;
   category: string; // display label e.g. "Strings"

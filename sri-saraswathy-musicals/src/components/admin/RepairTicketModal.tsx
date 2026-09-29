@@ -26,6 +26,8 @@ function fmtDeadline(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
+
 function blank(): RepairTicket {
   // default deadline: 5 days out
   const dl = new Date();
@@ -37,6 +39,7 @@ function blank(): RepairTicket {
     customerName: "",
     phone: "",
     email: "",
+    customerGstin: "",
     productName: "",
     category: "Strings",
     brand: "",
@@ -67,7 +70,8 @@ export function repairIntakeMessage(t: RepairTicket): string {
     `🛠 Reported issue: ${t.problem}\n\n` +
     `💰 Estimate: ${formatINR(t.estimate)}${t.advance > 0 ? `\nAdvance paid: ${formatINR(t.advance)}\nBalance (approx): ${formatINR(balance)}` : ""}\n` +
     `📅 Ready by: ${fmtDeadline(t.deadline)}\n\n` +
-    `📄 Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n\n` +
+    // The invoice only exists once the repair is billable — don't send a dead link at intake.
+    (t.invoiceNo || t.status === "ready" || t.status === "completed" ? `📄 Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n\n` : "") +
     `We'll keep you posted. Reply here for any questions.\n${BUSINESS.branches[0].phone}`
   );
 }
@@ -86,6 +90,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
     if (!/\d{10}/.test(d.phone.replace(/\D/g, ""))) return "Enter a valid 10-digit mobile number.";
     if (!d.productName.trim()) return "Product / instrument name is required.";
     if (!d.problem.trim()) return "Describe the reported problem.";
+    if (d.customerGstin?.trim() && !GSTIN_RE.test(d.customerGstin.trim().toUpperCase())) return "GST number must be a valid 15-character GSTIN (or leave it blank).";
     if (!d.deadline) return "Set a promised-by deadline.";
     return null;
   };
@@ -100,6 +105,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
       ...d,
       customerName: d.customerName.trim(),
       phone: d.phone.replace(/\D/g, ""),
+      customerGstin: (d.customerGstin ?? "").trim().toUpperCase(),
       productName: d.productName.trim(),
       problem: d.problem.trim(),
       estimate: Number(d.estimate) || 0,
@@ -164,9 +170,13 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
                 <label className={label}>Mobile / WhatsApp *</label>
                 <input value={d.phone} onChange={(e) => set({ phone: e.target.value })} inputMode="numeric" className={field} placeholder="10-digit number" />
               </div>
-              <div className="md:col-span-2">
+              <div>
                 <label className={label}>Email (optional)</label>
                 <input value={d.email ?? ""} onChange={(e) => set({ email: e.target.value })} className={field} placeholder="name@email.com" />
+              </div>
+              <div>
+                <label className={label}>GST Number (optional)</label>
+                <input value={d.customerGstin ?? ""} onChange={(e) => set({ customerGstin: e.target.value.toUpperCase() })} maxLength={15} className={cn(field, "font-mono tracking-wide")} placeholder="33XXXXX0000X1ZV" />
               </div>
             </div>
           </section>

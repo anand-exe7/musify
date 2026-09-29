@@ -157,6 +157,7 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       status: bill.status === "pending" ? "pending" : "paid",
       source: "pos",
       refId: bill.id,
+      customerGstin: bill.customerGstin || null,
     });
   } catch (err) {
     console.error("[ledger] recordBillInvoice failed:", err);
@@ -171,12 +172,13 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
  * both branches are in Tamil Nadu). Idempotent per ticket, so it can be called
  * on every repair update and only ever mints one number.
  */
-export async function recordServiceInvoice(t: RepairTicket): Promise<void> {
+export async function recordServiceInvoice(t: RepairTicket, opts: { force?: boolean } = {}): Promise<void> {
   try {
     if (t.status === "cancelled") return;
     const base = t.finalCost > 0 ? t.finalCost : t.estimate;
     if (base <= 0) return;
-    const billable = t.status === "ready" || t.status === "completed" || Boolean(t.invoiceNo);
+    // `force`: an admin explicitly opened the invoice, so mint it regardless of status.
+    const billable = opts.force || t.status === "ready" || t.status === "completed" || Boolean(t.invoiceNo);
     if (!billable) return;
     if (await getInvoiceByRefId(t.id)) return;
 
@@ -210,6 +212,7 @@ export async function recordServiceInvoice(t: RepairTicket): Promise<void> {
       status: paid ? "paid" : "pending",
       source: "service",
       refId: t.id,
+      customerGstin: t.customerGstin || null,
     });
   } catch (err) {
     console.error("[ledger] recordServiceInvoice failed:", err);

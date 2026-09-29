@@ -86,6 +86,7 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
           <div className="rounded-xl border border-ink-100 bg-ivory-50/60 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Billed To</p>
             <p className="mt-2 text-base font-semibold text-ink-900">{invoice.customer || "Customer"}</p>
+            {invoice.customerGstin && <p className="mt-1 text-sm text-ink-600">GSTIN <span className="font-semibold tracking-wide text-ink-800">{invoice.customerGstin}</span></p>}
           </div>
           <div className="rounded-xl border border-ink-100 bg-ivory-50/60 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Seller</p>

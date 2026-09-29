@@ -318,6 +318,7 @@ export default function TicketDetailPage() {
             <div className="mt-3 space-y-2 text-sm text-ink-600">
               <p className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-ink-400" /> {t.phone}</p>
               {t.email && <p className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-ink-400" /> {t.email}</p>}
+              {t.customerGstin && <p className="flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-ink-400" /> GSTIN <span className="font-mono">{t.customerGstin}</span></p>}
               <p className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5 text-ink-400" /> Ready by {fmtDate(t.deadline)}</p>
             </div>
             {t.whatsappSentAt && <p className="mt-3 text-[11px] text-ink-400">Last WhatsApp: {fmtDateTime(t.whatsappSentAt)}</p>}

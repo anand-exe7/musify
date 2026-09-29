@@ -98,6 +98,8 @@ export interface Invoice {
   source?: "web" | "pos" | "service" | "manual";
   /** Link back to the source order/bill id. */
   refId?: string;
+  /** Buyer's GSTIN (optional). */
+  customerGstin?: string | null;
 }
 
 export interface User {

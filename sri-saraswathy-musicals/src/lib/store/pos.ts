@@ -37,6 +37,7 @@ export interface Bill {
   createdAt: string; // ISO date-time
   customerName: string;
   phone: string;
+  customerGstin?: string; // optional buyer GSTIN
   source: Source;
   branch: Branch;
   items: BillItem[];

@@ -207,6 +207,8 @@ export const invoices = pgTable("invoices", {
   source: text("source").notNull().default("manual"),
   /** Link back to the source order/bill id. */
   refId: text("ref_id").notNull().default(""),
+  /** Buyer's GSTIN — optional, shown under "Billed To" when present. */
+  customerGstin: text("customer_gstin"),
 });
 
 export const vendors = pgTable("vendors", {
@@ -285,6 +287,8 @@ export const posBills = pgTable("pos_bills", {
   createdAt: text("created_at").notNull(),
   customerName: text("customer_name").notNull().default(""),
   phone: text("phone").notNull().default(""),
+  /** Customer's GSTIN — optional; printed on the invoice. */
+  customerGstin: text("customer_gstin"),
   source: text("source").notNull(),
   branch: text("branch").notNull(),
   items: jsonb("items")
@@ -333,6 +337,8 @@ export const repairTickets = pgTable("repair_tickets", {
   customerName: text("customer_name").notNull(),
   phone: text("phone").notNull(),
   email: text("email"),
+  /** Customer's GSTIN — optional; carried onto the service invoice. */
+  customerGstin: text("customer_gstin"),
   productName: text("product_name").notNull(),
   category: text("category").notNull(),
   brand: text("brand"),

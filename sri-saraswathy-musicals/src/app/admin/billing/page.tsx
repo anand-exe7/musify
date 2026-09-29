@@ -64,6 +64,7 @@ export default function BillingPage() {
   }, [lockedBranch, scopeSelected]);
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
+  const [customerGstin, setCustomerGstin] = useState("");
   const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
@@ -167,11 +168,18 @@ export default function BillingPage() {
       setTimeout(() => setToast(null), 2500);
       return null;
     }
+    const gstin = customerGstin.trim();
+    if (gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin)) {
+      setToast("GST number must be a valid 15-character GSTIN, or leave it blank.");
+      setTimeout(() => setToast(null), 3000);
+      return null;
+    }
     return {
       id: genInvoiceId(),
       createdAt: new Date().toISOString(),
       customerName: customerName.trim() || "Walk-in",
       phone: phone.trim(),
+      customerGstin: customerGstin.trim(),
       source,
       branch,
       items: billItems,
@@ -199,6 +207,7 @@ export default function BillingPage() {
     clearOrder();
     setCustomerName("");
     setPhone("");
+    setCustomerGstin("");
   };
 
   const sendWhatsApp = () => {
@@ -235,6 +244,7 @@ export default function BillingPage() {
     clearOrder();
     setCustomerName("");
     setPhone("");
+    setCustomerGstin("");
   };
 
   const catalogItems = invProducts
@@ -288,7 +298,7 @@ export default function BillingPage() {
               <UserIcon className="h-4 w-4 text-gold-600" />
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">Customer Details</h2>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Customer Name</label>
                 <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Enter name" className={fieldCls} />
@@ -296,6 +306,10 @@ export default function BillingPage() {
               <div>
                 <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Mobile Number (WhatsApp)</label>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Enter 10-digit number" inputMode="numeric" className={fieldCls} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">GST Number (optional)</label>
+                <input value={customerGstin} onChange={(e) => setCustomerGstin(e.target.value.toUpperCase())} maxLength={15} placeholder="33XXXXX0000X1ZV" className={fieldCls + " font-mono tracking-wide"} />
               </div>
             </div>
           </section>
@@ -436,6 +450,12 @@ export default function BillingPage() {
                 <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">Phone</dt>
                 <dd className="font-medium text-ink-900">{phone || "—"}</dd>
               </div>
+              {customerGstin.trim() && (
+                <div className="flex items-center justify-between">
+                  <dt className="font-semibold uppercase tracking-[0.18em] text-ink-500">GSTIN</dt>
+                  <dd className="font-mono font-medium text-ink-900">{customerGstin}</dd>
+                </div>
+              )}
             </dl>
 
             {activeRows.length === 0 ? (

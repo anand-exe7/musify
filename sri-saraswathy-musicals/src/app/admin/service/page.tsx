@@ -88,7 +88,7 @@ export default function ServicePage() {
     const prRank = { urgent: 0, high: 1, normal: 2, low: 3 };
     list = [...list].sort((a, b) => {
       if (sort === "new") return +new Date(b.createdAt) - +new Date(a.createdAt);
-      if (sort === "priority") return prRank[a.priority] - prRank[b.priority];
+      if (sort === "priority") return prRank[a.priority] - prRank[b.priority] || +new Date(a.deadline) - +new Date(b.deadline);
       // deadline: open first (by soonest), closed last
       const ac = isClosed(a.status), bc = isClosed(b.status);
       if (ac !== bc) return ac ? 1 : -1;
@@ -262,8 +262,13 @@ export default function ServicePage() {
                   const d = daysUntil(t.deadline);
                   const sm = statusMeta(t.status);
                   const pr = PRIORITY_META[t.priority];
+                  const open = !isClosed(t.status);
+                  const hot = open && (t.priority === "urgent" || t.priority === "high");
+                  // Row tint: overdue > due-soon > urgent/high priority. Left bar marks the tier.
+                  const tier = !open ? "" : lv === "overdue" ? "bg-danger/[0.07] hover:bg-danger/[0.11]" : lv === "due-soon" ? "bg-warning/[0.12] hover:bg-warning/[0.18]" : hot ? "bg-gold-50/70 hover:bg-gold-50" : "hover:bg-ink-900/[0.03]";
+                  const bar = !open ? "border-l-transparent" : lv === "overdue" ? "border-l-danger" : lv === "due-soon" ? "border-l-warning" : t.priority === "urgent" ? "border-l-danger" : t.priority === "high" ? "border-l-gold-500" : "border-l-transparent";
                   return (
-                    <tr key={t.id} onClick={() => router.push(`/admin/service/${t.id}`)} className="cursor-pointer text-ink-800 transition-colors hover:bg-ink-900/[0.03]">
+                    <tr key={t.id} onClick={() => router.push(`/admin/service/${t.id}`)} className={cn("cursor-pointer border-l-4 text-ink-800 transition-colors", bar, tier, !open && "opacity-60")}>
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center gap-1 font-semibold text-ink-900">{t.id}<ExternalLink className="h-3 w-3 text-ink-300" /></span>
                         <p className="text-[11px] text-ink-400">{t.branch} · {fmtDate(t.createdAt)}</p>
@@ -276,7 +281,7 @@ export default function ServicePage() {
                         <p className="max-w-[180px] truncate font-medium">{t.productName}</p>
                         <p className="text-[11px] text-ink-400">{t.category}</p>
                       </td>
-                      <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", pr.tone)}>{pr.label}</span></td>
+                      <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", pr.tone, open && t.priority === "urgent" && "ring-1 ring-danger/40")}>{open && t.priority === "urgent" ? "🔥 " : ""}{pr.label}</span></td>
                       <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", sm.tone)}>{sm.label}</span></td>
                       <td>
                         <p className="text-ink-700">{fmtDate(t.deadline)}</p>

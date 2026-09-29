@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox, Plus
+  MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox, Plus, Download
 } from "lucide-react";
 import {
   useInquiry, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus, INQUIRY_TOPICS, genInquiryId
@@ -9,6 +9,7 @@ import {
 import { useBranchScope, effectiveBranch, type BranchScope } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { cn } from "@/lib/utils";
+import { downloadCsv, stamp } from "@/lib/csv";
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -89,6 +90,12 @@ export default function InquiriesPage() {
     if (i.status === "new") updateInquiry(i.id, { status: "contacted" });
     window.open(waLink(i.phone, replyMessage(i)), "_blank", "noopener,noreferrer");
   };
+
+  const exportCsv = () =>
+    downloadCsv(`inquiries-${stamp()}`, [
+      ["ID", "Date", "Name", "Phone", "Email", "Topic", "Product Interest", "Message", "Status", "Branch"],
+      ...rows.map((i) => [i.id, new Date(i.createdAt).toLocaleString("en-IN"), i.name, i.phone, i.email ?? "", i.topic, i.productInterest ?? "", i.message, INQUIRY_STATUS_META[i.status].label, i.branch ?? ""]),
+    ]);
 
   const chip = (active: boolean) =>
     cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all",
@@ -178,9 +185,14 @@ export default function InquiriesPage() {
           <h1 className="flex items-center gap-2 text-2xl font-bold text-ink-900"><MessageSquare className="h-6 w-6 text-gold-600" /> Customer Inquiries</h1>
           <p className="mt-1 text-sm text-ink-500">Website enquiries land here · reach customers on WhatsApp to continue</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="flex shrink-0 items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:opacity-90">
-          <Plus className="h-4 w-4" /> Add Inquiry
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={exportCsv} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
+            <Download className="h-4 w-4" /> Export CSV
+          </button>
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:opacity-90">
+            <Plus className="h-4 w-4" /> Add Inquiry
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
