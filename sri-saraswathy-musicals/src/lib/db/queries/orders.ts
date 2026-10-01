@@ -1,6 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { orders, invoices } from "@/lib/db/schema";
+import { getPricingCatalog } from "@/lib/db/queries/products";
+import { releaseCoupon } from "@/lib/db/queries/pos";
+import { adjustProductStock } from "@/lib/db/queries/stockOps";
+import { variantKey } from "@/lib/catalog/variants";
+import { isBranch } from "@/lib/stock";
 import type { Order } from "@/types";
 import { row, rows, definedOnly } from "./_util";
 import { genDocId } from "@/lib/ids";
@@ -53,7 +58,33 @@ export async function updateOrder(id: string, patch: Partial<Order>): Promise<Or
   return r ? row<Order>(r) : undefined;
 }
 
+/**
+ * Delete an order and reverse what it did: its tax invoice is cancelled (kept,
+ * not erased — GST numbers must stay gap-free and a cancelled invoice drops out
+ * of every return), its coupon redemption is returned, and the stock it took is
+ * put back. Only orders placed since web orders began taking stock carry the
+ * per-line `gstRate` snapshot, so older ones are not "restocked" — they never
+ * took anything out.
+ */
 export async function deleteOrder(id: string): Promise<boolean> {
+  const order = await getOrder(id);
+  if (!order) return false;
   const r = await db.delete(orders).where(eq(orders.id, id)).returning({ id: orders.id });
-  return r.length > 0;
+  if (r.length === 0) return false;
+
+  await db.update(invoices).set({ status: "cancelled" }).where(eq(invoices.refId, id));
+  if (order.couponCode) await releaseCoupon(order.couponCode).catch(() => {});
+
+  const tookStock = order.items.length > 0 && order.items.every((i) => typeof i.gstRate === "number");
+  if (tookStock && isBranch(order.branch) && order.status !== "cancelled") {
+    const catalog = new Map((await getPricingCatalog()).map((p) => [p.id, p]));
+    for (const it of order.items) {
+      const idx = (catalog.get(it.productId)?.variants ?? []).findIndex((v) => variantKey(v) === it.variantKey);
+      if (idx < 0) continue;
+      await adjustProductStock(it.productId, [{ variantIndex: idx, branch: order.branch, delta: it.quantity }]).catch((err) =>
+        console.error("[orders] couldn't restore stock for deleted order", id, it, err),
+      );
+    }
+  }
+  return true;
 }

@@ -124,7 +124,7 @@ email. Admin/billing sends no email. Failures never block an order.
 
 | Missing            | Effect                                                                 |
 | ------------------ | ---------------------------------------------------------------------- |
-| `AUTH_SECRET`      | Dev: an insecure fallback is used (a warning-worthy default). Prod: sign-in throws — **always set it in production.** |
+| `AUTH_SECRET`      | No fallback in any environment: every session check throws until it is set. Generate one with `openssl rand -base64 32`. |
 | `GOOGLE_CLIENT_*`  | Login shows "Google sign-in isn't set up yet." Nothing else breaks.    |
 | `RAZORPAY_*`       | Online payment shows a friendly error; Pay-on-delivery still works.    |
 | `RESEND_API_KEY`   | Orders still place; no confirmation email is sent.                     |

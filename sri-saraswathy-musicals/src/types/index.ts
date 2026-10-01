@@ -8,14 +8,18 @@ export type Category =
 
 export type Origin = "western" | "indian";
 
+/** On-hand at each physical store. */
+export type BranchStock = { "Branch 1": number; "Branch 2": number };
+
 /** A purchasable option under a product (size/finish combo). Money in paise;
- *  `stock` is on-hand across every branch (per-branch buckets land in Phase 4). */
+ *  `stock` is on-hand across every branch, `stockByBranch` the same split by store. */
 export interface ProductVariant {
   attr: string;
   finish: string;
   price: number;
   weight: number;
   stock: number;
+  stockByBranch?: BranchStock;
   disabled?: boolean;
 }
 
@@ -35,6 +39,8 @@ export interface Product {
   hsn: string;
   /** Storefront on-hand = sum of enabled variants' stock. */
   stock: number;
+  /** The same total, split by store (enabled variants only). */
+  stockByBranch?: BranchStock;
   /** The purchasable options. DB rows always carry this; seed literals may omit it. */
   variants?: ProductVariant[];
   rating: number;
@@ -71,10 +77,18 @@ export interface Order {
   paymentId?: string;
   shipState?: string;
   branch?: "Branch 1" | "Branch 2";
-  items: { productId: string; variantKey?: string; variantLabel?: string; quantity: number; price: number }[];
+  /** `price` is the GST-inclusive unit price; `gstRate` the rate snapshotted at order time. */
+  items: { productId: string; variantKey?: string; variantLabel?: string; quantity: number; price: number; gstRate?: number }[];
+  /** Goods total before the coupon, GST-inclusive. */
   subtotal: number;
+  /** Coupon discount in paise (0 when none) and its code. */
+  discount?: number;
+  couponCode?: string | null;
+  /** GST contained in the goods total. Orders placed before the inclusive model
+   *  carried GST on top instead (total = subtotal + gst + shipping). */
   gst: number;
   shipping: number;
+  /** subtotal − discount + shipping. */
   total: number;
   address: string;
 }

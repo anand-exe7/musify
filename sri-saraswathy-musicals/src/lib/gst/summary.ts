@@ -26,7 +26,8 @@ export interface GstSummary {
 }
 
 /** The GST slab an invoice was filed at — derived from its taxed lines, or from
- *  the tax/taxable ratio as a fallback; 0 for a non-GST (bill-of-supply) sale. */
+ *  the tax/taxable ratio as a fallback; 0 for a non-GST (bill-of-supply) sale.
+ *  The one rate helper: the collections summary and GSTR-1 both use it. */
 export function invoiceRateOf(inv: Invoice): number {
   const tax = (inv.cgst || 0) + (inv.sgst || 0) + (inv.igst || 0);
   if (tax <= 0) return 0;
@@ -76,9 +77,21 @@ export function rateWiseSummary(invoices: Invoice[]): GstSummary {
 
 /* ─────────────────────────────  CSV  ───────────────────────────── */
 
+/**
+ * Neutralise spreadsheet formula injection: text that starts with `= + - @` (or
+ * a tab / carriage return) would run as a formula when opened in Excel or
+ * Sheets, and customer names, notes and addresses are typed by the public.
+ * Real numbers, and strings that are plainly numeric (phone numbers, "-12.50"),
+ * pass through untouched.
+ */
+export function neutraliseFormula(v: string | number): string | number {
+  if (typeof v !== "string" || !/^[=+\-@\t\r]/.test(v) || /^[+-]?[\d.,\s-]+$/.test(v)) return v;
+  return `'${v}`;
+}
+
 export function csvEscape(v: string | number): string {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const s = String(neutraliseFormula(v) ?? "");
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export function toCsv(rows: (string | number)[][]): string {

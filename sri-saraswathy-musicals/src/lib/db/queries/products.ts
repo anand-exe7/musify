@@ -1,8 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
-import { variantStock } from "@/lib/stock";
-import type { Category, Origin, Product, ProductVariant } from "@/types";
+import { variantStock, variantStockAt } from "@/lib/stock";
+import { resolveGstColumns } from "@/lib/gst/applicability";
+import { HttpError } from "@/lib/api/errors";
+import { isForeignKeyViolation } from "./_util";
+import type { BranchStock, Category, Origin, Product, ProductVariant } from "@/types";
 
 /** Turn a DB variant (per-branch buckets, possibly legacy `stock`) into the
  *  storefront-facing shape: a single summed `stock` count across every branch. */
@@ -13,8 +16,18 @@ function toStorefrontVariants(vs: ProductRow["variants"]): ProductVariant[] {
     price: v.price,
     weight: v.weight,
     stock: variantStock(v),
+    stockByBranch: { "Branch 1": variantStockAt(v, "Branch 1"), "Branch 2": variantStockAt(v, "Branch 2") },
     disabled: v.disabled,
   }));
+}
+
+/** Enabled variants' stock, split by store. */
+function availableByBranch(variants: ProductRow["variants"]): BranchStock {
+  const live = (variants ?? []).filter((v) => !v.disabled);
+  return {
+    "Branch 1": live.reduce((n, v) => n + variantStockAt(v, "Branch 1"), 0),
+    "Branch 2": live.reduce((n, v) => n + variantStockAt(v, "Branch 2"), 0),
+  };
 }
 
 /** On-hand available to the storefront = sum of enabled variants' stock. */
@@ -40,6 +53,7 @@ export function toProduct(r: ProductRow): Product {
     isGstApplicable: r.isGstApplicable,
     hsn: r.hsn,
     stock: availableStock(r.variants),
+    stockByBranch: availableByBranch(r.variants),
     variants: toStorefrontVariants(r.variants),
     rating: r.rating,
     reviews: r.reviews,
@@ -69,8 +83,7 @@ function toInsertRow(p: Product): typeof products.$inferInsert {
     department: p.origin === "western" ? "Western" : "Indian",
     price: p.price,
     mrp: p.mrp,
-    gstRate: p.isGstApplicable === false ? null : p.gstRate,
-    isGstApplicable: p.isGstApplicable ?? true,
+    ...resolveGstColumns(p),
     hsn: p.hsn,
     rating: p.rating,
     reviews: p.reviews,
@@ -98,6 +111,34 @@ function toInsertRow(p: Product): typeof products.$inferInsert {
 export async function getAllProducts(): Promise<Product[]> {
   const rows = await db.select().from(products);
   return rows.map(toProduct);
+}
+
+/** What server-side pricing needs per product: money, tax flags and the RAW
+ *  variants (with per-branch stock), which `toProduct` flattens away. */
+export interface PricingProduct {
+  id: string;
+  name: string;
+  brand: string;
+  hsn: string;
+  price: number;
+  /** `null` ⇒ exempt (non-GST). */
+  gstRate: number | null;
+  isGstApplicable: boolean;
+  variants: ProductRow["variants"];
+}
+
+export async function getPricingCatalog(): Promise<PricingProduct[]> {
+  const rows = await db.select().from(products);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    brand: r.brand,
+    hsn: r.hsn,
+    price: r.price,
+    gstRate: r.gstRate ?? null,
+    isGstApplicable: r.isGstApplicable,
+    variants: r.variants ?? [],
+  }));
 }
 
 /** Only products the storefront should show (the `active` kill switch). */
@@ -162,8 +203,15 @@ export async function updateProduct(
   if (p.origin !== undefined) values.origin = p.origin;
   if (p.price !== undefined) values.price = p.price;
   if (p.mrp !== undefined) values.mrp = p.mrp;
-  if (p.gstRate !== undefined) values.gstRate = p.gstRate;
-  if (p.isGstApplicable !== undefined) values.isGstApplicable = p.isGstApplicable;
+  if (p.gstRate !== undefined || p.isGstApplicable !== undefined) {
+    if (p.isGstApplicable === false) {
+      Object.assign(values, resolveGstColumns({ isGstApplicable: false }));
+    } else if (p.gstRate !== undefined) {
+      Object.assign(values, resolveGstColumns({ gstRate: p.gstRate, isGstApplicable: true }));
+    } else {
+      values.isGstApplicable = true; // flag flipped back on; the stored rate is left alone
+    }
+  }
   if (p.hsn !== undefined) values.hsn = p.hsn;
   if (p.rating !== undefined) values.rating = p.rating;
   if (p.reviews !== undefined) values.reviews = p.reviews;
@@ -185,6 +233,13 @@ export async function updateProduct(
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
-  const rows = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id });
-  return rows.length > 0;
+  try {
+    const rows = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id });
+    return rows.length > 0;
+  } catch (err) {
+    if (isForeignKeyViolation(err)) {
+      throw new HttpError(409, "This product has stock history, so it can't be deleted. Hide it from the storefront instead (set it inactive).");
+    }
+    throw err;
+  }
 }

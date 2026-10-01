@@ -4,12 +4,12 @@
  * the print sheets stay presentation-only and the arithmetic is testable.
  *
  * Each invoice contributes one "Sale" row: `Value` is the invoice grand total
- * (`inv.total`), while `Taxable Value` is the assessable amount (`inv.subtotal`)
- * and the tax is that taxable value at the invoice's rate. The two can differ
- * (e.g. when the total carries delivery or an exempt line), exactly as the
- * statutory form allows.
+ * (`inv.total`), `Taxable Value` is the assessable amount (`inv.subtotal`), and
+ * the tax columns are the CGST / SGST / IGST the ledger RECORDED on the invoice
+ * — never recomputed here, so the return always agrees with the invoices.
  */
 import type { Invoice } from "@/types";
+import { invoiceRateOf } from "@/lib/gst/summary";
 
 /* ─────────────────────────────  State codes  ───────────────────────────── */
 
@@ -65,24 +65,26 @@ function ord(year: number, month: number): number {
   return year * 12 + month;
 }
 
-function inPeriod(iso: string, p: Period): boolean {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return false;
+/** An invoice whose date can't be read. A statutory return must never be
+ *  silently short-filed, so this stops the build instead of skipping it. */
+export class InvalidInvoiceDateError extends Error {
+  constructor(
+    public readonly invoiceNumber: string,
+    public readonly rawDate: string,
+  ) {
+    super(`Invoice ${invoiceNumber || "(no number)"} has an unreadable date (${JSON.stringify(rawDate)}). Fix it before filing — it would otherwise be left out of the return.`);
+    this.name = "InvalidInvoiceDateError";
+  }
+}
+
+function inPeriod(inv: Invoice, p: Period): boolean {
+  const d = new Date(inv.date);
+  if (Number.isNaN(d.getTime())) throw new InvalidInvoiceDateError(inv.number, inv.date);
   const o = ord(d.getFullYear(), d.getMonth());
   return o >= ord(p.fromYear, p.fromMonth) && o <= ord(p.toYear, p.toMonth);
 }
 
 /* ─────────────────────────────  Row helpers  ───────────────────────────── */
-
-/**
- * Representative GST rate for an invoice — the first taxed line's rate, falling
- * back to the configured standard slab. Retail bills carry a single slab, so
- * this reproduces the filed rate exactly.
- */
-function invoiceRate(inv: Invoice, standardRate: number): number {
-  const r = inv.items?.find((i) => i.gst > 0)?.gst;
-  return r || standardRate || 18;
-}
 
 export interface Gstr1SaleRow {
   gstin: string;
@@ -118,35 +120,25 @@ const ZERO_TOTALS: GstTotals = {
 };
 
 /**
- * Build the GSTR-1 "Sale" section for the period. Each completed/paid invoice
- * becomes one row; the tax is split into IGST (inter-state, where the ledger
- * recorded an IGST amount) or CGST+SGST (intra-state) and every figure is
- * rounded to paise so the printed rows sum to the printed totals.
+ * Build the GSTR-1 "Sale" section for the period. Each non-cancelled invoice
+ * becomes one row. Tax is read straight from the invoice's recorded CGST / SGST
+ * / IGST (so mixed-rate carts, exempt lines and discounts all come out as
+ * invoiced), and the rate shown is the same one the GST Collections screen uses
+ * (`invoiceRateOf`). Throws {@link InvalidInvoiceDateError} rather than
+ * dropping an invoice whose date can't be read.
  */
-export function buildGstr1(
-  invoices: Invoice[],
-  period: Period,
-  cfg: { standardRate: number; homeState: string },
-): Gstr1Data {
-  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+export function buildGstr1(invoices: Invoice[], period: Period): Gstr1Data {
   const rows: Gstr1SaleRow[] = [];
   const totals: GstTotals = { ...ZERO_TOTALS };
 
   const scoped = invoices
-    .filter((inv) => inv.status !== "cancelled" && inPeriod(inv.date, period))
+    .filter((inv) => inv.status !== "cancelled" && inPeriod(inv, period))
     .sort((a, b) => +new Date(a.date) - +new Date(b.date));
 
   for (const inv of scoped) {
-    const rate = invoiceRate(inv, cfg.standardRate);
-    const value = round2(inv.total);
-    const taxable = round2(inv.subtotal);
-    // Tax on the assessable value at the invoice's slab. Inter-state supplies
-    // (the ledger recorded an IGST amount) go to IGST; everything else splits
-    // into equal CGST + SGST halves, matching the invoice.
-    const inter = (inv.igst ?? 0) > 0;
-    const half = round2((taxable * rate) / 200);
-    const full = round2((taxable * rate) / 100);
-
+    const rate = invoiceRateOf(inv);
+    const value = inv.total;
+    const taxable = inv.subtotal;
     const row: Gstr1SaleRow = {
       gstin: "",
       invoiceNo: inv.number,
@@ -155,23 +147,39 @@ export function buildGstr1(
       rate,
       cessRate: 0,
       taxableValue: taxable,
-      integratedTax: inter ? full : 0,
-      centralTax: inter ? 0 : half,
-      stateTax: inter ? 0 : half,
+      integratedTax: inv.igst ?? 0,
+      centralTax: inv.cgst ?? 0,
+      stateTax: inv.sgst ?? 0,
       cess: 0,
       placeOfSupply: "",
     };
     rows.push(row);
 
-    totals.invoiceValue = round2(totals.invoiceValue + row.invoiceValue);
-    totals.taxableValue = round2(totals.taxableValue + row.taxableValue);
-    totals.integratedTax = round2(totals.integratedTax + row.integratedTax);
-    totals.centralTax = round2(totals.centralTax + row.centralTax);
-    totals.stateTax = round2(totals.stateTax + row.stateTax);
-    totals.cess = round2(totals.cess + row.cess);
+    totals.invoiceValue += row.invoiceValue;
+    totals.taxableValue += row.taxableValue;
+    totals.integratedTax += row.integratedTax;
+    totals.centralTax += row.centralTax;
+    totals.stateTax += row.stateTax;
+    totals.cess += row.cess;
   }
 
   return { sales: rows, totals };
+}
+
+export const EMPTY_GSTR1: Gstr1Data = { sales: [], totals: { ...ZERO_TOTALS } };
+
+/** {@link buildGstr1} for screens: a bad invoice date comes back as a message to
+ *  show, not an exception that blanks the page. */
+export function safeGstr1(
+  invoices: Invoice[],
+  period: Period,
+): { data: Gstr1Data; error: null } | { data: Gstr1Data; error: string } {
+  try {
+    return { data: buildGstr1(invoices, period), error: null };
+  } catch (err) {
+    if (err instanceof InvalidInvoiceDateError) return { data: EMPTY_GSTR1, error: err.message };
+    throw err;
+  }
 }
 
 /* ─────────────────────────────  GSTR-3B  ───────────────────────────── */

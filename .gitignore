@@ -1,0 +1,12 @@
+# Audit notes and session transcripts kept next to the project, not part of it
+AUDIT-REPORT.md
+bug_Fixes.txt
+Kilo_Session.txt
+
+# Local Claude Code settings (launch.json is shared and stays tracked)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini

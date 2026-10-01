@@ -6,6 +6,7 @@ import {
 import {
   useInquiry, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus, INQUIRY_TOPICS, genInquiryId
 } from "@/lib/store/inquiry";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { useBranchScope, effectiveBranch, type BranchScope } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ function Stat({ label, value, accent, icon }: { label: string; value: string; ac
 
 export default function InquiriesPage() {
   const inquiries = useInquiry((s) => s.inquiries);
+  const loadError = useInquiry((s) => s.loadError);
   const addInquiry = useInquiry((s) => s.addInquiry);
   const updateInquiry = useInquiry((s) => s.updateInquiry);
   const deleteInquiry = useInquiry((s) => s.deleteInquiry);
@@ -105,6 +107,7 @@ export default function InquiriesPage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void useInquiry.getState().hydrate()} />
       {/* Add Inquiry Modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setShowAdd(false)}>

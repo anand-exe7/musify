@@ -36,7 +36,8 @@ async function renderOrderEmail(order: Order): Promise<string> {
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-family:Arial,sans-serif;font-size:14px;">
       ${rows}
       <tr><td style="padding:8px 0;">Subtotal</td><td style="padding:8px 0;text-align:right;">${formatINR(order.subtotal)}</td></tr>
-      <tr><td style="padding:8px 0;">GST</td><td style="padding:8px 0;text-align:right;">${formatINR(order.gst)}</td></tr>
+      ${order.discount ? `<tr><td style="padding:8px 0;">Discount${order.couponCode ? ` (${order.couponCode})` : ""}</td><td style="padding:8px 0;text-align:right;">&minus;${formatINR(order.discount)}</td></tr>` : ""}
+      <tr><td style="padding:8px 0;color:#777;">GST included in prices</td><td style="padding:8px 0;text-align:right;color:#777;">${formatINR(order.gst)}</td></tr>
       <tr><td style="padding:8px 0;">Shipping</td><td style="padding:8px 0;text-align:right;">${order.shipping === 0 ? "Free" : formatINR(order.shipping)}</td></tr>
       <tr><td style="padding:12px 0;font-weight:bold;border-top:2px solid #111;">Total</td><td style="padding:12px 0;text-align:right;font-weight:bold;border-top:2px solid #111;">${formatINR(order.total)}</td></tr>
     </table>

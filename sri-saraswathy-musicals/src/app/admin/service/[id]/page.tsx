@@ -1,4 +1,5 @@
 "use client";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -57,6 +58,7 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const id = String(params.id);
   const tickets = useRepair((s) => s.tickets);
+  const loadError = useRepair((s) => s.loadError);
   const updateTicket = useRepair((s) => s.updateTicket);
   const nextInvoiceNo = useRepair((s) => s.nextInvoiceNo);
 
@@ -154,6 +156,7 @@ export default function TicketDetailPage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void useRepair.getState().hydrate()} />
       {editOpen && <RepairTicketModal ticket={t} onClose={() => setEditOpen(false)} />}
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>

@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
 import { getTicket } from "@/lib/db/queries/repair";
 import { recordServiceInvoice } from "@/lib/billing/ledger";
-import { getSession } from "@/lib/auth/server";
+import { getVerifiedSession } from "@/lib/auth/server";
 import { AdminServiceInvoiceView } from "./AdminServiceInvoiceView";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * ticket to a printable invoice with the "Send via WhatsApp" action.
  */
 export default async function AdminServiceInvoicePage({ params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
+  const session = await getVerifiedSession();
   if (!session) redirect("/auth/login?redirect=%2Fadmin%2Fservice");
   if (!session.isAdmin) redirect("/");
 

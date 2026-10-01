@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, HttpError, readJson } from "@/lib/api/http";
-import { requireUser } from "@/lib/auth/server";
 import { priceOrder, type DeliveryMethod } from "@/lib/checkout/pricing";
+import { fulfilOrder } from "@/lib/checkout/fulfil";
 import { signDraft } from "@/lib/checkout/draft";
-import { createOrder, nextOrderId } from "@/lib/db/queries/orders";
+import { nextOrderId } from "@/lib/db/queries/orders";
 import { createRazorpayOrder, razorpayConfigured, razorpayKeyId } from "@/lib/payments/razorpay";
 import { sendOrderConfirmation } from "@/lib/email/resend";
 import { recordOrderInvoice } from "@/lib/billing/ledger";
@@ -14,8 +14,9 @@ export const dynamic = "force-dynamic";
 type Branch = "Branch 1" | "Branch 2";
 
 interface CreateBody {
-  items: { productId: string; quantity: number }[];
+  items: { productId: string; variantKey?: string; quantity: number }[];
   delivery: DeliveryMethod;
+  couponCode?: string;
   payment: "upi" | "card" | "bank" | "cod";
   shipState?: string;
   branch?: Branch;
@@ -32,16 +33,22 @@ interface CreateBody {
  *    browser pays, then `/api/checkout/verify` finalises it.
  */
 export function POST(request: NextRequest) {
-  return handle(async () => {
-    const user = await requireUser();
+  return handle("user", async ({ user }) => {
     const body = await readJson<CreateBody>(request);
-    const priced = await priceOrder(body.items, body.delivery, body.shipState);
+    const branch: Branch = body.branch === "Branch 2" ? "Branch 2" : "Branch 1";
+    const priced = await priceOrder(body.items, body.delivery, body.shipState, {
+      couponCode: body.couponCode,
+      branch,
+    });
+    // Anything the shopper could still fix (stale option, short stock, a coupon
+    // that no longer applies) stops the order here — they are never charged a
+    // different amount than the cart showed.
+    if (priced.issues.length > 0) throw new HttpError(409, priced.issues[0].message);
 
     const customerName = (body.customerName || user.name || "").trim();
     const email = (body.email || user.email || "").trim();
     const phone = (body.phone || "").trim();
     const address = (body.address || (body.shipState ? `Delivery to ${body.shipState}` : "")).trim();
-    const branch: Branch = body.branch === "Branch 2" ? "Branch 2" : "Branch 1";
 
     if (body.payment === "cod") {
       const order: Order = {
@@ -56,14 +63,16 @@ export function POST(request: NextRequest) {
         paymentId: "",
         shipState: (body.shipState || "").trim(),
         branch,
-        items: priced.items,
+        items: [], // filled from the priced lines by fulfilOrder
         subtotal: priced.subtotal,
+        discount: priced.discount,
+        couponCode: priced.couponCode,
         gst: priced.gst,
         shipping: priced.shipping,
         total: priced.total,
         address,
       };
-      const saved = await createOrder(order);
+      const saved = await fulfilOrder(order, priced, branch, { paid: false });
       await recordOrderInvoice(saved);
       await sendOrderConfirmation(saved, email);
       return created({ mode: "cod", orderId: saved.id });

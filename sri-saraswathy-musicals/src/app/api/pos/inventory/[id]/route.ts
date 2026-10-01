@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, noContent, readJson, badRequest } from "@/lib/api/http";
-import { updateInventoryProduct, deleteInventoryProduct } from "@/lib/db/queries/pos";
-import { requireAdminUser } from "@/lib/auth/server";
+import { updateInventoryProduct, deleteInventoryProduct, type StockChange } from "@/lib/db/queries/pos";
+import { isBranch } from "@/lib/stock";
 import type { InvProduct, Variant } from "@/lib/store/pos";
 
 export const dynamic = "force-dynamic";
@@ -33,23 +33,32 @@ async function sanitizeForStaff(id: string, raw: Partial<InvProduct>): Promise<P
 }
 
 export function PATCH(request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
-    const { user } = await requireAdminUser();
+  return handle("staff", async ({ user, access }) => {
     const { id } = await ctx.params;
-    const raw = await readJson<Partial<InvProduct>>(request);
+    const { stockChanges: rawChanges, ...raw } = await readJson<Partial<InvProduct> & { stockChanges?: unknown }>(request);
+    // Stock figures the editor changed. A branch user may only change their own
+    // branch's stock — anything for the other branch is refused, not ignored.
+    const stockChanges: StockChange[] = [];
+    for (const c of Array.isArray(rawChanges) ? (rawChanges as Partial<StockChange>[]) : []) {
+      if (!c || !isBranch(c.branch) || !Number.isInteger(c.variantIndex) || (c.variantIndex as number) < 0 || !Number.isInteger(c.from) || !Number.isInteger(c.to) || (c.to as number) < 0) {
+        return badRequest("Invalid stock change");
+      }
+      if (access !== "all" && c.branch !== access) return badRequest("You can only change stock at your own branch");
+      stockChanges.push(c as StockChange);
+    }
     let patch: Partial<InvProduct>;
     try {
       patch = user.isAdmin ? raw : await sanitizeForStaff(id, raw);
     } catch (e) {
       return badRequest(e instanceof Error ? e.message : "Invalid patch");
     }
-    const p = await updateInventoryProduct(id, patch);
+    const p = await updateInventoryProduct(id, patch, stockChanges);
     return p ? ok(p) : notFound("Inventory product not found");
   });
 }
 
 export function DELETE(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     return (await deleteInventoryProduct(id)) ? noContent() : notFound("Inventory product not found");
   });

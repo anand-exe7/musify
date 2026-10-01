@@ -8,6 +8,7 @@ import {
   type Expense,
   type PaymentMode,
 } from "@/lib/store/expenses";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { inPeriod, type Period } from "@/lib/store/pos";
 import { useBranchScope } from "@/lib/store/branch";
 import type { Invoice } from "@/types";
@@ -48,6 +49,7 @@ const blankForm = () => ({ title: "", amount: "" as number | "", category: "", d
 
 export default function ExpensesPage() {
   const expensesAll = useExpenses((s) => s.expenses);
+  const loadError = useExpenses((s) => s.loadError);
   const hydrate = useExpenses((s) => s.hydrate);
   const addExpense = useExpenses((s) => s.addExpense);
   const deleteExpense = useExpenses((s) => s.deleteExpense);
@@ -173,6 +175,7 @@ export default function ExpensesPage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void useExpenses.getState().hydrate()} />
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>
       )}

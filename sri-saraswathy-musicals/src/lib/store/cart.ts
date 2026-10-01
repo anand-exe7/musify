@@ -18,6 +18,12 @@ interface CartStore {
   /** Buyer's state — drives place-of-supply GST (CGST+SGST vs IGST). */
   shipState: string;
   setShipState: (state: string) => void;
+  /** Delivery method — shared so the cart and checkout quote the same shipping. */
+  delivery: "standard" | "white-glove" | "express";
+  setDelivery: (d: "standard" | "white-glove" | "express") => void;
+  /** Coupon code the shopper applied. The server validates and prices it. */
+  couponCode: string;
+  setCouponCode: (code: string) => void;
   addItem: (productId: string, variantKey: string, quantity?: number) => void;
   removeItem: (productId: string, variantKey: string) => void;
   updateQuantity: (productId: string, variantKey: string, quantity: number) => void;
@@ -34,6 +40,10 @@ export const useCart = create<CartStore>()(
       items: [],
       shipState: "Tamil Nadu",
       setShipState: (state) => set({ shipState: state }),
+      delivery: "white-glove",
+      setDelivery: (delivery) => set({ delivery }),
+      couponCode: "",
+      setCouponCode: (couponCode) => set({ couponCode }),
       addItem: (productId, variantKey, quantity = 1) =>
         set((s) => {
           const existing = s.items.find((i) => sameLine(i, productId, variantKey));
@@ -57,7 +67,7 @@ export const useCart = create<CartStore>()(
                   sameLine(i, productId, variantKey) ? { ...i, quantity } : i,
                 ),
         })),
-      clear: () => set({ items: [] }),
+      clear: () => set({ items: [], couponCode: "" }),
       getCount: () => get().items.reduce((n, i) => n + i.quantity, 0),
     }),
     {

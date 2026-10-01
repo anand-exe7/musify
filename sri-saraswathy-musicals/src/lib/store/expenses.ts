@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { fetchJson, errMsg, readError } from "@/lib/client/api";
 
 export type PaymentMode = "CASH" | "UPI" | "CARD" | "BANK" | "OTHER";
 export const PAYMENT_MODES: PaymentMode[] = ["CASH", "UPI", "CARD", "BANK", "OTHER"];
@@ -33,7 +34,8 @@ export interface Expense {
 interface ExpenseState {
   expenses: Expense[];
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   addExpense: (e: Expense) => Promise<boolean>;
   deleteExpense: (id: string) => Promise<void>;
 }
@@ -41,12 +43,16 @@ interface ExpenseState {
 export const useExpenses = create<ExpenseState>()((set, get) => ({
   expenses: [],
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
     try {
-      const res = await fetch("/api/expenses", { cache: "no-store" });
-      set({ expenses: res.ok ? ((await res.json()) as Expense[]) : [], hydrated: true });
-    } catch {
-      set({ hydrated: true });
+      const expenses = await fetchJson<Expense[]>("/api/expenses", { cache: "no-store" });
+      set({ expenses, hydrated: true, loadError: null });
+      return true;
+    } catch (e) {
+      // Not "no expenses": keep what we had and say the load failed.
+      set({ hydrated: true, loadError: errMsg(e, "Couldn't load expenses") });
+      return false;
     }
   },
   addExpense: async (e) => {
@@ -58,25 +64,28 @@ export const useExpenses = create<ExpenseState>()((set, get) => ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(e),
       });
-      if (!res.ok) throw new Error("save failed");
+      if (!res.ok) throw new Error(await readError(res, "Save failed"));
       // Adopt the server copy (branch may have been forced for branch users).
       const saved = (await res.json()) as Expense;
       set((s) => ({ expenses: s.expenses.map((x) => (x.id === e.id ? saved : x)) }));
       return true;
-    } catch {
+    } catch (err) {
       set((s) => ({ expenses: s.expenses.filter((x) => x.id !== e.id) }));
+      alert(`Couldn't save the expense: ${errMsg(err)}`);
       return false;
     }
   },
   deleteExpense: async (id) => {
-    const prev = get().expenses;
+    // Put back only the row we removed — restoring a whole pre-delete snapshot
+    // would wipe out any expense added while this request was in flight.
+    const removed = get().expenses.find((x) => x.id === id);
     set((s) => ({ expenses: s.expenses.filter((x) => x.id !== id) }));
     try {
       const res = await fetch(`/api/expenses/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("delete failed");
-    } catch {
-      set({ expenses: prev });
-      alert("Couldn't delete the expense. Reverting.");
+      if (!res.ok) throw new Error(await readError(res, "Delete failed"));
+    } catch (err) {
+      if (removed) set((s) => ({ expenses: s.expenses.some((x) => x.id === id) ? s.expenses : [removed, ...s.expenses] }));
+      alert(`Couldn't delete the expense: ${errMsg(err)}. It has been put back.`);
     }
   },
 }));

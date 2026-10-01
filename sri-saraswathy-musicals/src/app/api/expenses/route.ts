@@ -1,22 +1,20 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import { getExpenses, createExpense } from "@/lib/db/queries/expenses";
-import { requireAdminAccess, requireAdminUser, scopeByBranch } from "@/lib/auth/server";
+import { scopeByBranch } from "@/lib/auth/server";
 import type { Expense } from "@/lib/store/expenses";
 
 export const dynamic = "force-dynamic";
 
 /** Expense ledger — admin or branch staff (scoped to their branch). */
 export function GET() {
-  return handle(async () => {
-    const access = await requireAdminAccess();
+  return handle("staff", async ({ access }) => {
     return ok(scopeByBranch(await getExpenses(), access));
   });
 }
 
 export function POST(request: NextRequest) {
-  return handle(async () => {
-    const { access } = await requireAdminUser();
+  return handle("staff", async ({ access }) => {
     const body = await readJson<Expense>(request);
     if (!body?.id || !body?.title) return badRequest("Expense requires `id` and `title`");
     // Branch users can only record expenses against their own branch.

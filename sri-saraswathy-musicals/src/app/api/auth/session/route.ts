@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * values differ from the cookie, the cookie is refreshed in the same response.
  */
 export function GET() {
-  return handle(async () => {
+  return handle("public", async () => {
     const session = await getSession();
 
     if (!session) {
@@ -31,8 +31,8 @@ export function GET() {
       return ok({ user: session });
     }
 
-    if (!freshUser) {
-      // User was deleted from the DB — treat as signed-out.
+    if (!freshUser || freshUser.active === false) {
+      // User was deleted or deactivated — treat as signed-out.
       return ok({ user: null });
     }
 

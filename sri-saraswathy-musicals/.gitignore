@@ -1,13 +1,19 @@
 # Dependencies
 node_modules/
-**/node_modules/
-/node_modules/
+.pnp
+.pnp.*
+.yarn/
 
-# Next.js
+# Next.js build output and generated files
 .next/
-**/.next/
+out/
+next-env.d.ts
 
-# Environment variables
+# Production build
+build/
+dist/
+
+# Environment variables (keep .env.example)
 .env
 .env.local
 .env.*.local
@@ -15,12 +21,33 @@ node_modules/
 # Vercel
 .vercel/
 
-# IDE
-.vscode/
-
 # TypeScript
 *.tsbuildinfo
+
+# Tests and coverage
+coverage/
+.vitest/
+test-results/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# Local tooling and scratch
+.claude/settings.local.json
+*.tmp
+*.tmp.ts
+*.pem

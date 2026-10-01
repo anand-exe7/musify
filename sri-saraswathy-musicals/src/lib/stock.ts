@@ -47,3 +47,72 @@ export function setVariantStockAt(v: Variant, branch: Branch, qty: number): Vari
   void _drop;
   return { ...rest, stockByBranch: next };
 }
+
+/** Every branch the app knows about. Validate untrusted branch strings against this. */
+export const BRANCH_KEYS: readonly Branch[] = ["Branch 1", "Branch 2"];
+
+export function isBranch(v: unknown): v is Branch {
+  return typeof v === "string" && (BRANCH_KEYS as readonly string[]).includes(v);
+}
+
+/** One change to one variant's on-hand at one branch. */
+export interface StockDelta {
+  variantIndex: number;
+  branch: Branch;
+  /** Negative = take stock out, positive = put stock in. */
+  delta: number;
+}
+
+export class StockShortfallError extends Error {
+  constructor(
+    message: string,
+    public readonly variantIndex: number,
+    public readonly branch: Branch,
+    public readonly onHand: number,
+    public readonly requested: number,
+  ) {
+    super(message);
+    this.name = "StockShortfallError";
+  }
+}
+
+/**
+ * Apply stock deltas to a product's variants without mutating them. Deltas to
+ * the same bucket are netted first, so a transfer (−n here, +n there) is judged
+ * on the final result. A bucket that would go negative throws
+ * {@link StockShortfallError} unless `allowShort` is set, in which case it is
+ * clamped at zero (used where the goods are already sold/paid for).
+ */
+export function applyStockDeltas(
+  variants: Variant[],
+  deltas: StockDelta[],
+  opts: { allowShort?: boolean; label?: string } = {},
+): Variant[] {
+  const net = new Map<string, StockDelta>();
+  for (const d of deltas) {
+    if (!isBranch(d.branch)) throw new Error(`Unknown branch: ${String(d.branch)}`);
+    if (!Number.isInteger(d.delta)) throw new Error("Stock quantity must be a whole number");
+    const k = `${d.variantIndex}|${d.branch}`;
+    const prev = net.get(k);
+    net.set(k, { ...d, delta: (prev?.delta ?? 0) + d.delta });
+  }
+  let next = variants;
+  for (const d of net.values()) {
+    const v = next[d.variantIndex];
+    if (!v) throw new Error("Unknown variant on this product");
+    const onHand = variantStockAt(v, d.branch);
+    const after = onHand + d.delta;
+    if (after < 0 && !opts.allowShort) {
+      const what = opts.label ? `${opts.label} — ` : "";
+      throw new StockShortfallError(
+        `${what}only ${onHand} in stock at ${d.branch}, ${-d.delta} needed`,
+        d.variantIndex,
+        d.branch,
+        onHand,
+        -d.delta,
+      );
+    }
+    next = next.map((x, i) => (i === d.variantIndex ? setVariantStockAt(x, d.branch, Math.max(0, after)) : x));
+  }
+  return next;
+}

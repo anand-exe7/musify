@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { usePOS, productStock, productStockAt, stockState, variantStock, type InvProduct } from "@/lib/store/pos";
 import { ProductModal } from "@/components/admin/ProductModal";
 import { useVendors } from "@/lib/store/vendors";
@@ -17,6 +18,7 @@ const STATUS_META = {
 
 export default function InventoryPage() {
   const invProducts = usePOS((s) => s.invProducts);
+  const loadError = usePOS((s) => s.loadError);
   const deleteProduct = usePOS((s) => s.deleteProduct);
 
   const [statusFilter, setStatusFilter] = useState<"all" | "low" | "out">("all");
@@ -87,6 +89,7 @@ export default function InventoryPage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void usePOS.getState().hydrate()} />
       {(editing || adding) && <ProductModal product={editing} onClose={() => { setEditing(null); setAdding(false); }} />}
 
       {/* Alerts modal */}

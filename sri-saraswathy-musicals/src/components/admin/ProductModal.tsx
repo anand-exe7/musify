@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { X, Plus, Trash2, ImagePlus } from "lucide-react";
-import { usePOS, type InvProduct, type Variant } from "@/lib/store/pos";
+import { usePOS, variantStockAt, setVariantStockAt, type InvProduct, type Variant, type Branch } from "@/lib/store/pos";
 import { useAuth } from "@/lib/store/auth";
 import { cn, slugify } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
@@ -36,7 +36,7 @@ function blankProduct(): InvProduct {
     gstRate: 18,
     hsn: "",
     isGstApplicable: true,
-    variants: [{ attr: "Standard", finish: "Natural", price: 0, weight: 500, stock: 0 }],
+    variants: [{ attr: "Standard", finish: "Natural", price: 0, weight: 500, stockByBranch: { "Branch 1": 0, "Branch 2": 0 } }],
   };
 }
 
@@ -66,7 +66,11 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   const setVariant = (i: number, patch: Partial<Variant>) =>
     setDraft((d) => ({ ...d, variants: d.variants.map((v, idx) => (idx === i ? { ...v, ...patch } : v)) }));
   const addRow = () =>
-    setDraft((d) => ({ ...d, variants: [...d.variants, { attr: "", finish: "", price: d.basePrice, weight: d.baseWeight, stock: 0 }] }));
+    setDraft((d) => ({ ...d, variants: [...d.variants, { attr: "", finish: "", price: d.basePrice, weight: d.baseWeight, stockByBranch: { "Branch 1": 0, "Branch 2": 0 } }] }));
+  // Stock lives in per-branch buckets; the legacy flat `stock` field is ignored
+  // whenever those exist, so edits must go through `setVariantStockAt`.
+  const setStockAt = (i: number, branch: Branch, qty: number) =>
+    setDraft((d) => ({ ...d, variants: d.variants.map((v, idx) => (idx === i ? setVariantStockAt(v, branch, qty) : v)) }));
   const removeRow = (i: number) => setDraft((d) => ({ ...d, variants: d.variants.filter((_, idx) => idx !== i) }));
 
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,7 +96,20 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
       features: (draft.features ?? []).filter((f) => f.trim()),
     };
     if (isNew) addProduct(clean);
-    else updateProduct(clean.id, clean);
+    else {
+      // Send only the stock figures that were actually edited (what the form
+      // showed → what was typed), not the whole stock picture.
+      const stockChanges: { variantIndex: number; branch: Branch; from: number; to: number }[] = [];
+      const orig = product?.variants ?? [];
+      for (let i = 0; i < Math.min(orig.length, clean.variants.length); i++) {
+        for (const branch of ["Branch 1", "Branch 2"] as const) {
+          const from = variantStockAt(orig[i], branch);
+          const to = variantStockAt(clean.variants[i], branch);
+          if (from !== to) stockChanges.push({ variantIndex: i, branch, from, to });
+        }
+      }
+      updateProduct(clean.id, clean, stockChanges);
+    }
     onClose();
   };
 
@@ -296,7 +313,7 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[620px] text-sm">
-                <thead><tr className="text-left text-[9px] font-bold uppercase tracking-wider text-ink-400"><th className="pb-2">Variant</th><th>Finish</th><th>Price (₹)</th><th>Weight (g)</th><th>Stock</th><th className="text-right">Actions</th></tr></thead>
+                <thead><tr className="text-left text-[9px] font-bold uppercase tracking-wider text-ink-400"><th className="pb-2">Variant</th><th>Finish</th><th>Price (₹)</th><th>Weight (g)</th><th>Stock <span className="font-semibold normal-case tracking-normal text-ink-300">B1 · B2</span></th><th className="text-right">Actions</th></tr></thead>
                 <tbody>
                   {draft.variants.map((v, i) => (
                     <tr key={i} className={cn(v.disabled && "opacity-50")}>
@@ -304,7 +321,7 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><input type="number" value={v.stock} onChange={(e) => setVariant(i, { stock: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
+                      <td className="pr-2"><div className="flex gap-1">{(["Branch 1", "Branch 2"] as const).map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${b}`} title={b} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" />))}</div></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
                     </tr>
                   ))}

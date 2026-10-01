@@ -7,7 +7,7 @@ import type { Invoice } from "@/types";
 import { useGst } from "@/lib/store/gst";
 import { BUSINESS, branchInfo } from "@/lib/data/business";
 import {
-  buildGstr1, buildGstr3b, stateWithCode, MONTHS, type Period,
+  safeGstr1, buildGstr3b, stateWithCode, MONTHS, type Period,
 } from "@/lib/gst/report";
 import {
   Gstr1Sheet, Gstr3bSheet, GST_REPORT_PRINT_CSS,
@@ -55,9 +55,9 @@ function ReportInner() {
     return () => { alive = false; };
   }, []);
 
-  const gstr1 = useMemo(
-    () => buildGstr1(invoices, period, { standardRate: gst.standardRate, homeState: gst.homeState }),
-    [invoices, period.fromYear, period.fromMonth, period.toYear, period.toMonth, gst.standardRate, gst.homeState],
+  const { data: gstr1, error: dataError } = useMemo(
+    () => safeGstr1(invoices, period),
+    [invoices, period.fromYear, period.fromMonth, period.toYear, period.toMonth],
   );
   const gstr3b = useMemo(() => buildGstr3b(gstr1), [gstr1]);
 
@@ -102,7 +102,7 @@ function ReportInner() {
           </span>
           <button
             onClick={() => window.print()}
-            disabled={state !== "ready"}
+            disabled={state !== "ready" || Boolean(dataError)}
             className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600 disabled:opacity-40"
           >
             <Printer className="h-4 w-4" /> Print / Save PDF
@@ -118,6 +118,11 @@ function ReportInner() {
         <div className="grid place-items-center rounded-2xl border border-ink-100 bg-ivory-50 py-24 text-center">
           <p className="text-sm font-bold text-ink-900">You appear to be offline</p>
           <p className="mt-1 text-xs text-ink-500">We couldn&apos;t reach the server to build the return.</p>
+        </div>
+      ) : dataError ? (
+        <div className="grid place-items-center rounded-2xl border border-danger/30 bg-danger/[0.06] px-6 py-24 text-center">
+          <p className="text-sm font-bold text-ink-900">This return can&apos;t be built yet</p>
+          <p className="mt-1 max-w-xl text-xs text-ink-600">{dataError}</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-white p-2 shadow-card md:p-4">

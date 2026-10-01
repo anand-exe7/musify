@@ -1,11 +1,12 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useCart } from "@/lib/store/cart";
 import { useAuth } from "@/lib/store/auth";
-import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
+import { useGst, IN_STATES } from "@/lib/store/gst";
+import { useQuote } from "@/lib/client/quote";
 import { useShallow } from "zustand/react/shallow";
 import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
@@ -19,12 +20,40 @@ import type { UserAddress } from "@/types";
 
 const steps = ["Address", "Delivery", "Payment", "Review"];
 
+type RazorpayWindow = Window & { Razorpay?: unknown };
+
+/** One shared load of Razorpay's hosted-checkout script. Re-using the promise
+ *  means retries and re-visits never stack up extra <script> tags. */
+let razorpayScript: Promise<boolean> | null = null;
+function loadRazorpay(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if ((window as RazorpayWindow).Razorpay) return Promise.resolve(true);
+  if (razorpayScript) return razorpayScript;
+  razorpayScript = new Promise<boolean>((resolve) => {
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.async = true;
+    s.onload = () => resolve(true);
+    s.onerror = () => {
+      s.remove();
+      razorpayScript = null; // let a later attempt try again
+      resolve(false);
+    };
+    document.body.appendChild(s);
+  });
+  return razorpayScript;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
   const shipState = useCart((s) => s.shipState);
   const setShipState = useCart((s) => s.setShipState);
+  const delivery = useCart((s) => s.delivery);
+  const setDelivery = useCart((s) => s.setDelivery);
+  const couponCode = useCart((s) => s.couponCode);
+  const setCouponCode = useCart((s) => s.setCouponCode);
   const homeState = useGst((s) => s.homeState);
   const gstLabels = useGst(useShallow((s) => ({ cgst: s.cgstLabel, sgst: s.sgstLabel, igst: s.igstLabel })));
   const [mounted, setMounted] = useState(false);
@@ -33,9 +62,8 @@ export default function CheckoutPage() {
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
-  const [branch, setBranch] = useState<"Branch 1" | "Branch 2">("Branch 1");
+  const [branchPick, setBranch] = useState<"Branch 1" | "Branch 2" | null>(null);
   const payment = "card" as const;
-  const [delivery, setDelivery] = useState<"standard" | "white-glove" | "express">("white-glove");
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [placing, setPlacing] = useState(false);
@@ -53,7 +81,9 @@ export default function CheckoutPage() {
 
   const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
 
-  // Prefill name/email from the signed-in account once it hydrates.
+  // Prefill name/email from the signed-in account once it hydrates, and load
+  // saved addresses. The fetch is cancelled if `user` changes again before it
+  // lands, so a slow earlier response can't overwrite a newer one.
   useEffect(() => {
     if (!user) return;
     setAddr((a) => ({
@@ -61,34 +91,85 @@ export default function CheckoutPage() {
       name: a.name || user.name,
       email: a.email || user.email,
     }));
-    // Fetch saved addresses.
-    fetch("/api/addresses")
-      .then((r) => (r.ok ? r.json() : []))
+    const ctl = new AbortController();
+    fetch("/api/addresses", { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("addresses"))))
       .then((list: UserAddress[]) => setSavedAddresses(list))
-      .catch(() => {});
+      .catch(() => {
+        /* aborted, or the list is unavailable — the shopper can still type an address */
+      });
+    return () => ctl.abort();
   }, [user]);
+
+  // The Razorpay window currently open, so a retry or navigation can close it
+  // instead of leaving it behind.
+  const rzpRef = useRef<{ close?: () => void } | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      rzpRef.current?.close?.();
+      rzpRef.current = null;
+    };
+  }, []);
+
+  // Cart lines whose product still exists in the catalogue.
+  const cartItems = useMemo(
+    () =>
+      items
+        .map((i) => {
+          const product = byId.get(i.productId);
+          if (!product) return null;
+          return { ...i, product, variant: findVariant(product.variants ?? [], i.variantKey) };
+        })
+        .filter((i): i is NonNullable<typeof i> => i !== null),
+    [items, byId],
+  );
+
+  // Which stores can supply the whole cart. A web order is fulfilled from ONE
+  // store, so a store is only offered as "available" when every line is in stock there.
+  const branchShort = useMemo(() => {
+    const out: Record<"Branch 1" | "Branch 2", string[]> = { "Branch 1": [], "Branch 2": [] };
+    for (const i of cartItems) {
+      const have = i.variant?.stockByBranch;
+      if (!have) continue;
+      for (const b of ["Branch 1", "Branch 2"] as const) {
+        if ((have[b] ?? 0) < i.quantity) out[b].push(i.product.name);
+      }
+    }
+    return out;
+  }, [cartItems]);
+  // Until the shopper chooses, start on the first store that can fill the cart.
+  const branch: "Branch 1" | "Branch 2" =
+    branchPick ?? (branchShort["Branch 1"].length === 0 ? "Branch 1" : branchShort["Branch 2"].length === 0 ? "Branch 2" : "Branch 1");
+
+  // The one source of prices, tax, shipping and discounts: the server.
+  const {
+    quote,
+    loading: quoting,
+    error: quoteError,
+    refresh,
+  } = useQuote(
+    {
+      items: cartItems.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
+      delivery,
+      shipState,
+      branch,
+      couponCode,
+    },
+    mounted && !productsLoading && !placed,
+  );
 
   if (!mounted || productsLoading) {
     return <div className="container-narrow py-32 text-center text-ink-400">Loading checkout…</div>;
   }
 
-  const cartItems = items
-    .map((i) => {
-      const product = byId.get(i.productId);
-      if (!product) return null;
-      const variant = findVariant(product.variants ?? [], i.variantKey);
-      const unitPrice = variant?.price ?? product.price;
-      return { ...i, product, variant, unitPrice };
-    })
-    .filter((i): i is NonNullable<typeof i> => i !== null);
-  const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
-  const gstLines = cartItems.map((i) => ({ amount: i.unitPrice * i.quantity, rate: i.product.gstRate ?? 0 }));
-  const intra = isIntraState(shipState, homeState);
-  const gst = gstBreakup(gstLines, intra);
-  const gstTotal = gst.total;
-  // Paise: express ₹500, white-glove free, else free over ₹5,000 or ₹200.
-  const shipCost = delivery === "express" ? 50000 : delivery === "white-glove" ? 0 : subtotal > 500000 ? 0 : 20000;
-  const total = subtotal + gstTotal + shipCost;
+  const quoteLines = new Map((quote?.items ?? []).map((l) => [`${l.productId}::${l.variantKey}`, l]));
+  const issues = quote?.issues ?? [];
+  const couponIssue = issues.find((i) => i.kind === "coupon");
+  const canPlace = Boolean(quote) && !quoting && issues.length === 0;
+  const intra = quote?.intra ?? true;
 
   if (cartItems.length === 0 && !placed) {
     return (
@@ -104,6 +185,7 @@ export default function CheckoutPage() {
   }
 
   const finalize = (id: string) => {
+    if (!alive.current) return; // the shopper navigated away; the order is saved server-side
     setOrderId(id);
     clear();
     setPlaced(true);
@@ -111,24 +193,16 @@ export default function CheckoutPage() {
     setPlacing(false);
   };
 
-  // Lazily inject Razorpay's hosted checkout script (only when needed).
-  const loadRazorpay = () =>
-    new Promise<boolean>((resolve) => {
-      if (typeof window === "undefined") return resolve(false);
-      if ((window as unknown as { Razorpay?: unknown }).Razorpay) return resolve(true);
-      const s = document.createElement("script");
-      s.src = "https://checkout.razorpay.com/v1/checkout.js";
-      s.onload = () => resolve(true);
-      s.onerror = () => resolve(false);
-      document.body.appendChild(s);
-    });
-
   const placeOrder = async () => {
-    if (placing) return;
+    if (placing || !canPlace) return;
     setPlacing(true);
+    // Close any window left over from a previous attempt.
+    rzpRef.current?.close?.();
+    rzpRef.current = null;
 
     const payload = {
       items: cartItems.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
+      couponCode: couponCode || undefined,
       delivery,
       payment,
       shipState,
@@ -171,6 +245,7 @@ export default function CheckoutPage() {
     const ready = await loadRazorpay();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const RZP = (window as unknown as { Razorpay?: any }).Razorpay;
+    if (!alive.current) return;
     if (!ready || !RZP) {
       alert("Couldn't load the payment window. Please check your connection and try again.");
       setPlacing(false);
@@ -213,10 +288,13 @@ export default function CheckoutPage() {
         }
       },
     });
-    rzp.on("payment.failed", () => {
+    const onFailed = () => {
+      rzp.off?.("payment.failed", onFailed);
       alert("Payment failed. Please try another method.");
-      setPlacing(false);
-    });
+      if (alive.current) setPlacing(false);
+    };
+    rzp.on("payment.failed", onFailed);
+    rzpRef.current = rzp;
     rzp.open();
   };
 
@@ -310,10 +388,21 @@ export default function CheckoutPage() {
                     className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
                   >
                     {BUSINESS.branches.map((b) => (
-                      <option key={b.key} value={b.key}>{b.key} — {b.city} · {b.area}</option>
+                      <option key={b.key} value={b.key}>
+                        {b.key} — {b.city} · {b.area}
+                        {branchShort[b.key as "Branch 1" | "Branch 2"].length > 0 ? " (can't supply your whole cart)" : ""}
+                      </option>
                     ))}
                   </select>
                   <span className="mt-1.5 block text-[11px] text-ink-500">Your order is billed and dispatched from this store.</span>
+                  {branchShort[branch].length > 0 && (
+                    <span className="mt-1.5 block text-[11px] font-medium text-danger">
+                      {branch} is short on {branchShort[branch].join(", ")}.
+                      {branchShort[branch === "Branch 1" ? "Branch 2" : "Branch 1"].length === 0
+                        ? ` ${branch === "Branch 1" ? "Branch 2" : "Branch 1"} has everything — switch to it, or ask us about moving stock.`
+                        : " Neither store has the whole cart; reduce a quantity or contact us."}
+                    </span>
+                  )}
                 </label>
               </div>
               <p className="mt-3 text-xs text-ink-500">
@@ -328,9 +417,9 @@ export default function CheckoutPage() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Delivery method</h2>
               <div className="mt-6 space-y-3">
-                <DeliveryOption id="white-glove" active={delivery === "white-glove"} onClick={() => setDelivery("white-glove")} title="White-glove" desc="Instrument delivered, unpacked and set up in your home. 2 to 4 working days." price="Free" recommended />
-                <DeliveryOption id="standard" active={delivery === "standard"} onClick={() => setDelivery("standard")} title="Standard" desc="Insured courier. 3 to 5 working days." price={subtotal > 500000 ? "Free" : formatINR(20000)} />
-                <DeliveryOption id="express" active={delivery === "express"} onClick={() => setDelivery("express")} title="Express" desc="Next-business-day, tier-1 cities only." price={formatINR(50000)} />
+                <DeliveryOption id="white-glove" active={delivery === "white-glove"} onClick={() => setDelivery("white-glove")} title="White-glove" desc="Instrument delivered, unpacked and set up in your home. 2 to 4 working days." price={quote ? (quote.shippingOptions["white-glove"] === 0 ? "Free" : formatINR(quote.shippingOptions["white-glove"])) : "—"} recommended />
+                <DeliveryOption id="standard" active={delivery === "standard"} onClick={() => setDelivery("standard")} title="Standard" desc="Insured courier. 3 to 5 working days." price={quote ? (quote.shippingOptions.standard === 0 ? "Free" : formatINR(quote.shippingOptions.standard)) : "—"} />
+                <DeliveryOption id="express" active={delivery === "express"} onClick={() => setDelivery("express")} title="Express" desc="Next-business-day, tier-1 cities only." price={quote ? formatINR(quote.shippingOptions.express) : "—"} />
               </div>
             </motion.div>
           )}
@@ -358,7 +447,9 @@ export default function CheckoutPage() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Review your order</h2>
               <div className="mt-6 divide-y divide-ink-100 border border-ink-100 bg-ivory-50">
-                {cartItems.map((i) => (
+                {cartItems.map((i) => {
+                  const ql = quoteLines.get(`${i.productId}::${i.variantKey}`);
+                  return (
                   <div key={`${i.productId}::${i.variantKey}`} className="flex items-center gap-4 p-4">
                     <div className="relative h-16 w-16 shrink-0 overflow-hidden bg-ink-100">
                       <ProductImage product={i.product} sizes="64px" />
@@ -371,9 +462,10 @@ export default function CheckoutPage() {
                       )}
                       <p className="text-xs text-ink-400">Qty {i.quantity}</p>
                     </div>
-                    <p className="tabular text-sm text-ink-900">{formatINR(i.unitPrice * i.quantity)}</p>
+                    <p className="tabular text-sm text-ink-900">{ql ? formatINR(ql.lineTotal) : "—"}</p>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="mt-6 space-y-2 text-sm">
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
@@ -417,10 +509,10 @@ export default function CheckoutPage() {
             ) : (
               <button
                 onClick={placeOrder}
-                disabled={placing}
+                disabled={placing || !canPlace}
                 className="btn-gold-solid disabled:opacity-60"
               >
-                {placing ? "Placing…" : `Place order · ${formatINR(total)}`}
+                {placing ? "Placing…" : quote ? `Place order · ${formatINR(quote.total)}` : "Pricing your order…"}
               </button>
             )}
           </div>
@@ -431,21 +523,47 @@ export default function CheckoutPage() {
           <div className="border border-ink-100 bg-ivory-50 p-6">
             <h3 className="heading-serif text-lg text-ink-900">Summary</h3>
             <div className="mt-4 space-y-2 text-sm">
-              <Row label="Subtotal" value={formatINR(subtotal)} />
-              {intra ? (
-                <>
-                  <Row label={gstLabels.cgst} value={formatINR(gst.cgst)} />
-                  <Row label={gstLabels.sgst} value={formatINR(gst.sgst)} />
-                </>
-              ) : (
-                <Row label={gstLabels.igst} value={formatINR(gst.igst)} />
+              <Row label="Subtotal" value={quote ? formatINR(quote.subtotal) : "—"} />
+              {quote && quote.discount > 0 && (
+                <div className="flex justify-between text-success">
+                  <span>Discount{quote.couponCode ? ` (${quote.couponCode})` : ""}</span>
+                  <span className="tabular">−{formatINR(quote.discount)}</span>
+                </div>
               )}
-              <Row label="Shipping" value={shipCost === 0 ? "Free" : formatINR(shipCost)} />
+              <Row label="Shipping" value={quote ? (quote.shipping === 0 ? "Free" : formatINR(quote.shipping)) : "—"} />
             </div>
             <div className="mt-4 flex items-end justify-between border-t border-ink-100 pt-4">
               <span className="text-xs uppercase tracking-[0.18em] text-ink-500">Total</span>
-              <span className="tabular font-display text-2xl text-ink-900">{formatINR(total)}</span>
+              <span className={cn("tabular font-display text-2xl text-ink-900 transition-opacity", quoting && "opacity-50")}>{quote ? formatINR(quote.total) : "—"}</span>
             </div>
+            {quote && quote.gst > 0 && (
+              <p className="mt-1 text-right text-[11px] text-ink-400">
+                Includes GST of {formatINR(quote.gst)}
+                {intra
+                  ? ` (${gstLabels.cgst} ${formatINR(quote.cgst)} + ${gstLabels.sgst} ${formatINR(quote.sgst)})`
+                  : ` (${gstLabels.igst})`}
+              </p>
+            )}
+            {quoteError && (
+              <p className="mt-3 text-xs text-danger">
+                {quoteError}{" "}
+                <button onClick={refresh} className="underline">Retry</button>
+              </p>
+            )}
+            {issues.map((i, n) => (
+              <p key={n} className="mt-3 text-xs text-danger">
+                {i.message}
+                {i.kind === "coupon" && (
+                  <button onClick={() => setCouponCode("")} className="ml-2 underline">Remove coupon</button>
+                )}
+              </p>
+            ))}
+            {!couponIssue && couponCode && quote?.couponCode && (
+              <p className="mt-3 text-[11px] text-ink-400">
+                Coupon {quote.couponCode} applied.{" "}
+                <button onClick={() => setCouponCode("")} className="underline">Remove</button>
+              </p>
+            )}
             <p className="mt-4 flex items-center gap-1.5 text-[11px] uppercase tracking-widest text-ink-400"><Lock className="h-3 w-3" /> Secure checkout</p>
           </div>
         </aside>

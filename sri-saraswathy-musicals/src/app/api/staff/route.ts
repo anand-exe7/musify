@@ -6,11 +6,11 @@ import type { Staff } from "@/lib/store/staff";
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return handle(async () => ok(await getStaff()));
+  return handle("admin", async () => ok(await getStaff()));
 }
 
 export function POST(request: NextRequest) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const body = await readJson<Staff>(request);
     if (!body?.id) return badRequest("Staff requires `id`");
     return created(await createStaff(body));

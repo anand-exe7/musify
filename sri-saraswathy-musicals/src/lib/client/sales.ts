@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import type { Bill } from "@/lib/store/pos";
+import { usePOS, type Bill } from "@/lib/store/pos";
+import { useRepair } from "@/lib/store/repair";
+import { fetchJson, errMsg } from "@/lib/client/api";
 import type { Order, Product } from "@/types";
 import { useProducts } from "@/lib/client/catalog";
 import { grossTotal, balanceDue, isFixed, type RepairTicket } from "@/lib/store/repair";
@@ -35,7 +37,8 @@ export function orderToBill(order: Order, productById?: Map<string, Product>): U
       qty: it.quantity,
     })),
     subtotal: order.subtotal,
-    discount: 0,
+    coupon: order.couponCode ?? undefined,
+    discount: order.discount ?? 0,
     delivery: order.shipping,
     total: order.total,
     status: order.status === "cancelled" ? "pending" : "completed",
@@ -79,45 +82,48 @@ export function ticketToBill(t: RepairTicket): UnifiedBill {
 }
 
 /**
- * Hydrate the admin combined sales feed: /api/orders (web) + /api/pos/bills
- * (in-store) + /api/repair (service), merged newest-first. Order & POS
- * endpoints require admin; repair is best-effort so a repair outage never hides
- * product sales.
+ * The admin combined sales feed: web orders + in-store POS bills + repair
+ * tickets, merged newest-first.
+ *
+ * POS bills and repair tickets are READ FROM THEIR STORES (`usePOS`,
+ * `useRepair`) — the same arrays the pages mutate — so deleting a bill removes
+ * its row immediately and nothing is fetched twice. Web orders have no store, so
+ * they are fetched here. A failure in any of the three is reported through
+ * `error` / `errorMessage` rather than looking like an empty ledger.
  */
-export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: boolean } {
+export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: boolean; errorMessage: string | null } {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [posBills, setPosBills] = useState<Bill[]>([]);
-  const [tickets, setTickets] = useState<RepairTicket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const posBills = usePOS((s) => s.bills);
+  const posHydrated = usePOS((s) => s.hydrated);
+  const posError = usePOS((s) => s.loadError);
+  const tickets = useRepair((s) => s.tickets);
+  const repairHydrated = useRepair((s) => s.hydrated);
+  const repairError = useRepair((s) => s.loadError);
   const { products } = useProducts();
 
   useEffect(() => {
     let alive = true;
-    // Reject on a failed response so the caller can tell "offline / server
-    // unreachable" apart from a genuinely empty ledger. Repair is best-effort
-    // (its own catch), so a repair outage never trips the offline state.
-    Promise.all([
-      fetch("/api/orders").then((r) => { if (!r.ok) throw new Error("orders"); return r.json(); }),
-      fetch("/api/pos/bills").then((r) => { if (!r.ok) throw new Error("bills"); return r.json(); }),
-      fetch("/api/repair").then((r) => (r.ok ? r.json() : [])).catch(() => []),
-    ])
-      .then(([o, b, t]) => {
+    fetchJson<Order[]>("/api/orders")
+      .then((o) => {
         if (!alive) return;
         setOrders(Array.isArray(o) ? o : []);
-        setPosBills(Array.isArray(b) ? b : []);
-        setTickets(Array.isArray(t) ? t : []);
-        setLoading(false);
+        setOrdersError(null);
       })
-      .catch(() => {
-        if (!alive) return;
-        setError(true);
-        setLoading(false);
+      .catch((e: unknown) => {
+        if (alive) setOrdersError(`Couldn't load online orders (${errMsg(e)})`);
+      })
+      .finally(() => {
+        if (alive) setOrdersLoading(false);
       });
     return () => {
       alive = false;
     };
   }, []);
+
+  const loading = ordersLoading || (!posHydrated && !posError) || (!repairHydrated && !repairError);
+  const errorMessage = ordersError ?? posError ?? repairError;
 
   const sales = useMemo(() => {
     const byId = new Map(products.map((p) => [p.id, p]));
@@ -128,5 +134,5 @@ export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: 
     );
   }, [orders, posBills, tickets, products]);
 
-  return { sales, loading, error };
+  return { sales, loading, error: errorMessage !== null, errorMessage };
 }

@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 
 export interface Zone {
   id: string;
@@ -27,7 +28,8 @@ type Scalars = {
 interface SettingsState extends Scalars {
   zones: Zone[];
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   set: (patch: Partial<Scalars>) => void;
   addZone: (z: Zone) => void;
   updateZone: (id: string, patch: Partial<Zone>) => void;
@@ -42,49 +44,42 @@ const DEFAULTS: Scalars = {
   storePickup: true,
 };
 
-async function send(url: string, method: string, body: unknown, onError: () => void) {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error("save failed");
-  } catch {
-    alert("Couldn't save delivery settings. Reverting to the saved values.");
-    onError();
-  }
-}
+const send = makeSender("delivery settings");
 
 export const useSettings = create<SettingsState>()((set, get) => ({
   ...DEFAULTS,
   zones: [],
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
     try {
-      const res = await fetch("/api/settings/delivery");
-      if (!res.ok) return;
-      const data = (await res.json()) as Scalars & { zones: Zone[] };
-      set({ ...data, hydrated: true });
-    } catch {
-      /* keep defaults */
+      const data = await fetchJson<Scalars & { zones: Zone[] }>("/api/settings/delivery");
+      set({ ...data, hydrated: true, loadError: null });
+      return true;
+    } catch (e) {
+      set({ loadError: errMsg(e, "Couldn't load delivery settings") });
+      return false;
     }
   },
   set: (patch) => {
+    const prev = Object.fromEntries(Object.keys(patch).map((k) => [k, get()[k as keyof Scalars]]));
     set(patch);
-    void send("/api/settings/delivery", "PATCH", patch, get().hydrate);
+    void send("/api/settings/delivery", "PATCH", patch, get().hydrate, () => set(prev));
   },
   addZone: (z) => {
+    const prev = get().zones;
     set((s) => ({ zones: [...s.zones, z] }));
-    void send("/api/settings/delivery/zones", "POST", z, get().hydrate);
+    void send("/api/settings/delivery/zones", "POST", z, get().hydrate, () => set({ zones: prev }));
   },
   updateZone: (id, patch) => {
+    const prev = get().zones;
     set((s) => ({ zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) }));
-    void send(`/api/settings/delivery/zones/${id}`, "PATCH", patch, get().hydrate);
+    void send(`/api/settings/delivery/zones/${id}`, "PATCH", patch, get().hydrate, () => set({ zones: prev }));
   },
   removeZone: (id) => {
+    const prev = get().zones;
     set((s) => ({ zones: s.zones.filter((z) => z.id !== id) }));
-    void send(`/api/settings/delivery/zones/${id}`, "DELETE", null, get().hydrate);
+    void send(`/api/settings/delivery/zones/${id}`, "DELETE", null, get().hydrate, () => set({ zones: prev }));
   },
 }));
 

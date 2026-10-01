@@ -12,11 +12,13 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { usePOS, productStock, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { formatINR, toPaise, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
 
 interface Row {
   id: string;
@@ -45,6 +47,7 @@ const LINE_GST_RATES: { label: string; value: number | null }[] = [
 
 export default function BillingPage() {
   const coupons = usePOS((s) => s.coupons);
+  const loadError = usePOS((s) => s.loadError);
   const invProducts = usePOS((s) => s.invProducts);
   const addBill = usePOS((s) => s.addBill);
 
@@ -93,21 +96,25 @@ export default function BillingPage() {
     productId: r.productId,
     variantIndex: r.variantIndex,
   }));
-  const tax = billTax(billItems, true);
 
   const coupon = coupons.find((c) => c.code === couponCode);
-  const couponDiscount = useMemo(() => {
-    if (!coupon) return 0;
-    if (netSubtotal < coupon.minOrder) return 0;
-    return Math.round((netSubtotal * coupon.discountPct) / 100);
-  }, [coupon, netSubtotal]);
+  // Same rules the server enforces on save: expiry, redemptions left, minimum.
+  const couponCheck = useMemo(
+    () => (coupon && netSubtotal > 0 ? evaluateCoupon(coupon, netSubtotal) : null),
+    [coupon, netSubtotal],
+  );
+  const couponDiscount = couponCheck?.ok ? couponCheck.discount : 0;
   // `discVal` is entered as a plain number: a percentage when `%`, otherwise a
   // rupee amount that we convert to paise. `subtotal` is already in paise.
-  const manualDiscount = discType === "%" ? Math.round((netSubtotal * (Number(discVal) || 0)) / 100) : toPaise(discVal);
-  const totalDiscount = Math.min(subtotal, itemDiscounts + couponDiscount + manualDiscount);
+  const manualDiscount = discType === "%" ? Math.round((netSubtotal * clampPct(Number(discVal) || 0)) / 100) : toPaise(discVal);
+  // Coupon + manual discount come off the taxable base too (never below zero),
+  // so the GST recorded is the GST actually contained in what is charged.
+  const billDiscount = Math.min(netSubtotal, couponDiscount + manualDiscount);
+  const tax = billTax(billItems, true, billDiscount);
+  const totalDiscount = itemDiscounts + billDiscount;
   const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
   const change = cash === "" ? 0 : Number(cash) - grand;
-  const couponBelowMin = coupon && netSubtotal > 0 && netSubtotal < coupon.minOrder;
+  const couponProblem = couponCheck && !couponCheck.ok ? couponCheck.reason : null;
 
   // How many of each catalog product are already on the bill (for badges).
   const qtyInOrder = useMemo(() => {
@@ -256,6 +263,7 @@ export default function BillingPage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void usePOS.getState().hydrate()} />
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">
@@ -480,7 +488,7 @@ export default function BillingPage() {
                   <option key={c.code} value={c.code}>{c.code} — {c.discountPct}% off</option>
                 ))}
               </select>
-              {couponBelowMin && <p className="mt-1 text-[11px] text-danger">Min order {formatINR(coupon!.minOrder)} for {coupon!.code}</p>}
+              {couponProblem && <p className="mt-1 text-[11px] text-danger">{couponProblem}</p>}
             </div>
 
             {/* manual discount */}

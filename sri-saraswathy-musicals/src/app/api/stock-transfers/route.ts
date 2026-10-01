@@ -8,7 +8,7 @@ import {
   type StockTransferInput,
   type TransferBatchLine,
 } from "@/lib/db/queries/stockTransfers";
-import { requireAdminAccess, requireAdminUser, scopeByBranch } from "@/lib/auth/server";
+import { scopeByBranch } from "@/lib/auth/server";
 import type { Branch } from "@/lib/store/pos";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,7 @@ export const dynamic = "force-dynamic";
  *  branch (the shared `scopeByBranch` reads the `branch` field, so this is
  *  filtered manually here by mapping to the source branch). */
 export function GET() {
-  return handle(async () => {
-    const access = await requireAdminAccess();
+  return handle("staff", async ({ access }) => {
     const list = await getTransfers();
     if (access === "all") return ok(list);
     // Branch users see transfers where they were either source or destination.
@@ -37,15 +36,14 @@ export function GET() {
 }
 
 export function POST(request: NextRequest) {
-  return handle(async () => {
-    const { user, access } = await requireAdminUser();
-    const body = await readJson<Partial<StockTransferInput> & { lines?: TransferBatchLine[] }>(request);
+  return handle("staff", async ({ user, access }) => {
+    const body = await readJson<Partial<StockTransferInput> & { lines?: TransferBatchLine[]; batchId?: string }>(request);
     if (Array.isArray(body?.lines)) {
       const from = (body.fromBranch as Branch) ?? "Branch 1";
       const to = (body.toBranch as Branch) ?? "Branch 2";
       if (access !== "all" && from !== access) return badRequest("You can only transfer from your own branch");
       try {
-        return created(await createTransferBatch(body.lines, from, to, body.note ?? "", user.id));
+        return created(await createTransferBatch(body.lines, from, to, body.note ?? "", user.id, body.batchId));
       } catch (e) {
         if (e instanceof TransferValidationError) return badRequest(e.message);
         throw e;

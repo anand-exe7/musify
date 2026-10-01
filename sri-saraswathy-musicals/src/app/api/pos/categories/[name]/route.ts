@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ name: string }> };
 
 export function DELETE(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const { name } = await ctx.params;
     return (await deletePosCategory(decodeURIComponent(name))) ? noContent() : notFound("Category not found");
   });

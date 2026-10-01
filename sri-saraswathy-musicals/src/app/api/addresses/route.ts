@@ -1,21 +1,18 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest } from "@/lib/api/http";
-import { requireUser } from "@/lib/auth/server";
 import { getUserAddresses, createUserAddress } from "@/lib/db/queries/addresses";
 import type { UserAddress } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return handle(async () => {
-    const user = await requireUser();
+  return handle("user", async ({ user }) => {
     return ok(await getUserAddresses(user.id));
   });
 }
 
 export function POST(request: NextRequest) {
-  return handle(async () => {
-    const user = await requireUser();
+  return handle("user", async ({ user }) => {
     const body = await request.json().catch(() => null) as Partial<UserAddress> | null;
     if (!body?.name || !body?.line1 || !body?.city || !body?.pincode) {
       return badRequest("Address requires name, line1, city and pincode");

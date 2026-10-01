@@ -1,14 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { googleAuthUrl } from "@/lib/auth/google";
 import { isGoogleConfigured, appUrl } from "@/lib/auth/config";
+import { safeRedirect } from "@/lib/auth/redirect";
 
 export const dynamic = "force-dynamic";
-
-/** Only allow same-site relative redirect targets (prevents open-redirects). */
-function safeRedirect(r: string | null): string {
-  if (r && r.startsWith("/") && !r.startsWith("//")) return r;
-  return "/profile";
-}
 
 /** Kick off Google sign-in: stash CSRF state + intended destination, then bounce
  *  the browser to Google's consent screen. */

@@ -24,3 +24,24 @@ export function definedOnly<T extends Record<string, unknown>>(patch: T): Partia
   }
   return out;
 }
+
+/** True when a Postgres error is a unique-constraint violation (23505). */
+export function isUniqueViolation(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
+    const o = e as { code?: string; message?: string; cause?: unknown };
+    if (o.code === "23505" || /duplicate key value/i.test(o.message ?? "")) return true;
+    e = o.cause;
+  }
+  return false;
+}
+
+/** True when a Postgres error is a foreign-key violation (23503) — drizzle wraps
+ *  the driver error, so look through `cause` too. */
+export function isForeignKeyViolation(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
+    const o = e as { code?: string; message?: string; cause?: unknown };
+    if (o.code === "23503" || /foreign key constraint/i.test(o.message ?? "")) return true;
+    e = o.cause;
+  }
+  return false;
+}

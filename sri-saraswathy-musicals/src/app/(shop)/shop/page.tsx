@@ -11,7 +11,7 @@ type SortKey = "featured" | "price-asc" | "price-desc" | "name" | "rating";
 function ShopContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const { products, loading } = useProducts();
+  const { products, loading, error: loadError, refresh } = useProducts();
   const { categories } = useCategories();
   const activeCategory = params.get("category") || "all";
   const [sort, setSort] = useState<SortKey>("featured");
@@ -145,7 +145,15 @@ function ShopContent() {
         <div className="py-20 text-center text-ink-400">Loading instruments…</div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && loadError && products.length === 0 && (
+        <div className="border border-dashed border-danger/40 py-20 text-center">
+          <p className="heading-serif text-xl text-ink-700">We couldn&apos;t load the instruments.</p>
+          <p className="mt-2 text-sm text-ink-400">{loadError}</p>
+          <button onClick={refresh} className="mt-4 btn-ghost">Try again</button>
+        </div>
+      )}
+
+      {!loading && !loadError && filtered.length === 0 && (
         <div className="border border-dashed border-ink-200 py-20 text-center">
           <p className="heading-serif text-xl text-ink-500">No instruments match this filter.</p>
           <button onClick={() => { setOrigin("all"); setPriceMax(2000000); setCategory("all"); }} className="mt-4 btn-ghost">

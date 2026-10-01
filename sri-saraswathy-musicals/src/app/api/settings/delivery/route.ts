@@ -10,12 +10,12 @@ export const dynamic = "force-dynamic";
 
 // GET returns delivery config incl. `zones`.
 export function GET() {
-  return handle(async () => ok(await getDeliverySettings()));
+  return handle("public", async () => ok(await getDeliverySettings()));
 }
 
 // PATCH updates the scalar delivery fields (zones have their own endpoint).
 export function PATCH(request: NextRequest) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const patch = await readJson<Partial<Omit<DeliverySettings, "zones">>>(request);
     return ok(await updateDeliverySettings(patch));
   });

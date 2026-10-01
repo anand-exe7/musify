@@ -5,11 +5,11 @@ import { getGstSettings, updateGstSettings, type GstSettings } from "@/lib/db/qu
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return handle(async () => ok(await getGstSettings()));
+  return handle("public", async () => ok(await getGstSettings()));
 }
 
 export function PATCH(request: NextRequest) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const patch = await readJson<Partial<GstSettings>>(request);
     return ok(await updateGstSettings(patch));
   });

@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { handle, created, HttpError, readJson } from "@/lib/api/http";
-import { requireUser } from "@/lib/auth/server";
 import { verifyDraft } from "@/lib/checkout/draft";
 import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
-import { createOrder, getOrderByPaymentId, nextOrderId } from "@/lib/db/queries/orders";
+import { getOrderByPaymentId, nextOrderId } from "@/lib/db/queries/orders";
+import { isUniqueViolation } from "@/lib/db/queries/_util";
+import { fulfilOrder } from "@/lib/checkout/fulfil";
 import { sendOrderConfirmation } from "@/lib/email/resend";
 import { recordOrderInvoice } from "@/lib/billing/ledger";
 import type { Order } from "@/types";
@@ -20,8 +21,7 @@ interface VerifyBody {
 /** Finalise a Razorpay payment: verify the signature against the signed draft,
  *  then persist the order and email the customer. */
 export function POST(request: NextRequest) {
-  return handle(async () => {
-    const user = await requireUser();
+  return handle("user", async ({ user }) => {
     const body = await readJson<VerifyBody>(request);
 
     const draft = await verifyDraft(body.draftToken || "");
@@ -53,14 +53,27 @@ export function POST(request: NextRequest) {
       paymentId: body.razorpay_payment_id,
       shipState: draft.shipState,
       branch: draft.branch,
-      items: draft.items,
+      items: [], // filled from the priced lines by fulfilOrder
       subtotal: draft.subtotal,
+      discount: draft.discount,
+      couponCode: draft.couponCode,
       gst: draft.gst,
       shipping: draft.shipping,
       total: draft.total,
       address: draft.address,
     };
-    const saved = await createOrder(order);
+    // The customer has already paid, so record the order even if stock ran short.
+    // Two verify calls for the same payment can both get past the check above;
+    // the unique index on payment_id lets only one order through. The loser has
+    // already put its stock back, so it just returns the winner's order.
+    let saved: Order;
+    try {
+      saved = await fulfilOrder(order, draft, draft.branch, { paid: true });
+    } catch (err) {
+      const winner = isUniqueViolation(err) ? await getOrderByPaymentId(body.razorpay_payment_id) : undefined;
+      if (!winner) throw err;
+      return created({ orderId: winner.id });
+    }
     await recordOrderInvoice(saved);
     await sendOrderConfirmation(saved, draft.email);
     return created({ orderId: saved.id });

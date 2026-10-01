@@ -5,7 +5,7 @@ import { Receipt, Save, RotateCcw, MapPin, ArrowLeftRight, Building2, Info, File
 import { useGst, IN_STATES } from "@/lib/store/gst";
 import { inPeriod, type Period, type BranchFilter } from "@/lib/store/pos";
 import { useBranchScope } from "@/lib/store/branch";
-import { buildGstr1, MONTHS, type Period as ReportRange } from "@/lib/gst/report";
+import { safeGstr1, MONTHS, type Period as ReportRange } from "@/lib/gst/report";
 import { rateWiseSummary, invoiceRateOf, toCsv } from "@/lib/gst/summary";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
@@ -37,12 +37,30 @@ export default function GstPage() {
     standardRate: gst.standardRate,
     placeOfSupplyEnabled: gst.placeOfSupplyEnabled,
   });
+  // The store starts on built-in defaults and fills in the saved values when the
+  // fetch lands. Re-seed the form from the store whenever its values change —
+  // otherwise the form keeps showing the defaults, reads as "edited", and saving
+  // an unrelated field would overwrite the real home state with "Tamil Nadu".
+  useEffect(() => {
+    setDraft({
+      homeState: gst.homeState,
+      cgstLabel: gst.cgstLabel,
+      sgstLabel: gst.sgstLabel,
+      igstLabel: gst.igstLabel,
+      standardRate: gst.standardRate,
+      placeOfSupplyEnabled: gst.placeOfSupplyEnabled,
+    });
+  }, [gst.hydrated, gst.homeState, gst.cgstLabel, gst.sgstLabel, gst.igstLabel, gst.standardRate, gst.placeOfSupplyEnabled]);
   const [saved, setSaved] = useState(false);
+  // Nothing is saveable until the real settings have loaded.
+  const ready = gst.hydrated;
   const dirty =
+    ready && (
     draft.homeState !== gst.homeState || draft.cgstLabel !== gst.cgstLabel || draft.sgstLabel !== gst.sgstLabel ||
-    draft.igstLabel !== gst.igstLabel || draft.standardRate !== gst.standardRate || draft.placeOfSupplyEnabled !== gst.placeOfSupplyEnabled;
+    draft.igstLabel !== gst.igstLabel || draft.standardRate !== gst.standardRate || draft.placeOfSupplyEnabled !== gst.placeOfSupplyEnabled);
 
   const save = () => {
+    if (!ready) return;
     gst.set({ ...draft, standardRate: Number(draft.standardRate) || 0 });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -56,6 +74,15 @@ export default function GstPage() {
     <div className="p-5 md:p-8">
       {saved && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">GST settings saved · live on storefront</div>
+      )}
+
+      {!ready && (
+        <div className="mb-4 rounded-xl border border-warning/30 bg-warning/[0.08] px-4 py-3 text-xs text-ink-700">
+          {gst.loadError
+            ? `Couldn't load the saved GST settings (${gst.loadError}). The values shown are defaults and can't be saved until they load.`
+            : "Loading saved GST settings…"}
+          {gst.loadError && <button onClick={() => void gst.hydrate()} className="ml-2 font-semibold underline">Retry</button>}
+        </div>
       )}
 
       {/* Header */}
@@ -76,7 +103,7 @@ export default function GstPage() {
       </div>
 
       {tab === "returns" ? (
-        <ReturnsTab rate={gst.standardRate} homeState={gst.homeState} />
+        <ReturnsTab />
       ) : tab === "rules" ? (
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           {/* Config */}
@@ -338,7 +365,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
 
 /* ─────────────────────────  Returns (GSTR-1 / 3B)  ───────────────────────── */
 
-function ReturnsTab({ rate, homeState }: { rate: number; homeState: string }) {
+function ReturnsTab() {
   const now = new Date();
   const [fromY, setFromY] = useState(now.getFullYear());
   const [fromM, setFromM] = useState(now.getMonth());
@@ -358,9 +385,9 @@ function ReturnsTab({ rate, homeState }: { rate: number; homeState: string }) {
   }, []);
 
   const range: ReportRange = { fromYear: fromY, fromMonth: fromM, toYear: toY, toMonth: toM };
-  const g1 = useMemo(
-    () => buildGstr1(invoices, range, { standardRate: rate, homeState }),
-    [invoices, fromY, fromM, toY, toM, rate, homeState],
+  const { data: g1, error: g1Error } = useMemo(
+    () => safeGstr1(invoices, range),
+    [invoices, fromY, fromM, toY, toM],
   );
 
   const years = Array.from({ length: 6 }, (_, i) => now.getFullYear() - 4 + i);
@@ -427,18 +454,21 @@ function ReturnsTab({ rate, homeState }: { rate: number; homeState: string }) {
           title="GSTR-1"
           desc="Outward supplies — invoice-wise sales & sale returns."
           href={link("gstr1")}
-          disabled={status !== "ready"}
+          disabled={status !== "ready" || Boolean(g1Error)}
         />
         <ReturnCard
           title="GSTR-3B"
           desc="Summary return — outward supplies, ITC & exempt supplies."
           href={link("gstr3b")}
-          disabled={status !== "ready"}
+          disabled={status !== "ready" || Boolean(g1Error)}
         />
       </div>
 
       {status === "error" && (
         <p className="text-center text-xs text-danger">Couldn&apos;t reach the server to load the ledger.</p>
+      )}
+      {g1Error && (
+        <p className="rounded-xl border border-danger/30 bg-danger/[0.06] px-4 py-3 text-center text-xs text-danger">{g1Error}</p>
       )}
     </div>
   );

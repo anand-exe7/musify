@@ -129,15 +129,31 @@ export default function AnalyticsPage() {
     };
   }, [scoped, gstRate]);
 
-  // net revenue trend by month (respects branch + channel, ignores period so the year reads fully)
+  // Net revenue trend by month (respects branch + channel, ignores the period
+  // filter so a whole year reads at once). Buckets are for ONE calendar year —
+  // keying by month alone would add January 2025 to January 2026.
+  const trendBase = useMemo(
+    () =>
+      filterBills(bills, { period: "all", branch, source: channel }).filter(
+        (b) => salesClass === "all" || (salesClass === "gst") === isGstBill(b),
+      ),
+    [bills, branch, channel, salesClass],
+  );
+  const trendYears = useMemo(
+    () => [...new Set(trendBase.map((b) => new Date(b.createdAt).getFullYear()).filter((y) => !Number.isNaN(y)))].sort((a, b) => b - a),
+    [trendBase],
+  );
+  const [trendYearPick, setTrendYearPick] = useState<number | null>(null);
+  // Default to the latest year that has sales (else the current year).
+  const trendYear = trendYearPick !== null && trendYears.includes(trendYearPick) ? trendYearPick : (trendYears[0] ?? new Date().getFullYear());
   const monthly = useMemo(() => {
-    const base = filterBills(bills, { period: "all", branch, source: channel }).filter(
-      (b) => salesClass === "all" || (salesClass === "gst") === isGstBill(b),
-    );
     const totals = new Array(12).fill(0);
-    base.forEach((b) => { totals[new Date(b.createdAt).getMonth()] += billNet(b); });
+    trendBase.forEach((b) => {
+      const d = new Date(b.createdAt);
+      if (d.getFullYear() === trendYear) totals[d.getMonth()] += billNet(b);
+    });
     return totals;
-  }, [bills, branch, channel, gstRate, salesClass]);
+  }, [trendBase, trendYear, gstRate]);
   const maxMonth = Math.max(...monthly, 1);
   const yearTotal = monthly.reduce((a, b) => a + b, 0);
 
@@ -314,10 +330,17 @@ export default function AnalyticsPage() {
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-ink-900">Net Revenue Trend · 2026 <span className="font-normal text-ink-400">(ex-GST)</span></p>
+                  <p className="text-sm font-bold text-ink-900">Net Revenue Trend · {trendYear} <span className="font-normal text-ink-400">(ex-GST)</span></p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
                 </div>
-                <span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold text-gold-700">Avg {formatINR(Math.round(yearTotal / 12))}/mo</span>
+                <div className="flex items-center gap-2">
+                  {trendYears.length > 1 && (
+                    <select value={trendYear} onChange={(e) => setTrendYearPick(Number(e.target.value))} aria-label="Trend year" className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-semibold text-ink-700 focus:border-gold-500 focus:outline-none">
+                      {trendYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  )}
+                  <span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold text-gold-700">Avg {formatINR(Math.round(yearTotal / 12))}/mo</span>
+                </div>
               </div>
               <div className="flex h-52 items-end gap-1.5">
                 {monthly.map((v, i) => (

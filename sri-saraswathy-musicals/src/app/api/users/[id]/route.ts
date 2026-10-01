@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, noContent, badRequest, readJson } from "@/lib/api/http";
 import { getUser, updateUser, deleteUser } from "@/lib/db/queries/users";
-import { requireAdmin, requireUser } from "@/lib/auth/server";
 import type { User } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * Full admins can fetch any user. A signed-in user can fetch their own profile.
  */
 export function GET(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
-    const session = await requireUser();
+  return handle("user", async ({ user: session }) => {
     const { id } = await ctx.params;
     // Only allow fetching own profile, or admin fetching anyone's.
     if (session.id !== id && !session.isAdmin) {
@@ -31,8 +29,7 @@ export function GET(_request: NextRequest, ctx: Ctx) {
  * A non-admin user can only update their own safe fields (name, phone).
  */
 export function PATCH(request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
-    const session = await requireUser();
+  return handle("user", async ({ user: session }) => {
     const { id } = await ctx.params;
 
     // Ensure caller owns this record or is admin.
@@ -60,8 +57,7 @@ export function PATCH(request: NextRequest, ctx: Ctx) {
 
 /** DELETE — admin only */
 export function DELETE(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
-    await requireAdmin();
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     return (await deleteUser(id)) ? noContent() : notFound("User not found");
   });

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 export function PATCH(request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     const patch = await readJson<Partial<Staff>>(request);
     const s = await updateStaff(id, patch);
@@ -17,7 +17,7 @@ export function PATCH(request: NextRequest, ctx: Ctx) {
 }
 
 export function DELETE(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     return (await deleteStaff(id)) ? noContent() : notFound("Staff not found");
   });

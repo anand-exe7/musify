@@ -6,6 +6,7 @@
  * browser sent.
  */
 import { SignJWT, jwtVerify } from "jose";
+import { secretKey } from "@/lib/auth/session";
 import type { PricedOrder } from "./pricing";
 
 const DRAFT_TTL = "1h";
@@ -21,13 +22,7 @@ export interface CheckoutDraft extends PricedOrder {
   razorpayOrderId: string;
 }
 
-function key(): Uint8Array {
-  const secret =
-    process.env.AUTH_SECRET ||
-    (process.env.NODE_ENV !== "production" ? "dev-insecure-secret-change-me" : "");
-  if (!secret) throw new Error("AUTH_SECRET is not set");
-  return new TextEncoder().encode(secret);
-}
+const key = secretKey;
 
 export async function signDraft(draft: CheckoutDraft): Promise<string> {
   return new SignJWT({ draft })

@@ -10,6 +10,7 @@ import {
   chargeBase, grossTotal, balanceDue, turnaroundDays, isClosed, REPAIR_STATUS,
   type RepairStatus, type RepairTicket,
 } from "@/lib/store/repair";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import type { Branch } from "@/lib/store/pos";
 import { waLink } from "@/lib/data/business";
 import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/RepairTicketModal";
@@ -57,6 +58,7 @@ function Stat({ label, value, hint, accent, icon }: { label: string; value: stri
 export default function ServicePage() {
   const router = useRouter();
   const tickets = useRepair((s) => s.tickets);
+  const loadError = useRepair((s) => s.loadError);
   const deleteTicket = useRepair((s) => s.deleteTicket);
   const updateTicket = useRepair((s) => s.updateTicket);
 
@@ -125,6 +127,7 @@ export default function ServicePage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void useRepair.getState().hydrate()} />
       {modal.open && <RepairTicketModal ticket={modal.ticket} onClose={() => setModal({ open: false, ticket: null })} />}
 
       {/* Confirm delete */}

@@ -78,6 +78,34 @@
       "when": 1790659204926,
       "tag": "0010_gigantic_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790834626757,
+      "tag": "0011_schema_sync_and_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790835347901,
+      "tag": "0012_orders_discount_coupon",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790835943195,
+      "tag": "0013_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790837408516,
+      "tag": "0014_orders_payment_unique",
+      "breakpoints": true
     }
   ]
 }

@@ -39,12 +39,11 @@ export function adminAccessOf(u: { isAdmin: boolean; branch?: BranchKey | null }
   return u.branch ?? null;
 }
 
-/** HMAC key for signing/verifying. Falls back to an insecure dev secret so the
- *  app still boots before `AUTH_SECRET` is configured — but never in production. */
-function secretKey(): Uint8Array {
-  const secret =
-    process.env.AUTH_SECRET ||
-    (process.env.NODE_ENV !== "production" ? "dev-insecure-secret-change-me" : "");
+/** HMAC key for signing/verifying (also used for checkout drafts). There is
+ *  deliberately NO fallback: a committed default secret would let anyone mint an
+ *  admin cookie, so a missing `AUTH_SECRET` fails hard in every environment. */
+export function secretKey(): Uint8Array {
+  const secret = process.env.AUTH_SECRET;
   if (!secret) {
     throw new Error(
       "AUTH_SECRET is not set. Generate one with `openssl rand -base64 32` and add it to .env.local.",
@@ -71,9 +70,12 @@ export async function createSessionToken(user: SessionUser): Promise<string> {
 
 /** Verify and decode a session token. Returns `null` for missing/invalid/expired. */
 export async function verifySessionToken(token: string | undefined | null): Promise<SessionUser | null> {
+  // Resolve the key first and outside the try: a missing secret must surface as
+  // an error, not read as "everyone is signed out".
+  const key = secretKey();
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, secretKey());
+    const { payload } = await jwtVerify(token, key);
     if (!payload.sub) return null;
     const branch = payload.branch === "Branch 1" || payload.branch === "Branch 2" ? payload.branch : null;
     return {

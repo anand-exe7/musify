@@ -6,11 +6,11 @@ import type { Zone } from "@/lib/store/settings";
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return handle(async () => ok(await getZones()));
+  return handle("public", async () => ok(await getZones()));
 }
 
 export function POST(request: NextRequest) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const body = await readJson<Zone>(request);
     if (!body?.id) return badRequest("Zone requires `id`");
     return created(await createZone(body));

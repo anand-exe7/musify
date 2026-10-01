@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightLeft, Search, ArrowRight, Trash2 } from "lucide-react";
 import { usePOS, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
@@ -49,6 +49,9 @@ export default function StockTransfersPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  // One id per submission: if the request is retried (timeout, double-click) the
+  // server recognises it and returns the original transfer instead of repeating it.
+  const batchRef = useRef<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
 
@@ -119,10 +122,12 @@ export default function StockTransfersPage() {
     if (lines.some(lineError)) return notify("Fix the highlighted lines first.");
     setSaving(true);
     try {
+      const batchId = (batchRef.current ??= crypto.randomUUID());
       const res = await fetch("/api/stock-transfers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          batchId,
           fromBranch,
           toBranch,
           note,
@@ -130,12 +135,14 @@ export default function StockTransfersPage() {
         }),
       });
       if (!res.ok) {
+        batchRef.current = null; // a refused request starts a fresh submission next time
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || "save failed");
       }
       await hydratePOS();
       await loadTransfers();
       notify(`Transferred ${totalQty} unit${totalQty === 1 ? "" : "s"} across ${lines.length} product${lines.length === 1 ? "" : "s"}`);
+      batchRef.current = null;
       setLines([]);
       setNote("");
     } catch (err) {

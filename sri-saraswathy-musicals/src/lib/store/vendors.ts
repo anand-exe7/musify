@@ -1,11 +1,13 @@
 "use client";
 import { create } from "zustand";
 import type { Vendor } from "@/types";
+import { fetchJson, errMsg } from "@/lib/client/api";
 
 interface VendorState {
   vendors: Vendor[];
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   /** Create a vendor; resolves to the saved row, or null on failure (e.g. a
    *  duplicate code). */
   addVendor: (v: Vendor) => Promise<Vendor | null>;
@@ -14,12 +16,15 @@ interface VendorState {
 export const useVendors = create<VendorState>()((set) => ({
   vendors: [],
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
     try {
-      const res = await fetch("/api/vendors", { cache: "no-store" });
-      set({ vendors: res.ok ? ((await res.json()) as Vendor[]) : [], hydrated: true });
-    } catch {
-      set({ hydrated: true });
+      const vendors = await fetchJson<Vendor[]>("/api/vendors", { cache: "no-store" });
+      set({ vendors, hydrated: true, loadError: null });
+      return true;
+    } catch (e) {
+      set({ hydrated: true, loadError: errMsg(e, "Couldn't load vendors") });
+      return false;
     }
   },
   addVendor: async (v) => {

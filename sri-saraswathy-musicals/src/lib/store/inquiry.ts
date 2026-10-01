@@ -1,6 +1,7 @@
 "use client";
 import { create } from "zustand";
 import { genDocId } from "@/lib/ids";
+import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -40,24 +41,13 @@ export function genInquiryId(): string {
 
 /* ─────────────────────────────  Store  ───────────────────────────── */
 
-async function send(url: string, method: string, body: unknown, onError: () => void) {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error("save failed");
-  } catch {
-    alert("Couldn't save the inquiry change. Reverting.");
-    onError();
-  }
-}
+const send = makeSender("the inquiry change");
 
 interface InquiryState {
   inquiries: Inquiry[];
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   addInquiry: (i: Inquiry) => void;
   updateInquiry: (id: string, patch: Partial<Inquiry>) => void;
   deleteInquiry: (id: string) => void;
@@ -67,26 +57,30 @@ interface InquiryState {
 export const useInquiry = create<InquiryState>()((set, get) => ({
   inquiries: [],
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
     try {
-      const res = await fetch("/api/inquiries");
-      if (!res.ok) return;
-      set({ inquiries: (await res.json()) as Inquiry[], hydrated: true });
-    } catch {
-      /* keep empty */
+      set({ inquiries: await fetchJson<Inquiry[]>("/api/inquiries"), hydrated: true, loadError: null });
+      return true;
+    } catch (e) {
+      set({ loadError: errMsg(e, "Couldn't load inquiries") });
+      return false;
     }
   },
   addInquiry: (i) => {
+    const prev = get().inquiries;
     set((s) => ({ inquiries: [i, ...s.inquiries] }));
-    void send("/api/inquiries", "POST", i, get().hydrate);
+    void send("/api/inquiries", "POST", i, get().hydrate, () => set({ inquiries: prev }));
   },
   updateInquiry: (id, patch) => {
+    const prev = get().inquiries;
     set((s) => ({ inquiries: s.inquiries.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
-    void send(`/api/inquiries/${id}`, "PATCH", patch, get().hydrate);
+    void send(`/api/inquiries/${id}`, "PATCH", patch, get().hydrate, () => set({ inquiries: prev }));
   },
   deleteInquiry: (id) => {
+    const prev = get().inquiries;
     set((s) => ({ inquiries: s.inquiries.filter((x) => x.id !== id) }));
-    void send(`/api/inquiries/${id}`, "DELETE", null, get().hydrate);
+    void send(`/api/inquiries/${id}`, "DELETE", null, get().hydrate, () => set({ inquiries: prev }));
   },
   resetDemo: () => void get().hydrate(),
 }));

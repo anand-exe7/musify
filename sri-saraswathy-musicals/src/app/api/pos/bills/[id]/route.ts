@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 export function DELETE(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     return (await deleteBill(id)) ? noContent() : notFound("Bill not found");
   });

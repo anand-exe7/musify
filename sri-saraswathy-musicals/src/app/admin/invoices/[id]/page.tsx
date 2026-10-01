@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getInvoice } from "@/lib/db/queries/invoices";
-import { getSession } from "@/lib/auth/server";
+import { getVerifiedSession } from "@/lib/auth/server";
 import { BUSINESS } from "@/lib/data/business";
 import { TaxInvoiceView } from "./TaxInvoiceView";
 
@@ -15,10 +15,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 /**
  * Private tax invoice for admins. Carries the sequential GST invoice number,
  * HSN codes, GSTIN, and the CGST/SGST/IGST split — none of which are exposed
- * on the customer-facing /invoice/[id] page. Access is gated by requireAdmin.
+ * on the customer-facing /invoice/[id] page. Access is gated on the DB-verified session (see getVerifiedSession).
  */
 export default async function AdminTaxInvoicePage({ params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
+  const session = await getVerifiedSession();
   if (!session) redirect("/auth/login?redirect=%2Fadmin%2Finvoices");
   if (!session.isAdmin) redirect("/");
 

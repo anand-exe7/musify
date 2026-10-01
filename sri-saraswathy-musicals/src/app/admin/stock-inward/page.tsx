@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Search, X, Truck, Trash2 } from "lucide-react";
 import { usePOS, productStock, type InvProduct } from "@/lib/store/pos";
 import { useVendors, vendorMatches } from "@/lib/store/vendors";
@@ -52,6 +52,9 @@ export default function StockInwardPage() {
   const [productTerm, setProductTerm] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [saving, setSaving] = useState(false);
+  // One id per submission: if the request is retried (timeout, double-click) the
+  // server recognises it and returns the original inward instead of repeating it.
+  const batchRef = useRef<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [inwards, setInwards] = useState<InwardRow[]>([]);
 
@@ -135,10 +138,12 @@ export default function StockInwardPage() {
     if (lines.some(lineError)) return notify("Fix the highlighted lines first.");
     setSaving(true);
     try {
+      const batchId = (batchRef.current ??= crypto.randomUUID());
       const res = await fetch("/api/stock-inward", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          batchId,
           vendorId: vendor.id,
           lines: lines.map((l) => ({
             productId: l.product.id,
@@ -153,12 +158,14 @@ export default function StockInwardPage() {
         }),
       });
       if (!res.ok) {
+        batchRef.current = null; // a refused request starts a fresh submission next time
         const body = await res.json().catch(() => null);
         throw new Error(typeof body?.error === "string" ? body.error : "");
       }
       await hydratePOS(); // reflect the bumped on-hand + cost
       await loadInwards();
       notify(`Received ${totals.qty} unit${totals.qty === 1 ? "" : "s"} across ${lines.length} product${lines.length === 1 ? "" : "s"}`);
+      batchRef.current = null;
       setLines([]);
     } catch (e) {
       notify(e instanceof Error && e.message ? e.message : "Couldn't record the inward. Try again.");

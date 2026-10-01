@@ -1,7 +1,9 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { stockInward, products } from "@/lib/db/schema";
-import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/stock";
+import { isBranch, BRANCH_KEYS, type Branch } from "@/lib/stock";
+import { HttpError } from "@/lib/api/errors";
+import { adjustProductStock } from "@/lib/db/queries/stockOps";
 import { genDocId } from "@/lib/ids";
 import { row, rows } from "./_util";
 
@@ -41,15 +43,23 @@ export async function getInwards(): Promise<StockInwardRecord[]> {
  * is refreshed to the unit cost just paid. Returns the saved inward row.
  */
 export async function createInward(input: StockInwardInput): Promise<StockInwardRecord> {
+  if (!isBranch(input.branch)) throw new HttpError(400, `Unknown branch: ${String(input.branch)}`);
+  if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
+    throw new HttpError(400, "Quantity must be a whole number ≥ 1");
+  }
+  const branch = input.branch;
+
   const [prod] = await db
     .select()
     .from(products)
     .where(eq(products.id, input.productId))
     .limit(1);
+  if (!prod) throw new HttpError(404, `Unknown product: ${input.productId}`);
 
-  const variants = prod?.variants ?? [];
+  const variants = prod.variants ?? [];
   const v = variants[input.variantIndex];
-  const variantLabel = v ? `${v.attr}${v.finish ? ` · ${v.finish}` : ""}` : "";
+  if (!v) throw new HttpError(400, "Unknown variant on this product");
+  const variantLabel = `${v.attr}${v.finish ? ` · ${v.finish}` : ""}`;
 
   const record = {
     id: input.id,
@@ -64,21 +74,26 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
     inwardAt: new Date().toISOString(),
   };
 
-  const [saved] = await db.insert(stockInward).values(record).returning();
+  // Record first, keyed by the caller's id: a retried or double-clicked request
+  // hits the primary key and returns the original receipt instead of adding the
+  // stock twice. If the stock write then fails, the receipt is withdrawn.
+  const [saved] = await db.insert(stockInward).values(record).onConflictDoNothing().returning();
+  if (!saved) {
+    const [existing] = await db.select().from(stockInward).where(eq(stockInward.id, input.id)).limit(1);
+    return row<StockInwardRecord>(existing);
+  }
 
-  // Apply to inventory: add the received qty to the target branch's bucket on
-  // the chosen variant, and refresh the product's cost. Other branch buckets
-  // and other variants are untouched.
-  if (prod && v) {
-    const branch = input.branch as Branch;
-    const existing = variantStockAt(v, branch);
-    const nextVariants = variants.map((x, i) =>
-      i === input.variantIndex ? setVariantStockAt(x, branch, existing + input.quantity) : x,
+  // Add the received qty to the target branch's bucket and refresh the cost, in
+  // one compare-and-swap write. Other buckets and variants are untouched.
+  try {
+    await adjustProductStock(
+      input.productId,
+      [{ variantIndex: input.variantIndex, branch, delta: input.quantity }],
+      { cost: input.unitCost },
     );
-    await db
-      .update(products)
-      .set({ variants: nextVariants, cost: input.unitCost })
-      .where(eq(products.id, input.productId));
+  } catch (err) {
+    await db.delete(stockInward).where(eq(stockInward.id, input.id));
+    throw err;
   }
 
   return row<StockInwardRecord>(saved);
@@ -86,7 +101,7 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
 
 /* ───────────────────────────  Multi-line batch  ─────────────────────────── */
 
-const BRANCHES: Branch[] = ["Branch 1", "Branch 2"];
+const BRANCHES: readonly Branch[] = BRANCH_KEYS;
 
 /** One product/variant received, split across branches. */
 export interface InwardBatchLine {
@@ -151,15 +166,27 @@ export async function createInwardBatch(
   lines: InwardBatchLine[],
   createdBy: string,
   allowedBranch: Branch | null,
+  /** Client-generated id for the whole submission. Resubmitting the same one
+   *  completes any missing lines and returns the rest as saved (double-click /
+   *  retry safe). */
+  batchId?: string,
 ): Promise<StockInwardRecord[]> {
+  if (batchId !== undefined && !/^[\w-]{1,64}$/.test(batchId)) throw new InwardValidationError("Invalid batch id.");
+  // Validation only looks at the shape of the lines (inward adds stock, so there
+  // is nothing to run short of), which makes a resubmission safe to run in full:
+  // every row has a fixed id `<batchId>-<n>`, and createInward returns a row that
+  // was already saved instead of adding its stock again. A batch that stopped
+  // part-way is therefore completed, not mistaken for finished.
   await validateInwardBatch(lines, allowedBranch);
   const saved: StockInwardRecord[] = [];
+  let n = 0;
   for (const l of lines) {
     for (const a of l.allocations) {
       if (a.quantity <= 0) continue;
+      n += 1;
       saved.push(
         await createInward({
-          id: genDocId("INW"),
+          id: batchId ? `${batchId}-${n}` : genDocId("INW"),
           vendorId,
           productId: l.productId,
           variantIndex: l.variantIndex,

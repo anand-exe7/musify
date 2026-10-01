@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
+import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { usePOS, type Coupon } from "@/lib/store/pos";
 import { formatINR, cn } from "@/lib/utils";
+import { clampPct } from "@/lib/checkout/coupon";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Info, RefreshCw, Search, Wand2 } from "lucide-react";
 
@@ -13,6 +15,7 @@ function toDMY(v: string) {
 
 export default function CouponsPage() {
   const coupons = usePOS((s) => s.coupons);
+  const loadError = usePOS((s) => s.loadError);
   const addCoupon = usePOS((s) => s.addCoupon);
   const updateCoupon = usePOS((s) => s.updateCoupon);
   const deleteCoupon = usePOS((s) => s.deleteCoupon);
@@ -33,6 +36,7 @@ export default function CouponsPage() {
 
   const create = () => {
     if (!code.trim() || !pct) { setMsg("Code and discount % are required."); setTimeout(() => setMsg(null), 2500); return; }
+    if (Number(pct) !== clampPct(pct) || Number(pct) < 1) { setMsg("Discount must be a whole number from 1 to 100."); setTimeout(() => setMsg(null), 2500); return; }
     const c: Coupon = {
       code: code.trim().toUpperCase(),
       discountPct: Number(pct),
@@ -59,6 +63,7 @@ export default function CouponsPage() {
 
   return (
     <div className="p-5 md:p-8">
+      <LoadErrorBanner message={loadError} onRetry={() => void usePOS.getState().hydrate()} />
       {msg && <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{msg}</div>}
       <h1 className="mb-5 text-2xl font-bold text-ink-900">Coupon Management</h1>
 
@@ -76,7 +81,7 @@ export default function CouponsPage() {
             <button onClick={generate} disabled={!!editCode} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-ink-900 px-3 text-xs font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-40"><Wand2 className="h-3.5 w-3.5" /> Generate</button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <div><label className={label}>Discount % *</label><input type="number" value={pct} onChange={(e) => setPct(e.target.value === "" ? "" : Number(e.target.value))} placeholder="e.g. 15" className={field} /></div>
+            <div><label className={label}>Discount % *</label><input type="number" min={1} max={100} step={1} value={pct} onChange={(e) => setPct(e.target.value === "" ? "" : Number(e.target.value))} placeholder="e.g. 15" className={field} /></div>
             <div><label className={label}>Min Order (₹)</label><MoneyInput value={minOrder === "" ? 0 : minOrder} onChange={(paise) => setMinOrder(paise)} placeholder="e.g. 1000" className={field} /></div>
             <div><label className={label}>Expiry Date</label><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={field} /></div>
             <div><label className={label}>Usage Limit</label><input type="number" value={limit} onChange={(e) => setLimit(e.target.value === "" ? "" : Number(e.target.value))} placeholder="e.g. 50" className={field} /></div>

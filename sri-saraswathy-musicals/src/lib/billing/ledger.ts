@@ -13,6 +13,8 @@ import { counters } from "@/lib/db/schema";
 import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
 import { getAllProducts } from "@/lib/db/queries/products";
 import { getGstSettings } from "@/lib/db/queries/settings";
+import { taxLines } from "@/lib/gst/inclusive";
+import { isIntraSupply } from "@/lib/gst/place-of-supply";
 import type { Order, Invoice } from "@/types";
 import type { Bill } from "@/lib/store/pos";
 import type { RepairTicket } from "@/lib/store/repair";
@@ -51,41 +53,43 @@ async function insertInvoice(inv: Invoice): Promise<void> {
   await db.insert(invoices).values(inv);
 }
 
-/** Write a GST invoice row for a completed web order. */
+/**
+ * Write a GST invoice row for a completed web order. Web prices are
+ * GST-inclusive (same as POS): the order's coupon is taken off first, then the
+ * tax contained in what was paid is extracted per line using the rate that was
+ * snapshotted on the order. As with POS, `subtotal` is everything that isn't
+ * tax (`total − tax`), so subtotal + CGST + SGST + IGST always equals the total.
+ */
 export async function recordOrderInvoice(order: Order): Promise<void> {
   try {
     // One tax invoice per source order — never mint a second number on a retry.
     if (await getInvoiceByRefId(order.id)) return;
     const [products, gstCfg] = await Promise.all([getAllProducts(), getGstSettings()]);
     const byId = new Map(products.map((p) => [p.id, p]));
-    const intra =
-      !order.shipState || order.shipState.trim().toLowerCase() === gstCfg.homeState.trim().toLowerCase();
+    const intra = isIntraSupply(order.shipState, gstCfg.homeState);
 
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-    const items = order.items.map((it) => {
+    // Rate per line: the snapshot on the order; for older orders without one,
+    // the product's current rate (0 for an exempt product).
+    const rateOf = (it: Order["items"][number]): number => {
+      if (typeof it.gstRate === "number") return it.gstRate;
       const p = byId.get(it.productId);
-      // Non-GST products (isGstApplicable=false) contribute to subtotal but are
-      // never taxed, so mixed carts (taxable + exempt) come out right on the
-      // invoice — CGST/SGST/IGST only accumulate from taxable lines.
-      const taxable = p ? p.isGstApplicable !== false : true;
-      const rate = taxable ? (p?.gstRate ?? gstCfg.standardRate) : 0;
-      const amount = it.price * it.quantity;
-      const g = (amount * rate) / 100;
-      if (intra) {
-        cgst += g / 2;
-        sgst += g / 2;
-      } else {
-        igst += g;
-      }
+      if (p && p.isGstApplicable === false) return 0;
+      return p?.gstRate ?? gstCfg.standardRate;
+    };
+    const taxed = taxLines(
+      order.items.map((it) => ({ gross: it.price * it.quantity, rate: rateOf(it) })),
+      order.discount ?? 0,
+      intra,
+    );
+    const items = order.items.map((it, n) => {
+      const p = byId.get(it.productId);
       return {
         name: p ? `${p.brand} ${p.name}` : it.productId,
         hsn: p?.hsn ?? "-",
         qty: it.quantity,
         rate: it.price,
-        gst: rate,
-        amount,
+        gst: rateOf(it),
+        amount: taxed.lines[n].net,
       };
     });
 
@@ -97,10 +101,10 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
       customer: order.customerName || "Online customer",
       branch: order.branch ?? "Branch 1",
       items,
-      subtotal: order.subtotal,
-      cgst: Math.round(cgst),
-      sgst: Math.round(sgst),
-      igst: Math.round(igst),
+      subtotal: order.total - taxed.totals.tax,
+      cgst: taxed.totals.cgst,
+      sgst: taxed.totals.sgst,
+      igst: taxed.totals.igst,
       total: order.total,
       paymentMode: order.paymentMethod || "razorpay",
       status: order.paymentMethod === "cod" ? "pending" : "paid",

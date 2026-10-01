@@ -5,12 +5,12 @@ import { getCategories, upsertCategory, type CategoryItem } from "@/lib/db/queri
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return handle(async () => ok(await getCategories()));
+  return handle("public", async () => ok(await getCategories()));
 }
 
 // POST upserts by `id`.
 export function POST(request: NextRequest) {
-  return handle(async () => {
+  return handle("admin", async () => {
     const body = await readJson<CategoryItem>(request);
     if (!body?.id) return badRequest("Category requires `id`");
     return created(await upsertCategory(body));

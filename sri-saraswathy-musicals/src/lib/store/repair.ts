@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { Branch } from "@/lib/store/pos";
 import { genDocId } from "@/lib/ids";
+import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -156,24 +157,15 @@ export function genRepairId(): string {
 
 const now = () => new Date().toISOString();
 
-async function send(url: string, method: string, body: unknown, onError: () => void) {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error("save failed");
-  } catch {
-    alert("Couldn't save the repair change. Reverting to the saved values.");
-    onError();
-  }
-}
+const send = makeSender("the repair change");
 
 interface RepairState {
   tickets: RepairTicket[];
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  /** Why the last load failed (null = fine) — lets a page say "couldn't load"
+   *  instead of "ticket not found" when the list is empty because of an error. */
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   addTicket: (t: RepairTicket) => void;
   updateTicket: (id: string, patch: Partial<RepairTicket>, eventLabel?: string) => void;
   deleteTicket: (id: string) => void;
@@ -185,20 +177,23 @@ interface RepairState {
 export const useRepair = create<RepairState>()((set, get) => ({
   tickets: [],
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
     try {
-      const res = await fetch("/api/repair");
-      if (!res.ok) return;
-      set({ tickets: (await res.json()) as RepairTicket[], hydrated: true });
-    } catch {
-      /* keep empty */
+      set({ tickets: await fetchJson<RepairTicket[]>("/api/repair"), hydrated: true, loadError: null });
+      return true;
+    } catch (e) {
+      set({ loadError: errMsg(e, "Couldn't load repair tickets") });
+      return false;
     }
   },
   addTicket: (t) => {
+    const prev = get().tickets;
     set((s) => ({ tickets: [t, ...s.tickets] }));
-    void send("/api/repair", "POST", t, get().hydrate);
+    void send("/api/repair", "POST", t, get().hydrate, () => set({ tickets: prev }));
   },
   updateTicket: (id, patch, eventLabel) => {
+    const prev = get().tickets;
     set((s) => ({
       tickets: s.tickets.map((t) =>
         t.id === id
@@ -211,19 +206,21 @@ export const useRepair = create<RepairState>()((set, get) => ({
           : t,
       ),
     }));
-    void send(`/api/repair/${id}`, "PATCH", { patch, eventLabel }, get().hydrate);
+    void send(`/api/repair/${id}`, "PATCH", { patch, eventLabel }, get().hydrate, () => set({ tickets: prev }));
   },
   deleteTicket: (id) => {
+    const prev = get().tickets;
     set((s) => ({ tickets: s.tickets.filter((t) => t.id !== id) }));
-    void send(`/api/repair/${id}`, "DELETE", null, get().hydrate);
+    void send(`/api/repair/${id}`, "DELETE", null, get().hydrate, () => set({ tickets: prev }));
   },
   logEvent: (id, label) => {
+    const prev = get().tickets;
     set((s) => ({
       tickets: s.tickets.map((t) =>
         t.id === id ? { ...t, updatedAt: now(), events: [...t.events, { at: now(), label }] } : t,
       ),
     }));
-    void send(`/api/repair/${id}`, "PATCH", { patch: {}, eventLabel: label }, get().hydrate);
+    void send(`/api/repair/${id}`, "PATCH", { patch: {}, eventLabel: label }, get().hydrate, () => set({ tickets: prev }));
   },
   // Ask the server for the next service-invoice number — it checks the DB for
   // a free `SER-<year>-XXXXX` code, which an in-memory scan of loaded tickets

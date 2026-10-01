@@ -3,6 +3,7 @@ import { getGoogleUserFromCode } from "@/lib/auth/google";
 import { upsertGoogleUser } from "@/lib/db/queries/users";
 import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/auth/session";
 import { appUrl } from "@/lib/auth/config";
+import { safeRedirect } from "@/lib/auth/redirect";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,7 @@ export async function GET(request: NextRequest) {
   const cookieState = request.cookies.get("ssm_oauth_state")?.value;
   if (!state || !cookieState || state !== cookieState) return loginError("state");
 
-  let redirectTo = request.cookies.get("ssm_oauth_redirect")?.value || "/profile";
-  if (!redirectTo.startsWith("/") || redirectTo.startsWith("//")) redirectTo = "/profile";
+  const redirectTo = safeRedirect(request.cookies.get("ssm_oauth_redirect")?.value);
 
   try {
     const profile = await getGoogleUserFromCode(code);

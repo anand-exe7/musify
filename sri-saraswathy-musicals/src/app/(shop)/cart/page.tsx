@@ -1,26 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useCart } from "@/lib/store/cart";
-import { useGst, gstBreakup, isIntraState, IN_STATES } from "@/lib/store/gst";
+import { useGst, IN_STATES } from "@/lib/store/gst";
+import { useQuote, fetchQuote } from "@/lib/client/quote";
 import { useShallow } from "zustand/react/shallow";
 import { useProducts } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel } from "@/lib/catalog/variants";
-import { formatINR } from "@/lib/utils";
+import { formatINR, cn } from "@/lib/utils";
 import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-type Coupon = { label: string; type: "percent" | "flat"; value: number; min?: number };
-
-// Demo coupon codes.
-const COUPONS: Record<string, Coupon> = {
-  // `value` for a flat coupon and `min` are in paise; percent `value` is a rate.
-  SARASWATHY10: { label: "10% off", type: "percent", value: 10 },
-  WELCOME15: { label: "15% off your first order", type: "percent", value: 15 },
-  FLAT500: { label: "₹500 off", type: "flat", value: 50000, min: 300000 },
-  ENCORE20: { label: "20% off", type: "percent", value: 20, min: 1000000 },
-};
 
 const BURST_NOTES = ["♪", "♫", "♩", "♬", "𝅘𝅥𝅮"];
 
@@ -81,66 +71,81 @@ export default function CartPage() {
   const clear = useCart((s) => s.clear);
   const shipState = useCart((s) => s.shipState);
   const setShipState = useCart((s) => s.setShipState);
+  const delivery = useCart((s) => s.delivery);
+  const couponCode = useCart((s) => s.couponCode);
+  const setCouponCode = useCart((s) => s.setCouponCode);
   const homeState = useGst((s) => s.homeState);
   const posEnabled = useGst((s) => s.placeOfSupplyEnabled);
   const gstLabels = useGst(useShallow((s) => ({ cgst: s.cgstLabel, sgst: s.sgstLabel, igst: s.igstLabel })));
   const [mounted, setMounted] = useState(false);
-  const [code, setCode] = useState("");
-  const [coupon, setCoupon] = useState<(Coupon & { code: string }) | null>(null);
   const [error, setError] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [code, setCode] = useState("");
   const [celebrate, setCelebrate] = useState(false);
   const { products, loading: productsLoading } = useProducts();
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   useEffect(() => setMounted(true), []);
 
+  // Cart lines whose product still exists in the catalogue.
+  const cartItems = useMemo(
+    () =>
+      items
+        .map((i) => {
+          const product = byId.get(i.productId);
+          if (!product) return null;
+          return { ...i, product, variant: findVariant(product.variants ?? [], i.variantKey) };
+        })
+        .filter((i): i is NonNullable<typeof i> => i !== null),
+    [items, byId],
+  );
+
+  // Every number below comes from the server — there is no price, tax, shipping
+  // or coupon maths on this page.
+  const quoteInput = {
+    items: cartItems.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
+    delivery,
+    shipState,
+    couponCode,
+  };
+  const { quote, loading: quoting, error: quoteError, refresh } = useQuote(quoteInput, mounted && !productsLoading);
+
   if (!mounted || productsLoading) {
     return <div className="container-narrow py-32 text-center text-ink-400">Loading your cart…</div>;
   }
 
-  const cartItems = items
-    .map((i) => {
-      const product = byId.get(i.productId);
-      if (!product) return null;
-      const variant = findVariant(product.variants ?? [], i.variantKey);
-      const unitPrice = variant?.price ?? product.price;
-      return { ...i, product, variant, unitPrice };
-    })
-    .filter((i): i is NonNullable<typeof i> => i !== null);
+  const quoteLines = new Map((quote?.items ?? []).map((l) => [`${l.productId}::${l.variantKey}`, l]));
+  const couponIssue = quote?.issues.find((i) => i.kind === "coupon");
+  const blockingIssues = (quote?.issues ?? []).filter((i) => i.kind !== "coupon");
+  const appliedCode = quote?.couponCode ?? null;
+  const discount = quote?.discount ?? 0;
+  const total = quote?.total ?? 0;
 
-  const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
-  const gstLines = cartItems.map((i) => ({ amount: i.unitPrice * i.quantity, rate: i.product.gstRate ?? 0 }));
-  const intra = isIntraState(shipState, homeState);
-  const gst = gstBreakup(gstLines, intra);
-  const gstTotal = gst.total;
-  const shipping = subtotal > 500000 || subtotal === 0 ? 0 : 20000; // paise: free over ₹5,000, else ₹200
-  const couponActive = coupon && (!coupon.min || subtotal >= coupon.min);
-  const discount = couponActive
-    ? coupon!.type === "percent"
-      ? Math.round((subtotal * coupon!.value) / 100)
-      : Math.min(coupon!.value, subtotal)
-    : 0;
-  const total = Math.max(0, subtotal + gstTotal + shipping - discount);
-
-  const applyCoupon = (e: React.FormEvent) => {
+  const applyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     const key = code.trim().toUpperCase();
-    const found = COUPONS[key];
-    if (!found) {
-      setError("That code isn’t valid. Try SARASWATHY10.");
-      return;
-    }
-    if (found.min && subtotal < found.min) {
-      setError(`Add ${formatINR(found.min)}+ to use this code.`);
-      return;
-    }
+    if (!key || applying) return;
+    setApplying(true);
     setError("");
-    setCoupon({ code: key, ...found });
-    setCode("");
-    setCelebrate(true);
-    window.setTimeout(() => setCelebrate(false), 1600);
+    try {
+      // Ask the server whether this code works for this cart before keeping it.
+      const q = await fetchQuote({ ...quoteInput, couponCode: key });
+      const bad = q.issues.find((i) => i.kind === "coupon");
+      if (bad) {
+        setError(bad.message);
+        return;
+      }
+      setCouponCode(key);
+      setCode("");
+      setCelebrate(true);
+      window.setTimeout(() => setCelebrate(false), 1600);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn’t check that code. Try again.");
+    } finally {
+      setApplying(false);
+    }
   };
   const removeCoupon = () => {
-    setCoupon(null);
+    setCouponCode("");
     setError("");
   };
 
@@ -173,7 +178,9 @@ export default function CartPage() {
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-4">
           <AnimatePresence mode="popLayout">
-            {cartItems.map((i) => (
+            {cartItems.map((i) => {
+              const ql = quoteLines.get(`${i.productId}::${i.variantKey}`);
+              return (
               <motion.div
                 key={`${i.productId}::${i.variantKey}`}
                 layout
@@ -196,7 +203,7 @@ export default function CartPage() {
                       {i.variant && (i.product.variants?.length ?? 0) > 1 && (
                         <p className="mt-0.5 text-xs text-ink-600">{variantLabel(i.variant)}</p>
                       )}
-                      <p className="mt-0.5 text-xs text-ink-400">Incl. {i.product.gstRate}% GST</p>
+                      {ql && <p className="mt-0.5 text-xs text-ink-400">{ql.gstRate > 0 ? `Incl. ${ql.gstRate}% GST` : "No GST"}</p>}
                     </div>
                     <button onClick={() => removeItem(i.productId, i.variantKey)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center text-ink-400 hover:text-danger">
                       <X className="h-4 w-4" />
@@ -209,13 +216,14 @@ export default function CartPage() {
                       <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity + 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Plus className="h-3 w-3" /></button>
                     </div>
                     <div className="ml-auto text-right">
-                      <p className="tabular font-display text-lg text-ink-900">{formatINR(i.unitPrice * i.quantity)}</p>
-                      {i.quantity > 1 && <p className="tabular text-xs text-ink-400">{formatINR(i.unitPrice)} each</p>}
+                      <p className="tabular font-display text-lg text-ink-900">{ql ? formatINR(ql.lineTotal) : "—"}</p>
+                      {ql && ql.quantity > 1 && <p className="tabular text-xs text-ink-400">{formatINR(ql.price)} each</p>}
                     </div>
                   </div>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
           </AnimatePresence>
         </div>
 
@@ -226,7 +234,7 @@ export default function CartPage() {
             <div className="mt-6 space-y-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-ink-500">Subtotal</span>
-                <span className="tabular text-ink-900">{formatINR(subtotal)}</span>
+                <span className="tabular text-ink-900">{quote ? formatINR(quote.subtotal) : "—"}</span>
               </div>
 
               {/* Place of supply */}
@@ -245,37 +253,16 @@ export default function CartPage() {
                     ))}
                   </select>
                   <p className="mt-1.5 text-[11px] text-ink-400">
-                    {intra
+                    {!quote || quote.intra
                       ? `Within ${homeState} → ${gstLabels.cgst} + ${gstLabels.sgst}`
                       : `Outside ${homeState} → ${gstLabels.igst}`}
                   </p>
                 </div>
               )}
 
-              {(() => {
-                const effRate = subtotal > 0 ? Math.round((gstTotal / subtotal) * 100) : 0;
-                return intra ? (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-ink-500">{gstLabels.cgst} <span className="text-ink-400">({effRate / 2}%)</span></span>
-                      <span className="tabular text-ink-900">{formatINR(gst.cgst)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-ink-500">{gstLabels.sgst} <span className="text-ink-400">({effRate / 2}%)</span></span>
-                      <span className="tabular text-ink-900">{formatINR(gst.sgst)}</span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex justify-between">
-                    <span className="text-ink-500">{gstLabels.igst} <span className="text-ink-400">({effRate}%)</span></span>
-                    <span className="tabular text-ink-900">{formatINR(gst.igst)}</span>
-                  </div>
-                );
-              })()}
-
               <div className="flex justify-between">
-                <span className="text-ink-500">Shipping</span>
-                <span className="tabular text-ink-900">{shipping === 0 ? "Free" : formatINR(shipping)}</span>
+                <span className="text-ink-500">Shipping <span className="text-ink-400">({delivery})</span></span>
+                <span className="tabular text-ink-900">{quote ? (quote.shipping === 0 ? "Free" : formatINR(quote.shipping)) : "—"}</span>
               </div>
               <AnimatePresence>
                 {discount > 0 && (
@@ -288,7 +275,7 @@ export default function CartPage() {
                   >
                     <span className="flex min-w-0 items-center gap-1.5">
                       <Tag className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">Discount ({coupon!.code})</span>
+                      <span className="truncate">Discount ({appliedCode})</span>
                     </span>
                     <span className="tabular shrink-0">−{formatINR(discount)}</span>
                   </motion.div>
@@ -296,14 +283,31 @@ export default function CartPage() {
               </AnimatePresence>
               <div className="mt-4 flex items-end justify-between border-t border-ink-100 pt-4">
                 <span className="text-sm uppercase tracking-[0.18em] text-ink-500">Total</span>
-                <span className="tabular font-display text-3xl text-ink-900">{formatINR(total)}</span>
+                <span className={cn("tabular font-display text-3xl text-ink-900 transition-opacity", quoting && "opacity-50")}>{quote ? formatINR(total) : "—"}</span>
               </div>
+              {quote && quote.gst > 0 && (
+                <p className="text-right text-[11px] text-ink-400">
+                  Includes GST of {formatINR(quote.gst)}
+                  {quote.intra
+                    ? ` (${gstLabels.cgst} ${formatINR(quote.cgst)} + ${gstLabels.sgst} ${formatINR(quote.sgst)})`
+                    : ` (${gstLabels.igst})`}
+                </p>
+              )}
+              {quoteError && (
+                <p className="text-xs text-danger">
+                  {quoteError}{" "}
+                  <button onClick={refresh} className="underline">Retry</button>
+                </p>
+              )}
+              {blockingIssues.map((i, n) => (
+                <p key={n} className="text-xs text-danger">{i.message}</p>
+              ))}
             </div>
 
             {/* Coupon */}
             <div className="relative mt-5">
               <AnimatePresence mode="wait" initial={false}>
-                {coupon ? (
+                {appliedCode || (couponCode && couponIssue) ? (
                   <motion.div
                     key="applied"
                     initial={{ opacity: 0, y: 6 }}
@@ -316,8 +320,8 @@ export default function CartPage() {
                         <Check className="h-3.5 w-3.5" strokeWidth={3} />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">{coupon.code}</p>
-                        <p className="truncate text-[11px] text-ink-500">{coupon.label} applied</p>
+                        <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-gold-700">{couponCode}</p>
+                        <p className={cn("truncate text-[11px]", couponIssue ? "text-danger" : "text-ink-500")}>{couponIssue ? couponIssue.message : "Coupon applied"}</p>
                       </div>
                     </div>
                     <button onClick={removeCoupon} aria-label="Remove coupon" className="shrink-0 text-ink-400 transition-colors hover:text-danger">
@@ -342,9 +346,10 @@ export default function CartPage() {
                     />
                     <button
                       type="submit"
-                      className="shrink-0 bg-ink-900 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.18em] text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900"
+                      disabled={applying}
+                      className="shrink-0 bg-ink-900 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.18em] text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60"
                     >
-                      Apply
+                      {applying ? "Checking…" : "Apply"}
                     </button>
                   </motion.form>
                 )}
@@ -366,12 +371,11 @@ export default function CartPage() {
 
               <AnimatePresence>{celebrate && <CouponBurst />}</AnimatePresence>
             </div>
-            <Link href="/checkout" className="btn-gold-solid mt-6 w-full">
+            <Link href="/checkout" aria-disabled={!quote || blockingIssues.length > 0} className={cn("btn-gold-solid mt-6 w-full", (!quote || blockingIssues.length > 0) && "pointer-events-none opacity-60")}>
               Proceed to checkout
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
             <div className="mt-4 space-y-1 text-center text-xs text-ink-400">
-              <p>Free shipping on orders above ₹5,000</p>
               <p>Secure payment · UPI · Card · Bank</p>
             </div>
           </div>

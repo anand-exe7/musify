@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ slug: string }> };
 
 export function GET(_request: NextRequest, ctx: Ctx) {
-  return handle(async () => {
+  return handle("public", async () => {
     const { slug } = await ctx.params;
     const product = await getProductBySlug(slug);
     return product ? ok(product) : notFound("Product not found");

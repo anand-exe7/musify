@@ -1,7 +1,9 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, stockTransfers } from "@/lib/db/schema";
-import { setVariantStockAt, variantStockAt, type Branch } from "@/lib/stock";
+import { variantStockAt, isBranch, type Branch } from "@/lib/stock";
+import { HttpError } from "@/lib/api/errors";
+import { adjustProductStock } from "@/lib/db/queries/stockOps";
 import { genDocId } from "@/lib/ids";
 import { row, rows } from "./_util";
 
@@ -41,11 +43,14 @@ export async function getTransfers(): Promise<StockTransferRecord[]> {
  * transfer row is recorded. Throws if source doesn't hold enough on hand.
  */
 export async function createTransfer(input: StockTransferInput): Promise<StockTransferRecord> {
-  if (input.fromBranch === input.toBranch) {
-    throw new Error("Source and destination branches must differ");
+  if (!isBranch(input.fromBranch) || !isBranch(input.toBranch)) {
+    throw new HttpError(400, "Unknown branch");
   }
-  if (input.quantity <= 0) {
-    throw new Error("Transfer quantity must be at least 1");
+  if (input.fromBranch === input.toBranch) {
+    throw new HttpError(400, "Source and destination branches must differ");
+  }
+  if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
+    throw new HttpError(400, "Transfer quantity must be a whole number ≥ 1");
   }
 
   const [prod] = await db
@@ -53,24 +58,11 @@ export async function createTransfer(input: StockTransferInput): Promise<StockTr
     .from(products)
     .where(eq(products.id, input.productId))
     .limit(1);
-  if (!prod) throw new Error(`Unknown product: ${input.productId}`);
+  if (!prod) throw new HttpError(404, `Unknown product: ${input.productId}`);
 
   const variants = prod.variants ?? [];
   const v = variants[input.variantIndex];
-  if (!v) throw new Error("Unknown variant on this product");
-
-  const sourceOnHand = variantStockAt(v, input.fromBranch);
-  if (sourceOnHand < input.quantity) {
-    throw new Error(`Not enough stock at ${input.fromBranch} — only ${sourceOnHand} on hand`);
-  }
-  const destOnHand = variantStockAt(v, input.toBranch);
-
-  const nextVariants = variants.map((x, i) => {
-    if (i !== input.variantIndex) return x;
-    const afterOut = setVariantStockAt(x, input.fromBranch, sourceOnHand - input.quantity);
-    return setVariantStockAt(afterOut, input.toBranch, destOnHand + input.quantity);
-  });
-  await db.update(products).set({ variants: nextVariants }).where(eq(products.id, input.productId));
+  if (!v) throw new HttpError(400, "Unknown variant on this product");
 
   const variantLabel = `${v.attr}${v.finish ? ` · ${v.finish}` : ""}`;
   const record = {
@@ -85,7 +77,26 @@ export async function createTransfer(input: StockTransferInput): Promise<StockTr
     createdBy: input.createdBy ?? "",
     transferredAt: new Date().toISOString(),
   };
-  const [saved] = await db.insert(stockTransfers).values(record).returning();
+  // Record first, keyed by the caller's id. A retried or double-clicked request
+  // hits the primary key and returns the original transfer instead of moving the
+  // stock a second time. If the move then fails, the record is withdrawn.
+  const [saved] = await db.insert(stockTransfers).values(record).onConflictDoNothing().returning();
+  if (!saved) {
+    const [existing] = await db.select().from(stockTransfers).where(eq(stockTransfers.id, input.id)).limit(1);
+    return row<StockTransferRecord>(existing);
+  }
+
+  try {
+    // Source down and destination up in ONE write, so the two buckets can never
+    // disagree and a shortfall at the source rejects the whole move.
+    await adjustProductStock(input.productId, [
+      { variantIndex: input.variantIndex, branch: input.fromBranch, delta: -input.quantity },
+      { variantIndex: input.variantIndex, branch: input.toBranch, delta: input.quantity },
+    ]);
+  } catch (err) {
+    await db.delete(stockTransfers).where(eq(stockTransfers.id, input.id));
+    throw err;
+  }
   return row<StockTransferRecord>(saved);
 }
 
@@ -111,9 +122,23 @@ export async function createTransferBatch(
   toBranch: Branch,
   note: string,
   createdBy: string,
+  /** Client-generated id for the whole submission. Resubmitting the same one is
+   *  a no-op that returns the original transfers (double-click / retry safe). */
+  batchId?: string,
 ): Promise<StockTransferRecord[]> {
   if (!Array.isArray(lines) || lines.length === 0) throw new TransferValidationError("Add at least one line.");
-  if (!["Branch 1", "Branch 2"].includes(fromBranch) || !["Branch 1", "Branch 2"].includes(toBranch)) {
+  if (batchId !== undefined && !/^[\w-]{1,64}$/.test(batchId)) throw new TransferValidationError("Invalid batch id.");
+
+  // Resubmitting the same batch (double-click, retry after a failure) must finish
+  // it, not stop at whatever the first attempt managed. Each line has a fixed id
+  // `<batchId>-<n>`, so lines already saved are recognised, left out of the stock
+  // check (their stock has already moved) and returned as they were.
+  const already = new Set<string>();
+  if (batchId) {
+    const ids = lines.map((_, n) => `${batchId}-${n + 1}`);
+    for (const d of await db.select({ id: stockTransfers.id }).from(stockTransfers).where(inArray(stockTransfers.id, ids))) already.add(d.id);
+  }
+  if (!isBranch(fromBranch) || !isBranch(toBranch)) {
     throw new TransferValidationError("Unknown branch.");
   }
   if (fromBranch === toBranch) throw new TransferValidationError("Source and destination branches must differ.");
@@ -123,6 +148,7 @@ export async function createTransferBatch(
     const at = n + 1;
     if (!Number.isInteger(l.quantity) || l.quantity <= 0) throw new TransferValidationError(`Line ${at}: quantity must be a whole number ≥ 1.`);
     if (!Number.isInteger(l.variantIndex) || l.variantIndex < 0) throw new TransferValidationError(`Line ${at}: invalid variant.`);
+    if (batchId && already.has(`${batchId}-${at}`)) continue;
     const k = `${l.productId}#${l.variantIndex}`;
     const d = demand.get(k);
     demand.set(k, { need: (d?.need ?? 0) + l.quantity, at: d?.at ?? at });
@@ -138,10 +164,10 @@ export async function createTransferBatch(
   }
 
   const saved: StockTransferRecord[] = [];
-  for (const l of lines) {
+  for (const [n, l] of lines.entries()) {
     saved.push(
       await createTransfer({
-        id: genDocId("TRF"),
+        id: batchId ? `${batchId}-${n + 1}` : genDocId("TRF"),
         productId: l.productId,
         variantIndex: l.variantIndex,
         quantity: l.quantity,

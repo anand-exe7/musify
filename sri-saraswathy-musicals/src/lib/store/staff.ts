@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 
 export type StaffRole = "Admin" | "Manager" | "Cashier" | "Staff";
 
@@ -12,24 +13,13 @@ export interface Staff {
   branch?: string;
 }
 
-async function patchStaff(id: string, patch: Partial<Staff>, onError: () => void) {
-  try {
-    const res = await fetch(`/api/staff/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) throw new Error("save failed");
-  } catch {
-    alert("Couldn't save staff change. Reverting.");
-    onError();
-  }
-}
+const send = makeSender("the staff change");
 
 interface StaffState {
   staff: Staff[];
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   setRole: (id: string, role: StaffRole) => void;
   toggleActive: (id: string) => void;
 }
@@ -37,24 +27,27 @@ interface StaffState {
 export const useStaff = create<StaffState>()((set, get) => ({
   staff: [],
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
     try {
-      const res = await fetch("/api/staff");
-      if (!res.ok) return;
-      set({ staff: (await res.json()) as Staff[], hydrated: true });
-    } catch {
-      /* keep empty */
+      set({ staff: await fetchJson<Staff[]>("/api/staff"), hydrated: true, loadError: null });
+      return true;
+    } catch (e) {
+      set({ loadError: errMsg(e, "Couldn't load staff") });
+      return false;
     }
   },
   setRole: (id, role) => {
+    const prev = get().staff;
     set((s) => ({ staff: s.staff.map((u) => (u.id === id ? { ...u, role } : u)) }));
-    void patchStaff(id, { role }, get().hydrate);
+    void send(`/api/staff/${id}`, "PATCH", { role }, get().hydrate, () => set({ staff: prev }));
   },
   toggleActive: (id) => {
-    const current = get().staff.find((u) => u.id === id);
+    const prev = get().staff;
+    const current = prev.find((u) => u.id === id);
     const next = !current?.active;
     set((s) => ({ staff: s.staff.map((u) => (u.id === id ? { ...u, active: next } : u)) }));
-    void patchStaff(id, { active: next }, get().hydrate);
+    void send(`/api/staff/${id}`, "PATCH", { active: next }, get().hydrate, () => set({ staff: prev }));
   },
 }));
 

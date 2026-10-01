@@ -5,7 +5,7 @@
  */
 import crypto from "crypto";
 import Razorpay from "razorpay";
-import { HttpError } from "@/lib/api/http";
+import { HttpError } from "@/lib/api/errors";
 
 export function razorpayConfigured(): boolean {
   return Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);

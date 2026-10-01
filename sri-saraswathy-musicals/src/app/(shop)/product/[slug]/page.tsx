@@ -9,11 +9,12 @@ import { ProductCard } from "@/components/shop/ProductCard";
 import { useCart } from "@/lib/store/cart";
 import { formatINR, cn } from "@/lib/utils";
 import { variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
+import { BUSINESS } from "@/lib/data/business";
 import { Minus, Plus, ChevronRight, Truck, Award, Store, ShoppingBag, Check, X, ArrowRight } from "lucide-react";
 
 export default function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const { products, loading } = useProducts();
+  const { products, loading, error, refresh } = useProducts();
   const product = products.find((p) => p.slug === slug);
 
   const [qty, setQty] = useState(1);
@@ -66,6 +67,16 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
   if (loading) {
     return <div className="container-page py-32 text-center text-ink-400">Loading…</div>;
+  }
+  // A failed catalogue fetch is not a missing product — offer a retry instead of a 404.
+  if (!product && error) {
+    return (
+      <div className="container-page py-32 text-center">
+        <p className="heading-serif text-xl text-ink-700">We couldn&apos;t load this instrument.</p>
+        <p className="mt-2 text-sm text-ink-400">{error}</p>
+        <button onClick={refresh} className="btn-ghost mt-6">Try again</button>
+      </div>
+    );
   }
   if (!product) notFound();
 
@@ -229,6 +240,24 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
               <span className="text-danger">Currently unavailable</span>
             )}
           </div>
+
+          {/* Stock by store — of the selected variant. */}
+          {activeVariant?.stockByBranch && (
+            <ul className="mt-3 space-y-1 text-xs">
+              {BUSINESS.branches.map((b) => {
+                const n = activeVariant.stockByBranch?.[b.key as "Branch 1" | "Branch 2"] ?? 0;
+                return (
+                  <li key={b.key} className="flex items-center gap-2">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${n > 3 ? "bg-success" : n > 0 ? "bg-warning" : "bg-ink-300"}`} />
+                    <span className="text-ink-700">{b.city} · {b.area}</span>
+                    <span className={n > 0 ? "text-ink-500" : "text-ink-400"}>
+                      {n > 3 ? "In stock" : n > 0 ? `Only ${n} left` : "Out of stock"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           {/* Quantity + Add to cart — matched 48px-tall boxes */}
           <div className="mt-6 flex items-stretch gap-3">

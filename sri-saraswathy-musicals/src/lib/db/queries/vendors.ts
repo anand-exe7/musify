@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { vendors } from "@/lib/db/schema";
 import type { Vendor } from "@/types";
-import { row, rows, definedOnly } from "./_util";
+import { row, rows, definedOnly, isForeignKeyViolation } from "./_util";
+import { HttpError } from "@/lib/api/errors";
 
 export async function getVendors(): Promise<Vendor[]> {
   return rows<Vendor>(await db.select().from(vendors));
@@ -26,6 +27,13 @@ export async function updateVendor(id: string, patch: Partial<Vendor>): Promise<
 }
 
 export async function deleteVendor(id: string): Promise<boolean> {
-  const r = await db.delete(vendors).where(eq(vendors.id, id)).returning({ id: vendors.id });
-  return r.length > 0;
+  try {
+    const r = await db.delete(vendors).where(eq(vendors.id, id)).returning({ id: vendors.id });
+    return r.length > 0;
+  } catch (err) {
+    if (isForeignKeyViolation(err)) {
+      throw new HttpError(409, "This vendor has stock receipts on record, so it can't be deleted.");
+    }
+    throw err;
+  }
 }

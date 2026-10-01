@@ -6,6 +6,7 @@ import { inPeriod, type Period, type Source } from "@/lib/store/pos";
 import { useAllSales } from "@/lib/client/sales";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { ShoppingCart, Trash2, Download, ExternalLink, Eye } from "lucide-react";
 
 function fmtDate(iso: string) {
@@ -14,7 +15,7 @@ function fmtDate(iso: string) {
 }
 
 export default function OrdersPage() {
-  const { sales, loading } = useAllSales();
+  const { sales, loading, error: loadFailed, errorMessage } = useAllSales();
   const deleteBill = usePOS((s) => s.deleteBill);
 
   // Tax invoices keyed by the order/bill/ticket id they were raised for, so each
@@ -67,13 +68,7 @@ export default function OrdersPage() {
     const r2 = (paise: number) => (paise / 100).toFixed(2);
     const head = ["Invoice", "Customer", "Phone", "Type", "Branch", "Coupon", "Discount", "Delivery", "Total", "Date", "Status"];
     const body = rows.map((b) => [b.id, b.customerName, b.phone, b.source, b.branch, b.coupon ?? "", r2(b.discount), r2(b.delivery), r2(b.total), fmtDate(b.createdAt), b.status]);
-    const csv = [head, ...body].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `orders-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`orders-${Date.now()}.csv`, [head, ...body]);
   };
 
   const chip = (active: boolean) =>
@@ -198,7 +193,10 @@ export default function OrdersPage() {
                 </td>
               </tr>
             ))}
-            {!loading && rows.length === 0 && (
+            {!loading && loadFailed && (
+              <tr><td colSpan={12} className="px-5 py-10 text-center text-sm font-semibold text-danger">{errorMessage ?? "Couldn't load orders."} The list below may be incomplete — don&apos;t read it as &ldquo;no orders&rdquo;.</td></tr>
+            )}
+            {!loading && !loadFailed && rows.length === 0 && (
               <tr><td colSpan={12} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
             )}
           </tbody>

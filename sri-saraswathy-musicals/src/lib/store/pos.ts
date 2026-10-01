@@ -1,6 +1,9 @@
 "use client";
 import { create } from "zustand";
 import { genDocId } from "@/lib/ids";
+import { fetchJson, errMsg, readError, makeSender } from "@/lib/client/api";
+import { invalidateCatalog } from "@/lib/client/catalog";
+import { lineTax, allocateDiscount } from "@/lib/gst/inclusive";
 import {
   type Branch,
   type BranchFilter,
@@ -114,19 +117,7 @@ export interface Coupon {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-async function send(url: string, method: string, body: unknown, onError: () => void) {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: body ? JSON_HEADERS : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error("save failed");
-  } catch {
-    alert("Couldn't save the change. Reverting to the saved values.");
-    onError();
-  }
-}
+const send = makeSender("the change");
 
 interface POSState {
   bills: Bill[];
@@ -136,12 +127,17 @@ interface POSState {
   branch: BranchFilter;
   activeBranch: Branch; // branch a new POS bill is created for
   hydrated: boolean;
-  hydrate: () => Promise<void>;
+  /** Which slices failed to load, e.g. "coupons, bills" (null = all fine). A
+   *  failed slice keeps its last value but is reported, never shown as "empty". */
+  loadError: string | null;
+  hydrate: () => Promise<boolean>;
   setBranchFilter: (b: BranchFilter) => void;
   setActiveBranch: (b: Branch) => void;
   addBill: (b: Bill) => void;
   deleteBill: (id: string) => void;
-  updateProduct: (id: string, patch: Partial<InvProduct>) => void;
+  /** `stockChanges` are the stock figures the editor changed (what it saw → what it wants);
+   *  the server applies those as differences, so concurrent sales aren't overwritten. */
+  updateProduct: (id: string, patch: Partial<InvProduct>, stockChanges?: { variantIndex: number; branch: Branch; from: number; to: number }[]) => void;
   addProduct: (p: InvProduct) => void;
   deleteProduct: (id: string) => void;
   addCoupon: (c: Coupon) => void;
@@ -161,18 +157,34 @@ export const usePOS = create<POSState>()((set, get) => ({
   branch: "all",
   activeBranch: "Branch 1",
   hydrated: false,
+  loadError: null,
   hydrate: async () => {
-    try {
-      const [bills, invProducts, coupons, categories] = await Promise.all([
-        fetch("/api/pos/bills").then((r) => (r.ok ? r.json() : [])),
-        fetch("/api/pos/inventory").then((r) => (r.ok ? r.json() : [])),
-        fetch("/api/pos/coupons").then((r) => (r.ok ? r.json() : [])),
-        fetch("/api/pos/categories").then((r) => (r.ok ? r.json() : [])),
-      ]);
-      set({ bills, invProducts, coupons, categories, hydrated: true });
-    } catch {
-      /* keep empty */
-    }
+    const [bills, invProducts, coupons, categories] = await Promise.allSettled([
+      fetchJson<Bill[]>("/api/pos/bills"),
+      fetchJson<InvProduct[]>("/api/pos/inventory"),
+      fetchJson<Coupon[]>("/api/pos/coupons"),
+      fetchJson<string[]>("/api/pos/categories"),
+    ]);
+    // Apply whichever slices loaded; name the ones that didn't.
+    const patch: Partial<POSState> = {};
+    const failed: string[] = [];
+    const take = <K extends "bills" | "invProducts" | "coupons" | "categories">(
+      key: K,
+      label: string,
+      r: PromiseSettledResult<POSState[K]>,
+    ) => {
+      if (r.status === "fulfilled") patch[key] = r.value as never;
+      else failed.push(`${label} (${errMsg(r.reason)})`);
+    };
+    take("bills", "bills", bills);
+    take("invProducts", "inventory", invProducts);
+    take("coupons", "coupons", coupons);
+    take("categories", "categories", categories);
+    set({ ...patch, hydrated: failed.length === 0, loadError: failed.length ? `Couldn't load ${failed.join(", ")}` : null });
+    // Stock inward/transfers and every edit end in a re-hydrate, so this is also
+    // where the storefront's cached catalogue is thrown away.
+    if (invProducts.status === "fulfilled") invalidateCatalog();
+    return failed.length === 0;
   },
 
   // Branch selectors are local UI state only.
@@ -180,71 +192,88 @@ export const usePOS = create<POSState>()((set, get) => ({
   setActiveBranch: (b) => set({ activeBranch: b }),
 
   addBill: (b) => {
+    const prev = get().bills;
     set((s) => ({ bills: [b, ...s.bills] }));
-    void send("/api/pos/bills", "POST", b, get().hydrate);
+    void send("/api/pos/bills", "POST", b, get().hydrate, () => set({ bills: prev }));
   },
   deleteBill: (id) => {
+    const prev = get().bills;
     set((s) => ({ bills: s.bills.filter((x) => x.id !== id) }));
-    void send(`/api/pos/bills/${id}`, "DELETE", null, get().hydrate);
+    void send(`/api/pos/bills/${id}`, "DELETE", null, get().hydrate, () => set({ bills: prev }));
   },
 
-  updateProduct: (id, patch) => {
+  updateProduct: (id, patch, stockChanges) => {
+    const prev = get().invProducts;
     set((s) => ({ invProducts: s.invProducts.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
-    void send(`/api/pos/inventory/${id}`, "PATCH", patch, get().hydrate);
+    void send(`/api/pos/inventory/${id}`, "PATCH", stockChanges ? { ...patch, stockChanges } : patch, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && invalidateCatalog());
   },
   addProduct: (p) => {
+    const prev = get().invProducts;
     set((s) => ({ invProducts: [p, ...s.invProducts] }));
-    void send("/api/pos/inventory", "POST", p, get().hydrate);
+    void send("/api/pos/inventory", "POST", p, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && invalidateCatalog());
   },
   deleteProduct: (id) => {
+    const prev = get().invProducts;
     set((s) => ({ invProducts: s.invProducts.filter((p) => p.id !== id) }));
-    void send(`/api/pos/inventory/${id}`, "DELETE", null, get().hydrate);
+    void send(`/api/pos/inventory/${id}`, "DELETE", null, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && invalidateCatalog());
   },
 
   addCoupon: (c) => {
+    const prev = get().coupons;
     set((s) => ({ coupons: [c, ...s.coupons.filter((x) => x.code !== c.code)] }));
-    void send("/api/pos/coupons", "POST", c, get().hydrate);
+    void send("/api/pos/coupons", "POST", c, get().hydrate, () => set({ coupons: prev }));
   },
   updateCoupon: (code, patch) => {
+    const prev = get().coupons;
     set((s) => ({ coupons: s.coupons.map((c) => (c.code === code ? { ...c, ...patch } : c)) }));
-    void send(`/api/pos/coupons/${encodeURIComponent(code)}`, "PATCH", patch, get().hydrate);
+    void send(`/api/pos/coupons/${encodeURIComponent(code)}`, "PATCH", patch, get().hydrate, () => set({ coupons: prev }));
   },
   deleteCoupon: (code) => {
+    const prev = get().coupons;
     set((s) => ({ coupons: s.coupons.filter((c) => c.code !== code) }));
-    void send(`/api/pos/coupons/${encodeURIComponent(code)}`, "DELETE", null, get().hydrate);
+    void send(`/api/pos/coupons/${encodeURIComponent(code)}`, "DELETE", null, get().hydrate, () => set({ coupons: prev }));
   },
 
   addCategory: (name) => {
     if (get().categories.includes(name)) return;
+    const prev = get().categories;
     set((s) => ({ categories: [...s.categories, name] }));
-    void send("/api/pos/categories", "POST", { name }, get().hydrate);
+    void send("/api/pos/categories", "POST", { name }, get().hydrate, () => set({ categories: prev }));
   },
   renameCategory: (from, to) => {
+    const prevCategories = get().categories;
+    const prevProducts = get().invProducts;
     set((s) => ({
       categories: s.categories.map((c) => (c === from ? to : c)),
       invProducts: s.invProducts.map((p) => (p.category === from ? { ...p, category: to } : p)),
     }));
     const affected = get().invProducts.filter((p) => p.category === to);
     void (async () => {
+      // Every step must succeed — a refused PATCH used to pass silently and
+      // leave the database on the old category while the screen showed the new.
+      const must = async (res: Response) => {
+        if (!res.ok) throw new Error(await readError(res, "Request failed"));
+      };
       try {
-        let res = await fetch("/api/pos/categories", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: to }) });
-        if (!res.ok) throw new Error();
-        await Promise.all(
+        await must(await fetch("/api/pos/categories", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: to }) }));
+        const results = await Promise.all(
           affected.map((p) =>
             fetch(`/api/pos/inventory/${p.id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ category: to }) }),
           ),
         );
-        res = await fetch(`/api/pos/categories/${encodeURIComponent(from)}`, { method: "DELETE" });
-        if (!res.ok) throw new Error();
-      } catch {
-        alert("Couldn't rename the category. Reverting to the saved values.");
-        void get().hydrate();
+        for (const r of results) await must(r);
+        await must(await fetch(`/api/pos/categories/${encodeURIComponent(from)}`, { method: "DELETE" }));
+        invalidateCatalog();
+      } catch (err) {
+        alert(`Couldn't rename the category: ${errMsg(err)}. Reverting to the saved values.`);
+        if (!(await get().hydrate())) set({ categories: prevCategories, invProducts: prevProducts });
       }
     })();
   },
   deleteCategory: (name) => {
+    const prev = get().categories;
     set((s) => ({ categories: s.categories.filter((c) => c !== name) }));
-    void send(`/api/pos/categories/${encodeURIComponent(name)}`, "DELETE", null, get().hydrate);
+    void send(`/api/pos/categories/${encodeURIComponent(name)}`, "DELETE", null, get().hydrate, () => set({ categories: prev }));
   },
 
   resetDemo: () => void get().hydrate(),
@@ -327,17 +356,8 @@ export function genInvoiceId(): string {
 
 /* ─────────────────────────────  GST maths  ──────────────────────────── */
 
-/**
- * Split a **GST-inclusive** line amount into its taxable value and the tax it
- * already contains. e.g. ₹1180 @ 18% → { taxable: 1000, tax: 180 }. A rate of
- * 0 / null (a non-GST line) yields all-taxable, zero tax. Whole rupees.
- */
-export function lineTax(amount: number, rate?: number | null): { taxable: number; tax: number } {
-  const r = Number(rate) || 0;
-  if (r <= 0) return { taxable: Math.round(amount), tax: 0 };
-  const taxable = Math.round(amount / (1 + r / 100));
-  return { taxable, tax: Math.round(amount) - taxable };
-}
+// The inclusive-GST primitives live in a pure module shared with the web checkout.
+export { lineTax };
 
 export interface BillTax {
   taxable: number; // GST-inclusive taxable value of taxed lines
@@ -350,15 +370,21 @@ export interface BillTax {
 /**
  * Aggregate the GST contained in a bill's lines. When `gstEnabled` is false the
  * whole bill is untaxed. Intra-state (home branch) split: CGST = SGST = tax/2.
+ *
+ * `billDiscount` is the bill-level discount (coupon + manual) in paise. It is
+ * spread across the lines and taken off BEFORE tax is extracted, so the tax
+ * recorded is the tax actually contained in what the customer pays.
  */
-export function billTax(items: BillItem[], gstEnabled: boolean): BillTax {
+export function billTax(items: BillItem[], gstEnabled: boolean, billDiscount = 0): BillTax {
   const byRate: Record<number, { taxable: number; tax: number }> = {};
   let taxable = 0;
   let tax = 0;
   if (gstEnabled) {
-    for (const it of items) {
+    const nets = items.map((it) => Math.max(0, it.price * it.qty - (it.discount || 0)));
+    const shares = allocateDiscount(nets, billDiscount);
+    for (const [i, it] of items.entries()) {
       const rate = Number(it.gstRate) || 0;
-      const { taxable: tv, tax: tx } = lineTax(Math.max(0, it.price * it.qty - (it.discount || 0)), rate);
+      const { taxable: tv, tax: tx } = lineTax(nets[i] - shares[i], rate);
       if (rate > 0) {
         taxable += tv;
         tax += tx;

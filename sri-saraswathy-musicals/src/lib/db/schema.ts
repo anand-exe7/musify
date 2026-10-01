@@ -23,7 +23,26 @@ import {
   boolean,
   doublePrecision,
   jsonb,
+  check,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  oneOf,
+  BRANCHES,
+  INQUIRY_BRANCHES,
+  USER_ROLES,
+  STAFF_ROLES,
+  ORDER_STATUSES,
+  INVOICE_STATUSES,
+  INVOICE_SOURCES,
+  BILL_STATUSES,
+  BILL_SOURCES,
+  REPAIR_STATUSES,
+  REPAIR_PRIORITIES,
+  PAYMENT_MODES,
+  INQUIRY_STATUSES,
+} from "./vocab";
 
 /* ─────────────────────────────  Catalog  ───────────────────────────── */
 
@@ -125,13 +144,18 @@ export const users = pgTable("users", {
     .$type<{ billing: boolean; inventory: boolean; analytics: boolean; users: boolean }>()
     .notNull()
     .default({ billing: false, inventory: false, analytics: false, users: false }),
-});
+}, (t) => [
+  check("users_role_check", oneOf(t.role, USER_ROLES)),
+  check("users_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 /** Saved delivery addresses for a customer account. */
 export const userAddresses = pgTable("user_addresses", {
   id: text("id").primaryKey(),
   /** The customer who owns this address (users.id). */
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   phone: text("phone").notNull().default(""),
   /** Label: "home", "office", or custom free text. */
@@ -153,7 +177,10 @@ export const staff = pgTable("staff", {
   role: text("role").notNull(),
   active: boolean("active").notNull().default(true),
   branch: text("branch"),
-});
+}, (t) => [
+  check("staff_role_check", oneOf(t.role, STAFF_ROLES)),
+  check("staff_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 /* ─────────────────────────────  Commerce  ──────────────────────────── */
 
@@ -162,7 +189,7 @@ export const orders = pgTable("orders", {
   date: text("date").notNull(),
   status: text("status").notNull(),
   /** The signed-in customer who placed the order (users.id). */
-  userId: text("user_id"),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   customerName: text("customer_name").notNull().default(""),
   email: text("email").notNull().default(""),
   phone: text("phone").notNull().default(""),
@@ -173,16 +200,39 @@ export const orders = pgTable("orders", {
   shipState: text("ship_state").notNull().default(""),
   /** Fulfilling branch the customer chose at checkout. */
   branch: text("branch").notNull().default("Branch 1"),
+  /** `price` is the GST-inclusive unit price; `gstRate` the rate snapshotted at
+   *  order time (0 = exempt). Orders placed before the inclusive model may lack it. */
   items: jsonb("items")
-    .$type<{ productId: string; quantity: number; price: number }[]>()
+    .$type<
+      {
+        productId: string;
+        variantKey?: string;
+        variantLabel?: string;
+        quantity: number;
+        price: number;
+        gstRate?: number;
+      }[]
+    >()
     .notNull()
     .default([]),
+  /** Goods total before the coupon, GST-inclusive. */
   subtotal: integer("subtotal").notNull().default(0),
+  /** Coupon discount in paise, and the code that earned it. */
+  discount: integer("discount").notNull().default(0),
+  couponCode: text("coupon_code"),
+  /** GST *contained* in the goods total (inclusive model). */
   gst: integer("gst").notNull().default(0),
   shipping: integer("shipping").notNull().default(0),
+  /** subtotal − discount + shipping. */
   total: integer("total").notNull().default(0),
   address: text("address").notNull().default(""),
-});
+}, (t) => [
+  check("orders_status_check", oneOf(t.status, ORDER_STATUSES)),
+  check("orders_branch_check", oneOf(t.branch, BRANCHES)),
+  // One order per online payment. Cash-on-delivery orders carry an empty
+  // payment id, so they are excluded from the constraint.
+  uniqueIndex("orders_payment_id_unique").on(t.paymentId).where(sql`${t.paymentId} <> ''`),
+]);
 
 /** GST sales invoices (see `data/invoices.ts`). */
 export const invoices = pgTable("invoices", {
@@ -209,7 +259,11 @@ export const invoices = pgTable("invoices", {
   refId: text("ref_id").notNull().default(""),
   /** Buyer's GSTIN — optional, shown under "Billed To" when present. */
   customerGstin: text("customer_gstin"),
-});
+}, (t) => [
+  check("invoices_status_check", oneOf(t.status, INVOICE_STATUSES)),
+  check("invoices_source_check", oneOf(t.source, INVOICE_SOURCES)),
+  check("invoices_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 export const vendors = pgTable("vendors", {
   id: text("id").primaryKey(),
@@ -233,8 +287,12 @@ export const vendors = pgTable("vendors", {
  */
 export const stockInward = pgTable("stock_inward", {
   id: text("id").primaryKey(),
-  vendorId: text("vendor_id").notNull(),
-  productId: text("product_id").notNull(),
+  vendorId: text("vendor_id")
+    .notNull()
+    .references(() => vendors.id, { onDelete: "restrict" }),
+  productId: text("product_id")
+    .notNull()
+    .references(() => products.id, { onDelete: "restrict" }),
   productName: text("product_name").notNull().default(""),
   variant: text("variant").notNull().default(""),
   quantity: integer("quantity").notNull().default(0),
@@ -242,7 +300,9 @@ export const stockInward = pgTable("stock_inward", {
   branch: text("branch").notNull(),
   createdBy: text("created_by").notNull().default(""),
   inwardAt: text("inward_at").notNull(),
-});
+}, (t) => [
+  check("stock_inward_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 /**
  * Inter-branch stock movement (Phase 4). Each row records one variant leaving
@@ -251,7 +311,9 @@ export const stockInward = pgTable("stock_inward", {
  */
 export const stockTransfers = pgTable("stock_transfers", {
   id: text("id").primaryKey(),
-  productId: text("product_id").notNull(),
+  productId: text("product_id")
+    .notNull()
+    .references(() => products.id, { onDelete: "restrict" }),
   productName: text("product_name").notNull().default(""),
   variant: text("variant").notNull().default(""),
   quantity: integer("quantity").notNull().default(0),
@@ -260,7 +322,10 @@ export const stockTransfers = pgTable("stock_transfers", {
   note: text("note").notNull().default(""),
   createdBy: text("created_by").notNull().default(""),
   transferredAt: text("transferred_at").notNull(),
-});
+}, (t) => [
+  check("stock_transfers_from_branch_check", oneOf(t.fromBranch, BRANCHES)),
+  check("stock_transfers_to_branch_check", oneOf(t.toBranch, BRANCHES)),
+]);
 
 /**
  * Physical shop branches. The primary key is the branch *key* ("Branch 1" /
@@ -312,7 +377,11 @@ export const posBills = pgTable("pos_bills", {
   gst: integer("gst").notNull().default(0),
   status: text("status").notNull(),
   payment: text("payment"),
-});
+}, (t) => [
+  check("pos_bills_status_check", oneOf(t.status, BILL_STATUSES)),
+  check("pos_bills_source_check", oneOf(t.source, BILL_SOURCES)),
+  check("pos_bills_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 export const coupons = pgTable("coupons", {
   code: text("code").primaryKey(),
@@ -359,7 +428,11 @@ export const repairTickets = pgTable("repair_tickets", {
   whatsappSentAt: text("whatsapp_sent_at"),
   completedAt: text("completed_at"),
   invoiceNo: text("invoice_no"),
-});
+}, (t) => [
+  check("repair_tickets_status_check", oneOf(t.status, REPAIR_STATUSES)),
+  check("repair_tickets_priority_check", oneOf(t.priority, REPAIR_PRIORITIES)),
+  check("repair_tickets_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 /**
  * Shop expenditures (rent, salaries, stock purchases, utilities …). Money is
@@ -378,7 +451,10 @@ export const expenses = pgTable("expenses", {
   expenseDate: text("expense_date").notNull(),
   createdAt: text("created_at").notNull(),
   branch: text("branch").notNull(),
-});
+}, (t) => [
+  check("expenses_payment_mode_check", oneOf(t.paymentMode, PAYMENT_MODES)),
+  check("expenses_branch_check", oneOf(t.branch, BRANCHES)),
+]);
 
 export const inquiries = pgTable("inquiries", {
   id: text("id").primaryKey(),
@@ -391,7 +467,10 @@ export const inquiries = pgTable("inquiries", {
   message: text("message").notNull().default(""),
   status: text("status").notNull().default("new"),
   branch: text("branch"),
-});
+}, (t) => [
+  check("inquiries_status_check", oneOf(t.status, INQUIRY_STATUSES)),
+  check("inquiries_branch_check", oneOf(t.branch, INQUIRY_BRANCHES)),
+]);
 
 /* ─────────────────────────  Settings (config)  ─────────────────────── */
 
