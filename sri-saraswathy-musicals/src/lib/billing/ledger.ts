@@ -90,6 +90,8 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
         rate: it.price,
         gst: rateOf(it),
         amount: taxed.lines[n].net,
+        mrp: Math.max(p?.mrp || 0, it.price),
+        discount: Math.max(0, it.price * it.quantity - taxed.lines[n].net) || undefined,
       };
     });
 
@@ -101,7 +103,7 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
       customer: order.customerName || "Online customer",
       branch: order.branch ?? "Branch 1",
       items,
-      subtotal: order.total - taxed.totals.tax,
+      subtotal: order.total - (order.shipping || 0) - taxed.totals.tax,
       cgst: taxed.totals.cgst,
       sgst: taxed.totals.sgst,
       igst: taxed.totals.igst,
@@ -110,6 +112,8 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
       status: order.paymentMethod === "cod" ? "pending" : "paid",
       source: "web",
       refId: order.id,
+      customerPhone: order.phone || null,
+      delivery: order.shipping || 0,
     });
   } catch (err) {
     console.error("[ledger] recordOrderInvoice failed:", err);
@@ -134,7 +138,11 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
     const gstTotal = taxed ? Math.round(bill.gst ?? 0) : 0;
     const cgst = taxed ? Math.round(bill.cgst ?? gstTotal / 2) : 0;
     const sgst = taxed ? Math.round(bill.sgst ?? gstTotal - Math.round(gstTotal / 2)) : 0;
-    const taxable = bill.total - gstTotal;
+    const delivery = Math.max(0, Math.round(bill.delivery || 0));
+    const taxable = bill.total - delivery - gstTotal;
+    // Overall discount (coupon + manual ₹/%) = bill.discount minus the per-line ones.
+    const itemDiscounts = bill.items.reduce((n, i) => n + Math.min(i.price * i.qty, i.discount || 0), 0);
+    const overall = Math.max(0, Math.round((bill.discount || 0) - itemDiscounts));
     const items = bill.items.map((i) => ({
       name: i.name,
       hsn: i.hsn || "-",
@@ -142,6 +150,9 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       rate: i.price,
       gst: taxed ? Number(i.gstRate) || 0 : 0,
       amount: Math.max(0, i.price * i.qty - (i.discount || 0)),
+      mrp: Math.max(i.mrp || 0, i.price),
+      discount: i.discount || undefined,
+      instruction: i.instruction?.trim() || undefined,
     }));
 
     const number = await nextInvoiceNumber(bill.createdAt);
@@ -162,6 +173,9 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       source: "pos",
       refId: bill.id,
       customerGstin: bill.customerGstin || null,
+      customerPhone: bill.phone || null,
+      delivery,
+      discount: overall,
     });
   } catch (err) {
     console.error("[ledger] recordBillInvoice failed:", err);
@@ -217,6 +231,7 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
       source: "service",
       refId: t.id,
       customerGstin: t.customerGstin || null,
+      customerPhone: t.phone || null,
     });
   } catch (err) {
     console.error("[ledger] recordServiceInvoice failed:", err);

@@ -45,6 +45,11 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
   const isBillOfSupply = totalTax === 0;
   const intra = (invoice.igst ?? 0) === 0;
   const branch = branchInfo(invoice.branch);
+  const overall = invoice.discount ?? 0;
+  const itemsTotal = invoice.items.reduce((n, l) => n + l.amount, 0);
+  const showDiscount = invoice.items.some((l) => (l.discount ?? 0) > 0);
+  // Total saved vs MRP (falls back to the unit rate when no MRP was recorded).
+  const saved = invoice.items.reduce((n, l) => n + Math.max(0, Math.max(l.mrp ?? 0, l.rate) * l.qty - l.amount), 0) + overall;
 
   return (
     <div id="invoice-sheet" className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
@@ -86,11 +91,13 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
           <div className="rounded-xl border border-ink-100 bg-ivory-50/60 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Billed To</p>
             <p className="mt-2 text-base font-semibold text-ink-900">{invoice.customer || "Customer"}</p>
+            {invoice.customerPhone && <p className="mt-1 text-sm text-ink-600">Phone <span className="font-semibold text-ink-800">{invoice.customerPhone}</span></p>}
             {invoice.customerGstin && <p className="mt-1 text-sm text-ink-600">GSTIN <span className="font-semibold tracking-wide text-ink-800">{invoice.customerGstin}</span></p>}
           </div>
           <div className="rounded-xl border border-ink-100 bg-ivory-50/60 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Seller</p>
             <p className="mt-2 text-base font-semibold text-ink-900">{BUSINESS.name}</p>
+            <p className="text-sm font-semibold text-gold-600">{branch.area} Branch</p>
             <p className="text-sm text-ink-600">{branch.street}</p>
             <p className="text-sm text-ink-600">{branch.zip}</p>
             <p className="text-sm text-ink-600">{branch.phone}</p>
@@ -99,14 +106,17 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
 
         {/* Line items */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
             <thead>
               <tr className="bg-ink-900 text-ivory-50 [&>th]:py-3 [&>th]:text-[10px] [&>th]:font-bold [&>th]:uppercase [&>th]:tracking-[0.12em]">
                 <th className="rounded-l-lg pl-4 pr-3 text-left">Description</th>
+                <th className="px-3 text-left">Delivery instruction</th>
                 <th className="px-3 text-center">HSN</th>
                 {!isBillOfSupply && <th className="px-3 text-center">GST</th>}
+                <th className="px-3 text-right">MRP</th>
                 <th className="px-3 text-center">Qty</th>
                 <th className="px-3 text-right">Rate</th>
+                {showDiscount && <th className="px-3 text-right">Discount</th>}
                 <th className="rounded-r-lg pl-3 pr-4 text-right">Amount</th>
               </tr>
             </thead>
@@ -116,12 +126,24 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
                   <td className="pl-4 pr-3">
                     <p className="font-semibold text-ink-900">{l.name}</p>
                   </td>
+                  <td className="px-3 text-left text-xs text-ink-700">{l.instruction || "—"}</td>
                   <td className="px-3 text-center text-ink-600">{l.hsn || "-"}</td>
                   {!isBillOfSupply && (
                     <td className="px-3 text-center tabular-nums text-ink-600">{l.gst > 0 ? `${l.gst}%` : "—"}</td>
                   )}
+                  <td className="px-3 text-right tabular-nums text-ink-500">{formatINR(Math.max(l.mrp ?? 0, l.rate))}</td>
                   <td className="px-3 text-center tabular-nums text-ink-700">{l.qty}</td>
                   <td className="px-3 text-right tabular-nums text-ink-700">{formatINR(l.rate)}</td>
+                  {showDiscount && (
+                    <td className="px-3 text-right tabular-nums text-ink-700">
+                      {l.discount ? (
+                        <>
+                          {formatINR(l.discount)}
+                          <span className="block text-[10px] text-ink-400">({+((l.discount / (l.rate * l.qty || 1)) * 100).toFixed(2)}%)</span>
+                        </>
+                      ) : "—"}
+                    </td>
+                  )}
                   <td className="pl-3 pr-4 text-right font-semibold tabular-nums text-ink-900">{formatINR(l.amount)}</td>
                 </tr>
               ))}
@@ -136,7 +158,13 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
             <p className="mt-1.5 text-sm font-medium italic leading-relaxed text-ink-700">{amountInWords(invoice.total)}</p>
           </div>
           <dl className="w-full space-y-2 text-sm sm:max-w-xs">
-            <div className="flex justify-between px-3 text-ink-600"><dt>Subtotal</dt><dd className="tabular-nums">{formatINR(invoice.subtotal)}</dd></div>
+            {overall > 0 && (
+              <>
+                <div className="flex justify-between px-3 text-ink-600"><dt>Items total (incl. GST)</dt><dd className="tabular-nums">{formatINR(itemsTotal)}</dd></div>
+                <div className="flex justify-between px-3 text-success"><dt>Overall discount</dt><dd className="tabular-nums">- {formatINR(overall)}</dd></div>
+              </>
+            )}
+            <div className="flex justify-between px-3 text-ink-600"><dt>{overall > 0 ? "Taxable value" : "Subtotal"}</dt><dd className="tabular-nums">{formatINR(invoice.subtotal)}</dd></div>
             {!isBillOfSupply && (
               intra ? (
                 <>
@@ -147,8 +175,16 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
                 <div className="flex justify-between px-3 text-ink-600"><dt>IGST</dt><dd className="tabular-nums">{formatINR(invoice.igst ?? 0)}</dd></div>
               )
             )}
+            {(invoice.delivery ?? 0) > 0 && <div className="flex justify-between px-3 text-ink-600"><dt>Delivery charges</dt><dd className="tabular-nums">{formatINR(invoice.delivery ?? 0)}</dd></div>}
             <div className="mt-1 flex justify-between rounded-lg bg-ink-900 px-3 py-2.5 text-base font-bold text-ivory-50"><dt>Total</dt><dd className="tabular-nums">{formatINR(invoice.total)}</dd></div>
+            {saved > 0 && <div className="flex justify-between px-3 text-success"><dt>You saved</dt><dd className="tabular-nums">{formatINR(saved)}</dd></div>}
           </dl>
+        </div>
+
+        {/* Terms */}
+        <div className="mt-7 rounded-xl border border-ink-100 bg-ivory-50/60 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Terms and conditions</p>
+          <p className="mt-1.5 text-sm text-ink-700">Goods once sold cannot be taken back or exchanged.</p>
         </div>
 
         {/* Footer */}

@@ -8,10 +8,10 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 
 const DEPTS = ["Indian", "Western", "Unisex"];
 
-function blankProduct(): InvProduct {
+function blankProduct(name = ""): InvProduct {
   return {
     id: `p${Date.now()}`,
-    name: "",
+    name,
     slug: "",
     brand: "",
     origin: "indian",
@@ -50,7 +50,18 @@ const GST_RATES: { label: string; value: number | null }[] = [
   { label: "28%", value: 28 },
 ];
 
-export function ProductModal({ product, onClose }: { product: InvProduct | null; onClose: () => void }) {
+export function ProductModal({
+  product,
+  onClose,
+  onCreated,
+  initialName,
+}: {
+  product: InvProduct | null;
+  onClose: () => void;
+  /** Called with the new product right after it is created (e.g. to add it to a stock receipt). */
+  onCreated?: (p: InvProduct) => void;
+  initialName?: string;
+}) {
   const addProduct = usePOS((s) => s.addProduct);
   const updateProduct = usePOS((s) => s.updateProduct);
   const CATEGORIES = usePOS((s) => s.categories);
@@ -59,7 +70,8 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   const isAdmin = useAuth((s) => s.isAdmin);
   const priceLocked = !isAdmin;
   const isNew = !product;
-  const [draft, setDraft] = useState<InvProduct>(product ? structuredClone(product) : blankProduct());
+  const [draft, setDraft] = useState<InvProduct>(product ? structuredClone(product) : blankProduct(initialName));
+  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const set = (patch: Partial<InvProduct>) => setDraft((d) => ({ ...d, ...patch }));
@@ -82,6 +94,11 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
   };
 
   const save = () => {
+    // HSN/SAC is mandatory when creating a product (needed on every GST invoice).
+    if (isNew && !/^\d{4,8}$/.test((draft.hsn ?? "").trim())) {
+      setError("HSN / SAC code is required — enter 4 to 8 digits.");
+      return;
+    }
     const name = draft.name.trim() || "Untitled product";
     const photos = draft.photos && draft.photos.length > 0 ? draft.photos : draft.photo ? [draft.photo] : [];
     const clean: InvProduct = {
@@ -89,13 +106,21 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
       name,
       slug: (draft.slug?.trim() || slugify(name)) || draft.id,
       basePrice: Number(draft.basePrice) || 0,
+      hsn: (draft.hsn ?? "").trim(),
+      // New products start at 0 — stock comes in through Stock Inward so the vendor is recorded.
+      variants: isNew
+        ? draft.variants.map((v) => ({ ...v, stock: 0, stockByBranch: { "Branch 1": 0, "Branch 2": 0 } }))
+        : draft.variants,
       isGstApplicable: draft.gstRate != null,
       photos,
       images: draft.images ?? [],
       specs: (draft.specs ?? []).filter((s) => s.label.trim() || s.value.trim()),
       features: (draft.features ?? []).filter((f) => f.trim()),
     };
-    if (isNew) addProduct(clean);
+    if (isNew) {
+      addProduct(clean);
+      onCreated?.(clean);
+    }
     else {
       // Send only the stock figures that were actually edited (what the form
       // showed → what was typed), not the whole stock picture.
@@ -210,8 +235,8 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
                   </select>
                 </div>
                 <div>
-                  <label className={label}>HSN / SAC Code</label>
-                  <input value={draft.hsn ?? ""} onChange={(e) => set({ hsn: e.target.value })} className={field} placeholder="e.g. 9207" />
+                  <label className={label}>HSN / SAC Code{isNew && <span className="text-danger"> *</span>}</label>
+                  <input value={draft.hsn ?? ""} onChange={(e) => { set({ hsn: e.target.value.replace(/\D/g, "").slice(0, 8) }); setError(null); }} inputMode="numeric" required={isNew} aria-invalid={!!error} className={cn(field, error && "border-danger")} placeholder="e.g. 9207" />
                 </div>
               </div>
               <p className="mt-1.5 text-[11px] text-ink-400">
@@ -321,18 +346,20 @@ export function ProductModal({ product, onClose }: { product: InvProduct | null;
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><div className="flex gap-1">{(["Branch 1", "Branch 2"] as const).map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${b}`} title={b} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" />))}</div></td>
+                      <td className="pr-2"><div className="flex gap-1">{(["Branch 1", "Branch 2"] as const).map((b) => (<input key={b} type="number" min={0} disabled={isNew} aria-label={`Stock at ${b}`} title={isNew ? "Receive opening stock via Stock Inward (records the vendor)" : b} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {isNew && <p className="mt-2 text-[11px] text-ink-400">Opening stock isn&apos;t entered here — receive it on the <strong>Stock Inward</strong> page so the vendor and cost are recorded.</p>}
           </div>
         </div>
 
         {/* footer */}
-        <div className="flex justify-end gap-2 border-t border-ink-100 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-ink-100 px-6 py-4">
+          {error && <p className="mr-auto text-sm font-medium text-danger">{error}</p>}
           <button onClick={onClose} className="rounded-xl border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
           <button onClick={save} className="rounded-xl bg-ink-900 px-5 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800">{isNew ? "Create Product" : "Save Changes"}</button>
         </div>

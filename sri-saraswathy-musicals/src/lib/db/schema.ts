@@ -242,7 +242,7 @@ export const invoices = pgTable("invoices", {
   customer: text("customer").notNull(),
   branch: text("branch").notNull(),
   items: jsonb("items")
-    .$type<{ name: string; hsn: string; qty: number; rate: number; gst: number; amount: number }[]>()
+    .$type<{ name: string; hsn: string; qty: number; rate: number; gst: number; amount: number; mrp?: number; discount?: number; instruction?: string }[]>()
     .notNull()
     .default([]),
   subtotal: integer("subtotal").notNull().default(0),
@@ -259,6 +259,12 @@ export const invoices = pgTable("invoices", {
   refId: text("ref_id").notNull().default(""),
   /** Buyer's GSTIN — optional, shown under "Billed To" when present. */
   customerGstin: text("customer_gstin"),
+  /** Buyer's phone — shown under "Billed To". */
+  customerPhone: text("customer_phone"),
+  /** Delivery / shipping charge in paise (untaxed here) — included in `total`, not in `subtotal`. */
+  /** Bill-level discount in paise (coupon + manual ₹/%), on top of the per-line discounts. */
+  discount: integer("discount").notNull().default(0),
+  delivery: integer("delivery").notNull().default(0),
 }, (t) => [
   check("invoices_status_check", oneOf(t.status, INVOICE_STATUSES)),
   check("invoices_source_check", oneOf(t.source, INVOICE_SOURCES)),
@@ -360,7 +366,7 @@ export const posBills = pgTable("pos_bills", {
     // `gstRate` is the rate (%) snapshotted onto the line at bill time — so a
     // later change to the product's default rate never rewrites history. `null`
     // / absent means the line was billed as non-GST.
-    .$type<{ name: string; price: number; qty: number; gstRate?: number | null; hsn?: string; discount?: number; productId?: string; variantIndex?: number }[]>()
+    .$type<{ name: string; price: number; qty: number; gstRate?: number | null; hsn?: string; mrp?: number; discount?: number; instruction?: string; productId?: string; variantIndex?: number }[]>()
     .notNull()
     .default([]),
   subtotal: integer("subtotal").notNull().default(0),

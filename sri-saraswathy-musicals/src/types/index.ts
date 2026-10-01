@@ -99,7 +99,8 @@ export interface Invoice {
   date: string;
   customer: string;
   branch: "Branch 1" | "Branch 2";
-  items: { name: string; hsn: string; qty: number; rate: number; gst: number; amount: number }[];
+  /** `rate` is the GST-inclusive unit price; `mrp` the unit MRP and `discount` the line discount, both paise (optional on older invoices). */
+  items: { name: string; hsn: string; qty: number; rate: number; gst: number; amount: number; mrp?: number; discount?: number; instruction?: string }[];
   subtotal: number;
   cgst: number;
   sgst: number;
@@ -114,6 +115,12 @@ export interface Invoice {
   refId?: string;
   /** Buyer's GSTIN (optional). */
   customerGstin?: string | null;
+  /** Buyer's phone (optional). */
+  customerPhone?: string | null;
+  /** Delivery / shipping charge (paise); part of `total`, excluded from `subtotal`. */
+  delivery?: number;
+  /** Overall (bill-level) discount in paise, separate from per-line `items[].discount`. */
+  discount?: number;
 }
 
 export interface User {

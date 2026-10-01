@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "delivery" integer DEFAULT 0 NOT NULL;

@@ -27,6 +27,10 @@ export interface BillItem {
   /** GST rate (%) snapshotted at bill time. `null`/absent ⇒ line billed non-GST. */
   gstRate?: number | null;
   hsn?: string;
+  /** Catalog MRP per unit in paise (printed on the invoice when above `price`). */
+  mrp?: number;
+  /** Delivery instruction for this line (e.g. serial number) — printed on the invoice. */
+  instruction?: string;
   /** Per-line discount in paise (off `price * qty`); GST is computed on the net. */
   discount?: number;
   /** Set when the line was picked from the catalog — enables server-side stock
@@ -194,12 +198,14 @@ export const usePOS = create<POSState>()((set, get) => ({
   addBill: (b) => {
     const prev = get().bills;
     set((s) => ({ bills: [b, ...s.bills] }));
-    void send("/api/pos/bills", "POST", b, get().hydrate, () => set({ bills: prev }));
+    // A sale moves stock server-side, so re-read inventory once it is saved —
+    // otherwise the catalog keeps showing the pre-sale stock until a page reload.
+    void send("/api/pos/bills", "POST", b, get().hydrate, () => set({ bills: prev })).then((ok) => ok && void get().hydrate());
   },
   deleteBill: (id) => {
     const prev = get().bills;
     set((s) => ({ bills: s.bills.filter((x) => x.id !== id) }));
-    void send(`/api/pos/bills/${id}`, "DELETE", null, get().hydrate, () => set({ bills: prev }));
+    void send(`/api/pos/bills/${id}`, "DELETE", null, get().hydrate, () => set({ bills: prev })).then((ok) => ok && void get().hydrate());
   },
 
   updateProduct: (id, patch, stockChanges) => {

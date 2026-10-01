@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PackagePlus, Search, X, Truck, Trash2 } from "lucide-react";
+import { PackagePlus, Search, X, Truck, Trash2, Plus } from "lucide-react";
 import { usePOS, productStock, type InvProduct } from "@/lib/store/pos";
 import { useVendors, vendorMatches } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
 import type { Vendor } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { ProductModal } from "@/components/admin/ProductModal";
+import { useAuth } from "@/lib/store/auth";
 
 interface InwardRow {
   id: string;
@@ -52,6 +54,8 @@ export default function StockInwardPage() {
   const [productTerm, setProductTerm] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const isAdmin = useAuth((s) => s.isAdmin);
   // One id per submission: if the request is retried (timeout, double-click) the
   // server recognises it and returns the original inward instead of repeating it.
   const batchRef = useRef<string | null>(null);
@@ -181,6 +185,14 @@ export default function StockInwardPage() {
 
   return (
     <div className="p-5 md:p-8">
+      {creating && (
+        <ProductModal
+          product={null}
+          initialName={productTerm.trim()}
+          onClose={() => setCreating(false)}
+          onCreated={(p) => addLine(p)}
+        />
+      )}
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>
       )}
@@ -232,6 +244,11 @@ export default function StockInwardPage() {
                   <Search className="h-4 w-4 shrink-0 text-ink-400" />
                   <input value={productTerm} onChange={(e) => setProductTerm(e.target.value)} placeholder="Search inventory…" className="w-full bg-transparent text-sm focus:outline-none" />
                 </div>
+                {productTerm.trim() && isAdmin && (
+                  <button onClick={() => setCreating(true)} className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-gold-600 hover:underline">
+                    <Plus className="h-3.5 w-3.5" /> Add &quot;{productTerm.trim()}&quot; as a new product
+                  </button>
+                )}
                 {productMatches.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-ink-100 bg-white shadow-lg">
                     {productMatches.map((p) => (

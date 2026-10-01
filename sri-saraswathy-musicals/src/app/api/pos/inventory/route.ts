@@ -14,6 +14,7 @@ export function POST(request: NextRequest) {
   return handle("admin", async () => {
     const body = await readJson<InvProduct>(request);
     if (!body?.id) return badRequest("Inventory product requires `id`");
+    if (!/^\d{4,8}$/.test(String(body.hsn ?? "").trim())) return badRequest("HSN / SAC code is required (4–8 digits)");
     return created(await createInventoryProduct(body));
   });
 }

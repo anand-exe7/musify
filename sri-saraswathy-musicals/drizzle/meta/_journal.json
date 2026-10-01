@@ -106,6 +106,27 @@
       "when": 1790837408516,
       "tag": "0014_orders_payment_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790874072017,
+      "tag": "0015_invoice_phone_mrp_discount",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790876235053,
+      "tag": "0016_invoice_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790876880234,
+      "tag": "0017_invoice_overall_discount",
+      "breakpoints": true
     }
   ]
 }

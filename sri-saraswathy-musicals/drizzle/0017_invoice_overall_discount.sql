@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "discount" integer DEFAULT 0 NOT NULL;

@@ -38,6 +38,14 @@ export async function createBill(b: Bill): Promise<Bill> {
   if (!isBranch(b.branch)) throw new HttpError(400, `Unknown branch: ${String(b.branch)}`);
   const branch = b.branch;
 
+  // A discount can never exceed what it is taken from.
+  for (const it of b.items) {
+    if ((it.discount || 0) < 0 || (it.discount || 0) > it.price * it.qty) throw new HttpError(400, `Discount on "${it.name}" can't exceed its price.`);
+  }
+  const lineNet = b.items.reduce((n, i) => n + i.price * i.qty - (i.discount || 0), 0);
+  const lineDisc = b.items.reduce((n, i) => n + (i.discount || 0), 0);
+  if ((b.discount || 0) < lineDisc || (b.discount || 0) - lineDisc > lineNet) throw new HttpError(400, "Overall discount can't exceed the bill total.");
+
   let couponUsed: string | null = null;
   if (b.coupon) {
     const net = b.items.reduce((n, i) => n + Math.max(0, i.price * i.qty - (i.discount || 0)), 0);

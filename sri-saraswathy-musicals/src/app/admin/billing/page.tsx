@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   User as UserIcon,
   ShoppingBag,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
-import { usePOS, productStock, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
+import { usePOS, productStockAt, variantStockAt, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { formatINR, toPaise, cn } from "@/lib/utils";
@@ -28,6 +28,10 @@ interface Row {
   /** Snapshot GST rate for this line; `null` ⇒ non-GST line. */
   gstRate?: number | null;
   hsn?: string;
+  /** Catalog MRP per unit (paise). */
+  mrp?: number;
+  /** Delivery instruction (e.g. serial number) printed on the invoice. */
+  instruction?: string;
   /** Per-line discount in paise (off price × qty). */
   discount?: number;
   /** Set when picked from the catalog — lets the server decrement branch stock. */
@@ -71,6 +75,8 @@ export default function BillingPage() {
   const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
+  // Product whose variant list is expanded in the catalog (multi-variant products only).
+  const [pickFor, setPickFor] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState("");
   const [discType, setDiscType] = useState<"₹" | "%">("₹");
   const [discVal, setDiscVal] = useState(0);
@@ -92,6 +98,8 @@ export default function BillingPage() {
     qty: r.qty,
     gstRate: r.gstRate ?? null,
     hsn: r.hsn?.trim() || undefined,
+    mrp: r.mrp && r.mrp > 0 ? r.mrp : undefined,
+    instruction: r.instruction?.trim() || undefined,
     discount: lineDiscount(r) || undefined,
     productId: r.productId,
     variantIndex: r.variantIndex,
@@ -119,7 +127,7 @@ export default function BillingPage() {
   // How many of each catalog product are already on the bill (for badges).
   const qtyInOrder = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const r of rows) if (r.name.trim()) m[r.name] = (m[r.name] || 0) + r.qty;
+    for (const r of rows) if (r.name.trim()) m[r.productId ?? r.name] = (m[r.productId ?? r.name] || 0) + r.qty;
     return m;
   }, [rows]);
 
@@ -150,11 +158,12 @@ export default function BillingPage() {
     hsn?: string,
     productId?: string,
     variantIndex?: number,
+    mrp?: number,
   ) => {
     setRows((rs) => {
-      const existing = rs.find((r) => r.name === name);
+      const existing = rs.find((r) => r.name === name && r.variantIndex === variantIndex);
       if (existing) return rs.map((r) => (r.id === existing.id ? { ...r, qty: r.qty + 1 } : r));
-      const filled = { name, price, qty: 1, gstRate: gstRate ?? null, hsn, productId, variantIndex };
+      const filled = { name, price, qty: 1, gstRate: gstRate ?? null, hsn, productId, variantIndex, mrp: Math.max(mrp || 0, price) };
       const blank = rs.find((r) => !r.name.trim());
       if (blank) return rs.map((r) => (r.id === blank.id ? { ...r, ...filled } : r));
       return [...rs, { id: crypto.randomUUID(), ...filled }];
@@ -258,6 +267,10 @@ export default function BillingPage() {
     .filter((p) => p.active)
     .filter((p) => p.name.toLowerCase().includes(catalogQuery.toLowerCase()));
 
+  // Compact input used inside the order-items table cells.
+  const cell =
+    "w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-right text-sm text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500/30";
+
   const fieldCls =
     "w-full rounded-xl border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
 
@@ -348,76 +361,116 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Rows — stack on mobile, single line on desktop */}
-            <div className="space-y-3">
-              {rows.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex flex-col gap-2 rounded-xl border border-ink-100 p-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:border-0 sm:p-0 xl:flex-nowrap"
-                >
-                  <input
-                    value={r.name}
-                    onChange={(e) => setRow(r.id, { name: e.target.value })}
-                    placeholder="Item name / description…"
-                    className={cn(fieldCls, "w-full sm:min-w-0 sm:flex-1")}
-                  />
-                  <div className="flex items-center gap-2 sm:shrink-0">
-                    <div className="relative flex-1 sm:w-28 sm:flex-none">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
-                      <MoneyInput
-                        value={r.price || 0}
-                        onChange={(paise) => setRow(r.id, { price: paise })}
-                        placeholder="Price"
-                        className={cn(fieldCls, "pl-7")}
-                      />
-                    </div>
-                    <select
-                      value={r.gstRate == null ? "none" : String(r.gstRate)}
-                      onChange={(e) => setRow(r.id, { gstRate: e.target.value === "none" ? null : Number(e.target.value) })}
-                      title="GST rate for this line (inclusive)"
-                      aria-label="GST rate"
-                      className="shrink-0 rounded-xl border border-ink-200 bg-ivory-50 px-2 py-3 text-xs font-medium text-ink-700 focus:border-gold-500 focus:outline-none"
-                    >
-                      {LINE_GST_RATES.map((g) => (
-                        <option key={g.label} value={g.value == null ? "none" : String(g.value)}>
-                          {g.value == null ? "No GST" : `${g.value}%`}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex shrink-0 items-center gap-1 rounded-xl border border-ink-200 bg-ivory-50 px-1">
-                      <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} aria-label="Decrease quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="w-6 text-center text-sm font-semibold tabular-nums">{r.qty}</span>
-                      <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} aria-label="Increase quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 sm:shrink-0">
-                    <input
-                      value={r.hsn ?? ""}
-                      onChange={(e) => setRow(r.id, { hsn: e.target.value })}
-                      placeholder="HSN"
-                      aria-label="HSN code"
-                      inputMode="numeric"
-                      className="w-24 rounded-xl border border-ink-200 bg-ivory-50 px-3 py-3 text-xs text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none"
-                    />
-                    <div className="relative w-28">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">− ₹</span>
-                      <MoneyInput
-                        value={r.discount || 0}
-                        onChange={(paise) => setRow(r.id, { discount: paise })}
-                        placeholder="Disc."
-                        className={cn(fieldCls, "pl-9 text-xs")}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
+            {/* Rows — a table: one line per item, scrolls sideways on small screens */}
+            <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white">
+              <table className="w-full min-w-[1040px] text-sm">
+                <thead>
+                  <tr className="border-b border-ink-100 bg-[#FAF7EF] text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 [&>th]:px-2 [&>th]:py-2.5">
+                    <th className="w-8 pl-3">#</th>
+                    <th className="min-w-[200px]">Item</th>
+                    <th className="w-24">HSN</th>
+                    <th className="w-20">GST</th>
+                    <th className="w-28">MRP (₹)</th>
+                    <th className="w-28">Price (₹)</th>
+                    <th className="w-28 text-center">Qty</th>
+                    <th className="w-28">Discount (₹)</th>
+                    <th className="min-w-[170px]">Delivery instruction</th>
+                    <th className="w-28 text-right">Amount</th>
+                    <th className="w-10" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-50">
+                  {rows.map((r, i) => (
+                    <tr key={r.id} className="align-middle [&>td]:px-2 [&>td]:py-2">
+                      <td className="pl-3 text-xs text-ink-400">{i + 1}</td>
+                      <td>
+                        <input
+                          value={r.name}
+                          onChange={(e) => setRow(r.id, { name: e.target.value })}
+                          placeholder="Item name / description…"
+                          aria-label="Item name"
+                          className={cn(cell, "text-left")}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={r.hsn ?? ""}
+                          onChange={(e) => setRow(r.id, { hsn: e.target.value })}
+                          placeholder="HSN"
+                          aria-label="HSN code"
+                          inputMode="numeric"
+                          className={cn(cell, "text-left")}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={r.gstRate == null ? "none" : String(r.gstRate)}
+                          onChange={(e) => setRow(r.id, { gstRate: e.target.value === "none" ? null : Number(e.target.value) })}
+                          title="GST rate for this line (inclusive)"
+                          aria-label="GST rate"
+                          className={cn(cell, "text-left")}
+                        >
+                          {LINE_GST_RATES.map((g) => (
+                            <option key={g.label} value={g.value == null ? "none" : String(g.value)}>
+                              {g.value == null ? "No GST" : `${g.value}%`}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <MoneyInput
+                          value={r.mrp || 0}
+                          onChange={(paise) => setRow(r.id, { mrp: paise })}
+                          placeholder={r.price > 0 ? String(r.price / 100) : "MRP"}
+                          aria-label="MRP per unit"
+                          title="MRP per unit — defaults to the catalog MRP; blank = same as price"
+                          className={cell}
+                        />
+                      </td>
+                      <td>
+                        <MoneyInput value={r.price || 0} onChange={(paise) => setRow(r.id, { price: paise })} placeholder="Price" aria-label="Price per unit" className={cell} />
+                      </td>
+                      <td>
+                        <div className="mx-auto flex w-24 items-center justify-between rounded-lg border border-ink-200 bg-ivory-50 px-0.5">
+                          <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} aria-label="Decrease quantity" className="grid h-8 w-7 place-items-center text-ink-500 hover:text-ink-900">
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="text-sm font-semibold tabular-nums">{r.qty}</span>
+                          <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} aria-label="Increase quantity" className="grid h-8 w-7 place-items-center text-ink-500 hover:text-ink-900">
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        <MoneyInput
+                          value={lineDiscount(r)}
+                          onChange={(paise) => setRow(r.id, { discount: Math.min(paise, r.price * r.qty) })}
+                          title={r.price > 0 ? `Max ${formatINR(r.price * r.qty)} (the line total)` : undefined}
+                          placeholder="0"
+                          aria-label="Item discount"
+                          className={cell}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={r.instruction ?? ""}
+                          onChange={(e) => setRow(r.id, { instruction: e.target.value })}
+                          placeholder="e.g. serial no."
+                          aria-label="Delivery instruction"
+                          maxLength={120}
+                          className={cn(cell, "text-left")}
+                        />
+                      </td>
+                      <td className="text-right font-semibold tabular-nums text-ink-900">{formatINR(Math.max(0, r.price * r.qty - lineDiscount(r)))}</td>
+                      <td>
+                        <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
         </div>
@@ -493,13 +546,25 @@ export default function BillingPage() {
 
             {/* manual discount */}
             <div className="mt-4">
-              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Manual Discount</label>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Overall Discount (on total)</label>
               <div className="flex gap-2">
                 <select value={discType} onChange={(e) => setDiscType(e.target.value as "₹" | "%")} className="w-16 rounded-xl border border-ink-200 bg-ivory-50 px-2 py-2.5 text-sm focus:outline-none">
                   <option value="₹">₹</option>
                   <option value="%">%</option>
                 </select>
-                <input type="number" value={discVal || ""} onChange={(e) => setDiscVal(Number(e.target.value))} placeholder="0" className={cn(fieldCls, "py-2.5")} />
+                <input
+                  type="number"
+                  min={0}
+                  max={discType === "%" ? 100 : Math.max(0, (netSubtotal - couponDiscount) / 100)}
+                  value={discVal || ""}
+                  onChange={(e) => {
+                    const v = Math.max(0, Number(e.target.value) || 0);
+                    // Can't discount more than the bill is worth (or more than 100%).
+                    setDiscVal(discType === "%" ? Math.min(100, v) : Math.min(v, Math.max(0, (netSubtotal - couponDiscount) / 100)));
+                  }}
+                  placeholder="0"
+                  className={cn(fieldCls, "py-2.5")}
+                />
               </div>
             </div>
 
@@ -509,10 +574,16 @@ export default function BillingPage() {
                 <span>Subtotal ({itemCount} items)</span>
                 <span className="font-medium tabular-nums text-ink-900">{formatINR(subtotal)}</span>
               </div>
-              {totalDiscount > 0 && (
+              {itemDiscounts > 0 && (
                 <div className="flex items-center justify-between text-success">
-                  <span>Discount{itemDiscounts > 0 ? ` (items ${formatINR(itemDiscounts)})` : ""}</span>
-                  <span className="font-medium tabular-nums">- {formatINR(totalDiscount)}</span>
+                  <span>Item discounts</span>
+                  <span className="font-medium tabular-nums">- {formatINR(itemDiscounts)}</span>
+                </div>
+              )}
+              {billDiscount > 0 && (
+                <div className="flex items-center justify-between text-success">
+                  <span>Overall discount{couponDiscount > 0 && manualDiscount > 0 ? " (coupon + manual)" : couponDiscount > 0 ? " (coupon)" : ""}</span>
+                  <span className="font-medium tabular-nums">- {formatINR(billDiscount)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between text-ink-600">
@@ -625,13 +696,15 @@ export default function BillingPage() {
               {/* Products grid */}
               <div className="grid flex-1 content-start gap-2.5 overflow-y-auto p-4 sm:grid-cols-2">
                 {catalogItems.map((p) => {
-                  const inOrder = qtyInOrder[p.name] || 0;
-                  const stock = productStock(p);
+                  const inOrder = qtyInOrder[p.id] || 0;
+                  const enabled = p.variants.map((v, vi) => ({ v, vi })).filter((x) => !x.v.disabled);
+                  const multi = enabled.length > 1;
+                  const stock = productStockAt(p, branch);
                   const out = stock <= 0;
                   return (
+                    <Fragment key={p.id}>
                     <button
-                      key={p.id}
-                      onClick={() => addFromCatalog(p.name, p.basePrice, p.gstRate ?? null, p.hsn, p.id, 0)}
+                      onClick={() => (multi ? setPickFor(pickFor === p.id ? null : p.id) : addFromCatalog(p.name, p.basePrice, p.gstRate ?? null, p.hsn, p.id, enabled[0]?.vi ?? 0, p.mrp))}
                       disabled={out}
                       className={cn(
                         "group relative flex items-center gap-3 rounded-xl border p-2.5 text-left transition-all",
@@ -651,9 +724,9 @@ export default function BillingPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
-                        <p className="text-xs font-medium tabular-nums text-ink-700">{formatINR(p.basePrice)}</p>
+                        <p className="text-xs font-medium tabular-nums text-ink-700">{formatINR(p.basePrice)}{multi && <span className="ml-1 text-ink-400">· {enabled.length} variants</span>}</p>
                         <p className={cn("text-[11px]", out ? "text-danger" : "text-ink-400")}>
-                          {out ? "Out of stock" : `${stock} in stock`}
+                          {out ? "Out of stock" : `${stock} in stock · ${branch}`}
                         </p>
                       </div>
                       {!out && (
@@ -662,6 +735,31 @@ export default function BillingPage() {
                         </span>
                       )}
                     </button>
+                    {multi && pickFor === p.id && (
+                      <div className="col-span-full space-y-1.5 rounded-xl border border-gold-300 bg-gold-50/40 p-2.5">
+                        <p className="px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">Choose a variant of {p.name} · {branch}</p>
+                        {enabled.map(({ v, vi }) => {
+                          const vStock = variantStockAt(v, branch);
+                          const vName = `${p.name} — ${v.attr}${v.finish ? ` · ${v.finish}` : ""}`;
+                          const vPrice = v.price > 0 ? v.price : p.basePrice;
+                          return (
+                            <button
+                              key={vi}
+                              disabled={vStock <= 0}
+                              onClick={() => { addFromCatalog(vName, vPrice, p.gstRate ?? null, p.hsn, p.id, vi, p.mrp); setPickFor(null); }}
+                              className="flex w-full items-center justify-between gap-3 rounded-lg border border-ink-100 bg-white px-3 py-2 text-left text-sm transition-colors hover:border-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <span className="font-medium text-ink-900">{v.attr}{v.finish ? ` · ${v.finish}` : ""}</span>
+                              <span className="flex items-center gap-3 text-xs tabular-nums">
+                                <span className="text-ink-700">{formatINR(vPrice)}</span>
+                                <span className={vStock <= 0 ? "text-danger" : "text-ink-400"}>{vStock <= 0 ? "Out of stock" : `${vStock} in stock`}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    </Fragment>
                   );
                 })}
                 {catalogItems.length === 0 && (
