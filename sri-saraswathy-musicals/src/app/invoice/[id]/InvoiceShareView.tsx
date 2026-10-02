@@ -9,7 +9,7 @@ import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/Tax
  * Public share wrapper for the tax invoice. Anyone with the link (opaque ref
  * id) can open it without signing in. Admin-only routes get their own toolbar.
  */
-export function InvoiceShareView({ invoice }: { invoice: Invoice }) {
+export function InvoiceShareView({ invoice, payment }: { invoice: Invoice; payment?: { paid: number; balance: number } }) {
   const [copied, setCopied] = useState(false);
   const isBillOfSupply = (invoice.cgst ?? 0) + (invoice.sgst ?? 0) + (invoice.igst ?? 0) === 0;
 
@@ -49,7 +49,7 @@ export function InvoiceShareView({ invoice }: { invoice: Invoice }) {
         </div>
       </div>
 
-      <TaxInvoiceSheet invoice={invoice} />
+      <TaxInvoiceSheet invoice={invoice} payment={payment} />
 
       <p className="mx-auto mt-4 max-w-3xl text-center text-[11px] text-ink-400 print:hidden">
         Shareable {isBillOfSupply ? "bill of supply" : "tax invoice"} — anyone with this link can view it.

@@ -125,7 +125,7 @@ const repairSeed = [
     refInvoice: null,
     problem: "Middle C key sticking, no sound from left speaker.",
     accessories: "Sustain pedal, power adapter",
-    status: "awaiting-parts", priority: "normal", branch: "Branch 2", technician: "Karthik M",
+    status: "in-progress", priority: "normal", branch: "Branch 2", technician: "Karthik M",
     deadline: iso("2026-09-12T18:00:00"),
     estimate: 4200, finalCost: 0, advance: 0, gstRate: 18,
     events: [
@@ -142,7 +142,7 @@ const repairSeed = [
     refInvoice: null,
     problem: "Sound-post collapsed, one fine tuner stripped. Full re-string requested.",
     accessories: "Bow, rosin, hard case",
-    status: "diagnosing", priority: "urgent", branch: "Branch 1", technician: "Deepa Iyer",
+    status: "received", priority: "urgent", branch: "Branch 1", technician: "Deepa Iyer",
     deadline: iso("2026-09-13T18:00:00"),
     estimate: 2800, finalCost: 0, advance: 500, gstRate: 18,
     events: [

@@ -37,8 +37,6 @@ function statusUpdateMessage(t: RepairTicket): string {
   let line = `Update on your repair (${sm.label}).`;
   if (t.status === "ready") line = "Good news — your instrument is repaired and ready for pickup! 🎉";
   else if (t.status === "in-progress") line = "Our technician is working on your instrument now. 🛠";
-  else if (t.status === "awaiting-parts") line = "We're waiting on a part to arrive before we can finish.";
-  else if (t.status === "diagnosing") line = "We're diagnosing the issue and will share an estimate shortly.";
   const bal = balanceDue(t);
   return (
     `*${BUSINESS.name} — Service Update*\n` +
@@ -151,7 +149,7 @@ export default function TicketDetailPage() {
   const label = "mb-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
 
   // status progression steps for the tracker (exclude cancelled)
-  const flow: RepairStatus[] = ["received", "diagnosing", "in-progress", "awaiting-parts", "ready", "completed"];
+  const flow: RepairStatus[] = ["received", "in-progress", "ready", "completed"];
   const currentIdx = flow.indexOf(t.status);
 
   return (
@@ -285,8 +283,8 @@ export default function TicketDetailPage() {
 
             {/* totals summary */}
             <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-[#FAF7EF] p-4 text-center">
-              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Charge (incl GST)</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(grossTotal(t))}</p></div>
-              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Advance</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(t.advance)}</p></div>
+              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Total Invoice Amount</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(grossTotal(t))}</p></div>
+              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Amount Paid</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(t.advance)}</p></div>
               <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Balance Due</p><p className={cn("mt-1 text-lg font-bold tabular-nums", balanceDue(t) > 0 ? "text-danger" : "text-success")}>{formatINR(balanceDue(t))}</p></div>
             </div>
           </section>

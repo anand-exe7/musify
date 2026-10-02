@@ -24,6 +24,7 @@ function fmtDate(d: string) {
 const STATUS_TONE: Record<string, string> = {
   paid: "bg-success/10 text-success",
   pending: "bg-warning/10 text-warning",
+  "part paid": "bg-warning/10 text-warning",
   cancelled: "bg-danger/10 text-danger",
 };
 
@@ -40,12 +41,14 @@ const SOURCE_LABEL: Record<string, string> = {
  * raised in Non-GST mode), the title switches to "Bill of Supply" and the tax
  * columns/rows are dropped per Rule 49 of the CGST Rules.
  */
-export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
+export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; payment?: { paid: number; balance: number } }) {
   const totalTax = (invoice.cgst ?? 0) + (invoice.sgst ?? 0) + (invoice.igst ?? 0);
   const isBillOfSupply = totalTax === 0;
   const intra = (invoice.igst ?? 0) === 0;
   const branch = branchInfo(invoice.branch);
   const overall = invoice.discount ?? 0;
+  // Part-paid invoices (service repairs) show what's been received vs. still owed.
+  const status = payment ? (payment.balance > 0 ? (payment.paid > 0 ? "part paid" : "pending") : "paid") : invoice.status;
   const itemsTotal = invoice.items.reduce((n, l) => n + l.amount, 0);
   const showDiscount = invoice.items.some((l) => (l.discount ?? 0) > 0);
   // Total saved vs MRP (falls back to the unit rate when no MRP was recorded).
@@ -80,7 +83,7 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
                 <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Ref</dt><dd className="font-medium text-ink-700">{invoice.refId}</dd></div>
               )}
               <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Source</dt><dd className="font-medium uppercase text-ink-700">{SOURCE_LABEL[invoice.source ?? "manual"] ?? invoice.source}</dd></div>
-              <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Status</dt><dd><span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[invoice.status] ?? "bg-ink-100 text-ink-600")}>{invoice.status}</span></dd></div>
+              <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Status</dt><dd><span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[status] ?? "bg-ink-100 text-ink-600")}>{status}</span></dd></div>
               <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Payment</dt><dd className="font-medium uppercase text-ink-700">{invoice.paymentMode}</dd></div>
             </dl>
           </div>
@@ -176,7 +179,13 @@ export function TaxInvoiceSheet({ invoice }: { invoice: Invoice }) {
               )
             )}
             {(invoice.delivery ?? 0) > 0 && <div className="flex justify-between px-3 text-ink-600"><dt>Delivery charges</dt><dd className="tabular-nums">{formatINR(invoice.delivery ?? 0)}</dd></div>}
-            <div className="mt-1 flex justify-between rounded-lg bg-ink-900 px-3 py-2.5 text-base font-bold text-ivory-50"><dt>Total</dt><dd className="tabular-nums">{formatINR(invoice.total)}</dd></div>
+            <div className="mt-1 flex justify-between rounded-lg bg-ink-900 px-3 py-2.5 text-base font-bold text-ivory-50"><dt>{payment ? "Total Invoice Amount" : "Total"}</dt><dd className="tabular-nums">{formatINR(invoice.total)}</dd></div>
+            {payment && (
+              <>
+                <div className="flex justify-between px-3 text-success"><dt>Amount Paid</dt><dd className="tabular-nums">{formatINR(payment.paid)}</dd></div>
+                <div className={cn("flex justify-between rounded-lg px-3 py-2 font-bold", payment.balance > 0 ? "bg-danger/10 text-danger" : "bg-success/10 text-success")}><dt>Balance Due</dt><dd className="tabular-nums">{formatINR(payment.balance)}</dd></div>
+              </>
+            )}
             {saved > 0 && <div className="flex justify-between px-3 text-success"><dt>You saved</dt><dd className="tabular-nums">{formatINR(saved)}</dd></div>}
           </dl>
         </div>

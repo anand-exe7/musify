@@ -8,9 +8,7 @@ import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 
 export type RepairStatus =
   | "received"
-  | "diagnosing"
   | "in-progress"
-  | "awaiting-parts"
   | "ready"
   | "completed"
   | "cancelled";
@@ -62,11 +60,9 @@ export interface RepairTicket {
 
 export const REPAIR_STATUS: { key: RepairStatus; label: string; tone: string }[] = [
   { key: "received", label: "Received", tone: "bg-ink-100 text-ink-600" },
-  { key: "diagnosing", label: "Diagnosing", tone: "bg-info/15 text-info" },
   { key: "in-progress", label: "In Progress", tone: "bg-gold-100 text-gold-700" },
-  { key: "awaiting-parts", label: "Awaiting Parts", tone: "bg-warning/20 text-[#8a6a1f]" },
   { key: "ready", label: "Ready", tone: "bg-success/15 text-success" },
-  { key: "completed", label: "Completed", tone: "bg-ink-900 text-ivory-50" },
+  { key: "completed", label: "Complete", tone: "bg-ink-900 text-ivory-50" },
   { key: "cancelled", label: "Cancelled", tone: "bg-danger/15 text-danger" },
 ];
 

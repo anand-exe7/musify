@@ -7,6 +7,12 @@ import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR } from "@/lib/utils";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 
+export function ticketPayment(t: RepairTicket) {
+  const total = grossTotal(t);
+  const paid = Math.min(total, t.advance || 0);
+  return { paid, balance: Math.max(0, total - paid) };
+}
+
 function invoiceMessage(t: RepairTicket, number: string | null, link: string): string {
   const bal = balanceDue(t);
   return (
@@ -17,7 +23,7 @@ function invoiceMessage(t: RepairTicket, number: string | null, link: string): s
     `🎸 Item: ${t.productName}\n` +
     `🛠 Work done: ${t.problem}\n\n` +
     `Total (incl GST): ${formatINR(grossTotal(t))}\n` +
-    `Advance paid: ${formatINR(t.advance)}\n` +
+    `Amount paid: ${formatINR(t.advance)}\n` +
     (bal > 0 ? `*Balance due: ${formatINR(bal)}*\n` : `*Fully paid ✅*\n`) +
     `\n📄 View / download your invoice:\n${link}\n` +
     `\nThank you for trusting ${BUSINESS.name}! 🎶`
@@ -50,7 +56,7 @@ export function AdminServiceInvoiceView({ invoice, ticket }: { invoice: Invoice 
       </div>
 
       {invoice ? (
-        <TaxInvoiceSheet invoice={invoice} />
+        <TaxInvoiceSheet invoice={invoice} payment={ticketPayment(ticket)} />
       ) : (
         <div className="mx-auto max-w-3xl rounded-2xl border border-ink-100 bg-ivory-50 p-10 text-center">
           <p className="text-lg font-bold text-ink-900">Invoice not issued yet</p>

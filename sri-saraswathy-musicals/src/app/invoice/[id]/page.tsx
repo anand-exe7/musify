@@ -56,5 +56,15 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   }
 
   if (!invoice) notFound();
-  return <InvoiceShareView invoice={invoice} />;
+  // Repairs can be part-paid, so show paid vs. balance from the live ticket.
+  let payment: { paid: number; balance: number } | undefined;
+  if (invoice.source === "service") {
+    const ticket = await getTicket(id);
+    if (ticket) {
+      const total = invoice.total;
+      const paid = Math.min(total, ticket.advance || 0);
+      payment = { paid, balance: ticket.status === "cancelled" ? 0 : Math.max(0, total - paid) };
+    }
+  }
+  return <InvoiceShareView invoice={invoice} payment={payment} />;
 }

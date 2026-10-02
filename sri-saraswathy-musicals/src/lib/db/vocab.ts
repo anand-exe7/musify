@@ -20,9 +20,7 @@ export const BILL_STATUSES = ["completed", "pending"] as const;
 export const BILL_SOURCES = ["offline", "online", "service"] as const;
 export const REPAIR_STATUSES = [
   "received",
-  "diagnosing",
   "in-progress",
-  "awaiting-parts",
   "ready",
   "completed",
   "cancelled",
