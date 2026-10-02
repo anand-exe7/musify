@@ -286,13 +286,52 @@ export const vendors = pgTable("vendors", {
 });
 
 /**
- * Goods-received log. Each row is one line of a stock-inward: a quantity of a
+ * Purchase header — one receipt from a vendor, with its money fields: the bill
+ * total, the GST breakup, the amount paid at the time of receipt (editable
+ * later), the payment mode, and the vendor's invoice number. The actual goods
+ * lines live in `stock_inward`, which now references this header via
+ * `purchase_id`. Subsequent part-payments are recorded in `vendor_payments`.
+ *
+ * Money columns are paise. `amount_paid` starts at 0 and can be bumped either
+ * directly (admin edits the header) or by inserting rows in `vendor_payments`.
+ */
+export const purchases = pgTable("purchases", {
+  id: text("id").primaryKey(),
+  vendorId: text("vendor_id")
+    .notNull()
+    .references(() => vendors.id, { onDelete: "restrict" }),
+  /** Vendor's own invoice/bill number for this receipt (free text). */
+  invoiceNo: text("invoice_no").notNull().default(""),
+  /** User-chosen purchase date, independent of `createdAt`. ISO yyyy-mm-dd. */
+  purchaseDate: text("purchase_date").notNull().default(""),
+  subtotal: integer("subtotal").notNull().default(0),
+  /** Combined CGST + SGST (or IGST). Editable; splits aren't persisted separately. */
+  tax: integer("tax").notNull().default(0),
+  cgst: integer("cgst").notNull().default(0),
+  sgst: integer("sgst").notNull().default(0),
+  igst: integer("igst").notNull().default(0),
+  totalAmount: integer("total_amount").notNull().default(0),
+  amountPaid: integer("amount_paid").notNull().default(0),
+  paymentMode: text("payment_mode").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+}, (t) => [
+  check("purchases_payment_mode_check", sql`${t.paymentMode} = '' OR ${t.paymentMode} IN ('CASH','UPI','CARD','BANK','OTHER','CREDIT')`),
+]);
+
+/**
+ * Goods-received log. Each row is one line of a purchase: a quantity of a
  * product received from a vendor into a branch at a point in time, with its
  * purchase cost. Submitting an inward also bumps the inventory on-hand and the
  * product's `cost`. `productName`/`variant` are snapshots for display.
+ *
+ * `purchaseId` points at the `purchases` header this line belongs to; it's
+ * nullable to keep historical rows that pre-date the header table.
  */
 export const stockInward = pgTable("stock_inward", {
   id: text("id").primaryKey(),
+  purchaseId: text("purchase_id").references(() => purchases.id, { onDelete: "cascade" }),
   vendorId: text("vendor_id")
     .notNull()
     .references(() => vendors.id, { onDelete: "restrict" }),
@@ -308,6 +347,32 @@ export const stockInward = pgTable("stock_inward", {
   inwardAt: text("inward_at").notNull(),
 }, (t) => [
   check("stock_inward_branch_check", oneOf(t.branch, BRANCHES)),
+]);
+
+/**
+ * Vendor payment ledger. One row per settlement after a purchase is recorded.
+ * A payment can be tied to a specific `purchase_id` (reduces that bill's
+ * balance) or be an on-account/lump-sum payment (`purchase_id` null — reduces
+ * the vendor's overall outstanding). `branch` says whose cash drawer / bank
+ * the money came out of, so branch-wise outstandings net correctly.
+ */
+export const vendorPayments = pgTable("vendor_payments", {
+  id: text("id").primaryKey(),
+  vendorId: text("vendor_id")
+    .notNull()
+    .references(() => vendors.id, { onDelete: "restrict" }),
+  purchaseId: text("purchase_id").references(() => purchases.id, { onDelete: "set null" }),
+  branch: text("branch").notNull(),
+  amount: integer("amount").notNull().default(0),
+  mode: text("mode").notNull().default(""),
+  reference: text("reference").notNull().default(""),
+  paidAt: text("paid_at").notNull(),
+  notes: text("notes").notNull().default(""),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+}, (t) => [
+  check("vendor_payments_branch_check", oneOf(t.branch, BRANCHES)),
+  check("vendor_payments_mode_check", oneOf(t.mode, PAYMENT_MODES)),
 ]);
 
 /**
@@ -541,6 +606,8 @@ export type InvoiceRow = typeof invoices.$inferSelect;
 export type VendorRow = typeof vendors.$inferSelect;
 export type BranchRow = typeof branches.$inferSelect;
 export type StockInwardRow = typeof stockInward.$inferSelect;
+export type PurchaseRow = typeof purchases.$inferSelect;
+export type VendorPaymentRow = typeof vendorPayments.$inferSelect;
 export type StockTransferRow = typeof stockTransfers.$inferSelect;
 export type ExpenseRow = typeof expenses.$inferSelect;
 export type PosBillRow = typeof posBills.$inferSelect;

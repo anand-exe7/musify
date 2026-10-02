@@ -9,6 +9,7 @@ import { row, rows } from "./_util";
 
 export interface StockInwardRecord {
   id: string;
+  purchaseId?: string | null;
   vendorId: string;
   productId: string;
   productName: string;
@@ -24,6 +25,8 @@ export interface StockInwardRecord {
  *  the product, snapshots names, bumps stock and records the row. */
 export interface StockInwardInput {
   id: string;
+  /** Parent purchase header, written with the row so it is never left unlinked. */
+  purchaseId?: string | null;
   vendorId: string;
   productId: string;
   variantIndex: number;
@@ -63,6 +66,7 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
 
   const record = {
     id: input.id,
+    purchaseId: input.purchaseId ?? null,
     vendorId: input.vendorId,
     productId: input.productId,
     productName: prod?.name ?? input.productId,
@@ -112,6 +116,8 @@ export interface InwardBatchLine {
   quantity: number;
   /** Per-branch split; must sum to `quantity`. */
   allocations: { branch: Branch; quantity: number }[];
+  /** Optional: also set this variant's selling price (paise) once received. */
+  newPrice?: number;
 }
 
 export class InwardValidationError extends Error {}
@@ -131,6 +137,7 @@ export async function validateInwardBatch(
     const at = `Line ${n + 1}`;
     if (!Number.isInteger(l.quantity) || l.quantity <= 0) throw new InwardValidationError(`${at}: quantity must be a whole number ≥ 1.`);
     if (!Number.isInteger(l.unitCost) || l.unitCost < 0) throw new InwardValidationError(`${at}: invalid unit cost.`);
+    if (l.newPrice !== undefined && (!Number.isInteger(l.newPrice) || l.newPrice <= 0)) throw new InwardValidationError(`${at}: invalid selling price.`);
     if (!Array.isArray(l.allocations) || l.allocations.length === 0) throw new InwardValidationError(`${at}: no branch split.`);
     let sum = 0;
     const seen = new Set<string>();

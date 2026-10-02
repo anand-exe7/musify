@@ -62,6 +62,24 @@ export async function adjustProductStock(
   throw new HttpError(409, "Stock is being updated by someone else — please try again.");
 }
 
+/** Set one variant's selling price (paise). Same compare-and-swap as stock writes. */
+export async function setVariantPrice(productId: string, variantIndex: number, price: number): Promise<void> {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const [prod] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+    if (!prod) throw new HttpError(404, `Unknown product: ${productId}`);
+    const prev = (prod.variants ?? []) as Variant[];
+    if (!prev[variantIndex]) throw new HttpError(400, "Unknown variant on this product");
+    const next = prev.map((v, i) => (i === variantIndex ? { ...v, price } : v));
+    const updated = await db
+      .update(products)
+      .set({ variants: next as ProductRow["variants"] })
+      .where(and(eq(products.id, productId), sql`${products.variants} = ${JSON.stringify(prev)}::jsonb`))
+      .returning({ id: products.id });
+    if (updated.length > 0) return;
+  }
+  throw new HttpError(409, "Product is being updated by someone else — please try again.");
+}
+
 /** One catalogue line to take out of (or put back into) stock. */
 export interface StockLine {
   productId: string;

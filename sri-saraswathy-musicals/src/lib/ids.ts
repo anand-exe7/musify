@@ -7,12 +7,14 @@
  * REP — repair tickets (`repair_tickets`)
  * SER — service invoices (`repair_tickets.invoiceNo`)
  * VEN — vendors (`vendors`)
- * INW — stock-inward records (`stock_inward`)
+ * INW — stock-inward lines (`stock_inward`)
+ * PUR — purchase headers (`purchases`) — the receipt a user thinks of as "a purchase"
+ * PAY — vendor payment ledger rows (`vendor_payments`)
  * TRF — inter-branch stock transfers (`stock_transfers`)
  */
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW" | "TRF";
+export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW" | "PUR" | "PAY" | "TRF";
 
 function randomSuffix(len = 5): string {
   let s = "";

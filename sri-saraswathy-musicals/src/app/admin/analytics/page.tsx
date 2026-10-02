@@ -7,6 +7,8 @@ import { useExpenses } from "@/lib/store/expenses";
 import { useBranchScope } from "@/lib/store/branch";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
+import { Download } from "lucide-react";
 
 /** A sale is "GST" when it actually carried tax: POS bills honour their saved
  *  `gstEnabled` snapshot; web + service sales are always taxed. */
@@ -24,10 +26,11 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "year", label: "This Year" },
   { key: "custom", label: "Custom" },
 ];
-const TABS = ["revenue", "today", "products", "coupons"] as const;
+const TABS = ["revenue", "today", "sales", "products", "coupons"] as const;
 const TAB_LABEL: Record<(typeof TABS)[number], string> = {
   revenue: "Revenue",
   today: "Today's Sales",
+  sales: "Sales Report",
   products: "Products",
   coupons: "Coupons",
 };
@@ -70,6 +73,7 @@ export default function AnalyticsPage() {
   const [prodQuery, setProdQuery] = useState("");
   const [couponQuery, setCouponQuery] = useState("");
   const [txnQuery, setTxnQuery] = useState("");
+  const [salesQuery, setSalesQuery] = useState("");
 
   useEffect(() => {
     void hydrateExpenses();
@@ -99,6 +103,8 @@ export default function AnalyticsPage() {
     // Revenue = product sale value net of GST (excludes delivery & tax).
     const totalRevenue = scoped.reduce((n, b) => n + billNet(b), 0);
     const gstCollected = scoped.reduce((n, b) => n + billGst(b), 0);
+    // Gross sales = total actually billed to customers (post-discount, incl. GST + delivery).
+    const grossSales = scoped.reduce((n, b) => n + Math.max(0, b.total), 0);
     const offline = scoped.filter((b) => b.source === "offline");
     const online = scoped.filter((b) => b.source === "online");
     const service = scoped.filter((b) => b.source === "service");
@@ -113,6 +119,7 @@ export default function AnalyticsPage() {
     return {
       totalRevenue,
       gstCollected,
+      grossSales,
       count: scoped.length,
       offlineRev: offline.reduce((n, b) => n + billNet(b), 0),
       onlineRev: online.reduce((n, b) => n + billNet(b), 0),
@@ -313,16 +320,16 @@ export default function AnalyticsPage() {
             </Card>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat label="Gross Sales" value={formatINR(m.grossSales)} hint="Billed total · incl. GST + delivery" accent="gold" />
             <Stat label="Net Revenue" value={formatINR(m.totalRevenue)} hint="Ex-GST · sale − tax" accent="green" />
             <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint="Actual output tax" accent="gold" />
-            <Stat label="Completed Bills" value={String(m.count)} hint="in current view" />
             <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="In-store Net Rev" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
             <Stat label="Online Net Rev" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
             <Stat label="Service Net Rev" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"}`} />
-            <Stat label="Total Items Sold" value={`${m.items} pcs`} />
+            <Stat label="Completed Bills" value={String(m.count)} hint={`${m.items} items in view`} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
@@ -389,6 +396,9 @@ export default function AnalyticsPage() {
 
       {/* ── TODAY'S SALES ── */}
       {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} rate={gstRate} />}
+
+      {/* ── SALES REPORT ── */}
+      {tab === "sales" && <SalesTab scoped={scoped} query={salesQuery} setQuery={setSalesQuery} billGst={billGst} />}
 
       {/* ── PRODUCTS ── */}
       {tab === "products" && (
@@ -473,6 +483,133 @@ function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: Re
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Sales report tab ── */
+function SalesTab({ scoped, query, setQuery, billGst }: { scoped: Bill[]; query: string; setQuery: (v: string) => void; billGst: (b: Bill) => number }) {
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  const q = query.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const list = q
+      ? scoped.filter(
+          (b) =>
+            b.id.toLowerCase().includes(q) ||
+            (b.customerName || "").toLowerCase().includes(q) ||
+            b.phone.includes(query.trim()) ||
+            (b.customerGstin || "").toLowerCase().includes(q),
+        )
+      : scoped;
+    return [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  }, [scoped, q, query]);
+
+  const totals = useMemo(() => {
+    let subtotal = 0, discount = 0, gst = 0, delivery = 0, total = 0;
+    for (const b of rows) {
+      subtotal += b.subtotal;
+      discount += b.discount;
+      gst += billGst(b);
+      delivery += b.delivery;
+      total += b.total;
+    }
+    return { subtotal, discount, gst, delivery, total };
+  }, [rows, billGst]);
+
+  const exportCSV = () => {
+    const r2 = (paise: number) => (paise / 100).toFixed(2);
+    const head = ["Date", "Invoice", "Customer", "Phone", "GSTIN", "Branch", "Source", "Items", "Subtotal", "Discount", "GST", "Delivery", "Total", "Payment", "Status"];
+    const body = rows.map((b) => [
+      fmtDate(b.createdAt),
+      b.id,
+      b.customerName || "",
+      b.phone || "",
+      b.customerGstin || "",
+      b.branch,
+      b.source,
+      String(b.items.reduce((q, i) => q + i.qty, 0)),
+      r2(b.subtotal),
+      r2(b.discount),
+      r2(billGst(b)),
+      r2(b.delivery),
+      r2(b.total),
+      b.payment ?? "",
+      b.status,
+    ]);
+    downloadCsv(`sales-report-${Date.now()}.csv`, [head, ...body]);
+  };
+
+  return (
+    <Card>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-ink-900">Sales Report</p>
+          <p className="mt-1 text-xs text-ink-500">{rows.length} bill(s) in current filters · customer details included</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search invoice, name, phone, GSTIN…" className="w-72 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+          <button onClick={exportCSV} disabled={rows.length === 0} className="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:cursor-not-allowed disabled:opacity-50">
+            <Download className="h-4 w-4" /> Export CSV
+          </button>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <p className="py-12 text-center text-sm text-ink-400">No sales match the current filters.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] whitespace-nowrap text-sm">
+            <thead>
+              <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+                <th className="py-3">Date</th>
+                <th>Invoice</th>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th>GSTIN</th>
+                <th>Branch</th>
+                <th>Source</th>
+                <th className="text-center">Items</th>
+                <th className="text-right">Subtotal</th>
+                <th className="text-right">Discount</th>
+                <th className="text-right">GST</th>
+                <th className="text-right">Delivery</th>
+                <th className="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-50">
+              {rows.map((b) => (
+                <tr key={b.id} className="text-ink-800">
+                  <td className="py-3 text-ink-600">{fmtDate(b.createdAt)}</td>
+                  <td className="font-semibold text-ink-900">{b.id}</td>
+                  <td className="font-medium">{b.customerName || <span className="text-ink-300">—</span>}</td>
+                  <td className="text-ink-600">{b.phone || "—"}</td>
+                  <td className="text-ink-600">{b.customerGstin || <span className="text-ink-300">—</span>}</td>
+                  <td className="text-ink-600">{b.branch}</td>
+                  <td className="uppercase text-ink-500">{b.source}</td>
+                  <td className="text-center tabular-nums">{b.items.reduce((q, i) => q + i.qty, 0)}</td>
+                  <td className="text-right tabular-nums">{formatINR(b.subtotal)}</td>
+                  <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
+                  <td className="text-right tabular-nums">{billGst(b) ? formatINR(billGst(b)) : "—"}</td>
+                  <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
+                  <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-ink-200 bg-ivory-50/50 font-bold text-ink-900">
+                <td className="py-3 text-[10px] uppercase tracking-wider text-ink-500" colSpan={8}>Totals ({rows.length})</td>
+                <td className="text-right tabular-nums">{formatINR(totals.subtotal)}</td>
+                <td className="text-right tabular-nums">{formatINR(totals.discount)}</td>
+                <td className="text-right tabular-nums">{formatINR(totals.gst)}</td>
+                <td className="text-right tabular-nums">{formatINR(totals.delivery)}</td>
+                <td className="text-right tabular-nums">{formatINR(totals.total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

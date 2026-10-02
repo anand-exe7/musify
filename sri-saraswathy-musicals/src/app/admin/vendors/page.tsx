@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Truck, Plus, Phone, MapPin, Hash } from "lucide-react";
+import Link from "next/link";
+import { Truck, Plus, Phone, MapPin, Hash, FileText } from "lucide-react";
 import { useVendors, vendorMatches } from "@/lib/store/vendors";
 import { genDocId } from "@/lib/ids";
 import type { Vendor } from "@/types";
@@ -104,6 +105,9 @@ export default function VendorsPage() {
                   {v.address && <p className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3 w-3 shrink-0" />{v.address}</p>}
                   {v.gst && <p className="font-mono text-[11px] text-ink-400">{v.gst}</p>}
                 </div>
+                <Link href={`/admin/vendors/outstandings?vendor=${encodeURIComponent(v.id)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold-600 hover:text-ink-900">
+                  <FileText className="h-3.5 w-3.5" /> Purchases &amp; statement
+                </Link>
               </div>
             ))}
             {rows.length === 0 && <p className="col-span-full py-12 text-center text-sm text-ink-400">No vendors yet. Add your first supplier.</p>}

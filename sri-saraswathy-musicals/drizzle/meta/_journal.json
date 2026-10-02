@@ -127,6 +127,20 @@
       "when": 1790876880234,
       "tag": "0017_invoice_overall_discount",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0018_purchases_and_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0019_repair_status_simplify",
+      "breakpoints": true
     }
   ]
 }

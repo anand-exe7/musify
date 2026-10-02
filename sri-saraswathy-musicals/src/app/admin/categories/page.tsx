@@ -26,6 +26,20 @@ export default function CategoriesPage() {
     return map;
   }, [categories, invProducts]);
 
+  // Products grouped by their category label, sorted alphabetically within each
+  // bucket so the lists under each card read predictably.
+  const productsByCategory = useMemo(() => {
+    const map = new Map<string, typeof invProducts>();
+    categories.forEach((c) => map.set(c, []));
+    invProducts.forEach((p) => {
+      const list = map.get(p.category);
+      if (list) list.push(p);
+      else map.set(p.category, [p]);
+    });
+    for (const list of map.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+    return map;
+  }, [categories, invProducts]);
+
   const add = () => { const v = newCat.trim(); if (v) { addCategory(v); setNewCat(""); } };
   const saveRename = (from: string) => { const to = editVal.trim(); if (to && to !== from) renameCategory(from, to); setEditing(null); };
 
@@ -74,6 +88,26 @@ export default function CategoriesPage() {
                 <div><p className="text-lg font-bold tabular-nums text-ink-900">{s.count}</p><p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Products</p></div>
                 <div><p className="text-lg font-bold tabular-nums text-ink-900">{s.units}</p><p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Units</p></div>
                 <div><p className="text-sm font-bold tabular-nums text-ink-900">{formatINR(s.value)}</p><p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Value</p></div>
+              </div>
+              <div className="mt-4 border-t border-ink-100 pt-3">
+                <p className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-ink-400">Products in this category</p>
+                {(productsByCategory.get(c)?.length ?? 0) === 0 ? (
+                  <p className="text-xs italic text-ink-400">No products yet.</p>
+                ) : (
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-1 text-xs">
+                    {productsByCategory.get(c)!.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-ink-700">
+                          <span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle", p.active ? "bg-success" : "bg-ink-300")} />
+                          {p.name}
+                        </span>
+                        <span className="shrink-0 tabular-nums text-ink-500">
+                          {productStock(p)} <span className="text-ink-300">·</span> {formatINR(p.basePrice)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           );

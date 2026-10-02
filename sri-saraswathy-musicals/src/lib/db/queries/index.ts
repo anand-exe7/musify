@@ -16,4 +16,5 @@ export * as vendors from "./vendors";
 export * as repair from "./repair";
 export * as inquiries from "./inquiries";
 export * as pos from "./pos";
+export * as purchases from "./purchases";
 export * as settings from "./settings";
