@@ -250,7 +250,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
                 <input type="date" value={toDateInput(d.deadline)} onChange={(e) => set({ deadline: fromDateInput(e.target.value) })} className={field} />
               </div>
               <div>
-                <label className={label}>Cost Estimate (₹)</label>
+                <label className={label}>Cost Estimate (₹, incl. GST)</label>
                 <MoneyInput value={d.estimate || 0} onChange={(paise) => set({ estimate: paise })} className={field} placeholder="0" />
               </div>
               <div>

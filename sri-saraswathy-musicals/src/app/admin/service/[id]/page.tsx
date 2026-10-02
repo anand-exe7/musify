@@ -129,6 +129,13 @@ export default function TicketDetailPage() {
     flash("Ticket updated");
   };
 
+  const markFullyPaid = () => {
+    const paid = grossTotal(t);
+    updateTicket(t.id, { advance: paid }, `Balance ${formatINR(balanceDue(t))} received · marked fully paid`);
+    setDraft(null);
+    flash("Marked fully paid");
+  };
+
   const sendUpdate = () => {
     updateTicket(t.id, { whatsappSentAt: new Date().toISOString() }, "Status update sent via WhatsApp");
     window.open(waLink(t.phone, statusUpdateMessage(t)), "_blank", "noopener,noreferrer");
@@ -258,7 +265,7 @@ export default function TicketDetailPage() {
                 <input value={formatINR(t.estimate)} disabled className={cn(field, "cursor-not-allowed bg-ink-50 text-ink-400")} />
               </div>
               <div>
-                <label className={label}>Final Cost (₹, pre-GST)</label>
+                <label className={label}>Final Cost (₹, incl. GST)</label>
                 <MoneyInput value={edit.finalCost || 0} onChange={(paise) => setEdit({ finalCost: paise })} className={field} placeholder={rupeeInput(t.estimate)} />
               </div>
               <div>
@@ -266,7 +273,7 @@ export default function TicketDetailPage() {
                 <MoneyInput value={edit.advance || 0} onChange={(paise) => setEdit({ advance: paise })} className={field} placeholder="0" />
               </div>
               <div>
-                <label className={label}>GST</label>
+                <label className={label}>GST (included in cost)</label>
                 <input value={`${t.gstRate}%`} disabled className={cn(field, "cursor-not-allowed bg-ink-50 text-ink-400")} />
               </div>
               <div>
@@ -280,6 +287,12 @@ export default function TicketDetailPage() {
                 <input type="date" value={toDateInput(edit.deadline)} onChange={(e) => setEdit({ deadline: fromDateInput(e.target.value) })} className={field} />
               </div>
             </div>
+
+            {balanceDue(t) > 0 && t.status !== "cancelled" && (
+              <button onClick={markFullyPaid} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-success/15 py-2.5 text-xs font-bold uppercase tracking-wider text-success transition-colors hover:bg-success/25">
+                <IndianRupee className="h-3.5 w-3.5" /> Mark balance {formatINR(balanceDue(t))} as paid
+              </button>
+            )}
 
             {/* totals summary */}
             <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-[#FAF7EF] p-4 text-center">

@@ -22,11 +22,10 @@ export default async function AdminServiceInvoicePage({ params }: { params: Prom
   const ticket = await getTicket(id);
   if (!ticket) notFound();
 
-  // Lazily record if the ticket just became billable and no ledger row exists yet.
-  if (!invoice) {
-    await recordServiceInvoice(ticket);
-    invoice = await getInvoiceByRefId(id);
-  }
+  // Idempotent: records the invoice if the ticket just became billable, and
+  // re-syncs amounts/paid status if the final cost changed since it was minted.
+  await recordServiceInvoice(ticket);
+  invoice = await getInvoiceByRefId(id);
 
   return <AdminServiceInvoiceView invoice={invoice ?? null} ticket={ticket} />;
 }

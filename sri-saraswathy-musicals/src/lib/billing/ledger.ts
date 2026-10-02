@@ -10,7 +10,7 @@
 import { sql } from "drizzle-orm";
 import { db, invoices } from "@/lib/db";
 import { counters } from "@/lib/db/schema";
-import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
+import { getInvoiceByRefId, updateInvoice } from "@/lib/db/queries/invoices";
 import { getAllProducts } from "@/lib/db/queries/products";
 import { getGstSettings } from "@/lib/db/queries/settings";
 import { taxLines } from "@/lib/gst/inclusive";
@@ -198,7 +198,7 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
     // `force`: an admin explicitly opened the invoice, so mint it regardless of status.
     const billable = opts.force || t.status === "ready" || t.status === "completed" || Boolean(t.invoiceNo);
     if (!billable) return;
-    if (await getInvoiceByRefId(t.id)) return;
+    const existing = await getInvoiceByRefId(t.id);
 
     // `base` already includes GST. Extract the taxable value and the tax it
     // contains, so subtotal + CGST + SGST == the charge the customer pays.
@@ -208,9 +208,25 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
     const gst = total - taxable;
     const cgst = Math.round(gst / 2);
     const sgst = gst - cgst;
+    const paid = total - (t.advance || 0) <= 0;
+
+    if (existing) {
+      // The invoice is minted once (at ready/completed, often off the intake
+      // estimate). If the final cost changes afterwards, keep the number and
+      // bring the amounts + paid status in line with the ticket.
+      if (existing.total !== total) {
+        await updateInvoice(t.id, {
+          items: [{ name: `Repair & service — ${t.productName}`, hsn: "9954", qty: 1, rate: base, gst: rate, amount: base }],
+          subtotal: taxable, cgst, sgst, igst: 0, total,
+          status: paid ? "paid" : "pending",
+        });
+      } else if (existing.status !== "cancelled" && existing.status !== (paid ? "paid" : "pending")) {
+        await updateInvoice(t.id, { status: paid ? "paid" : "pending" });
+      }
+      return;
+    }
     const dateIso = t.completedAt || t.updatedAt || t.createdAt;
     const number = await nextInvoiceNumber(dateIso);
-    const paid = total - (t.advance || 0) <= 0;
 
     await insertInvoice({
       id: t.id,

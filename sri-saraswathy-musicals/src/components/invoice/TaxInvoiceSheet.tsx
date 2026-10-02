@@ -109,11 +109,10 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
 
         {/* Line items */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
             <thead>
               <tr className="bg-ink-900 text-ivory-50 [&>th]:py-3 [&>th]:text-[10px] [&>th]:font-bold [&>th]:uppercase [&>th]:tracking-[0.12em]">
                 <th className="rounded-l-lg pl-4 pr-3 text-left">Description</th>
-                <th className="px-3 text-left">Delivery instruction</th>
                 <th className="px-3 text-center">HSN</th>
                 {!isBillOfSupply && <th className="px-3 text-center">GST</th>}
                 <th className="px-3 text-right">MRP</th>
@@ -128,8 +127,10 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                 <tr key={i} className="align-top [&>td]:border-b [&>td]:border-ink-100 [&>td]:py-4">
                   <td className="pl-4 pr-3">
                     <p className="font-semibold text-ink-900">{l.name}</p>
+                    {l.instruction && (
+                      <p className="mt-1 text-xs text-ink-500"><span className="font-semibold uppercase tracking-wider text-ink-400">Delivery instruction:</span> {l.instruction}</p>
+                    )}
                   </td>
-                  <td className="px-3 text-left text-xs text-ink-700">{l.instruction || "—"}</td>
                   <td className="px-3 text-center text-ink-600">{l.hsn || "-"}</td>
                   {!isBillOfSupply && (
                     <td className="px-3 text-center tabular-nums text-ink-600">{l.gst > 0 ? `${l.gst}%` : "—"}</td>

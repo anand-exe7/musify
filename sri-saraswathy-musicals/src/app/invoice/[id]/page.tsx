@@ -61,6 +61,9 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   if (invoice.source === "service") {
     const ticket = await getTicket(id);
     if (ticket) {
+      // Re-sync if the final cost changed after the invoice was minted.
+      await recordServiceInvoice(ticket);
+      invoice = (await getInvoiceByRefId(id)) ?? invoice;
       const total = invoice.total;
       const paid = Math.min(total, ticket.advance || 0);
       payment = { paid, balance: ticket.status === "cancelled" ? 0 : Math.max(0, total - paid) };

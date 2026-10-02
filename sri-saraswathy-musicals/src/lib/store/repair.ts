@@ -44,7 +44,7 @@ export interface RepairTicket {
   branch: Branch;
   technician?: string;
   deadline: string; // ISO — promised-by date
-  // Money (pre-GST service charge)
+  // Money (GST-inclusive service charge)
   estimate: number;
   finalCost: number;
   advance: number;

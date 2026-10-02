@@ -310,9 +310,9 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* ── LEFT ── */}
-        <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        {/* ── LEFT ── (min-w-0 lets the wide items table scroll inside its card instead of pushing the summary off-screen) */}
+        <div className="min-w-0 space-y-6">
           {/* Customer */}
           <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
             <div className="mb-4 flex items-center gap-2">
@@ -361,38 +361,29 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Rows — a table: one line per item, scrolls sideways on small screens */}
-            <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white">
-              <table className="w-full min-w-[1040px] text-sm">
-                <thead>
-                  <tr className="border-b border-ink-100 bg-[#FAF7EF] text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 [&>th]:px-2 [&>th]:py-2.5">
-                    <th className="w-8 pl-3">#</th>
-                    <th className="min-w-[200px]">Item</th>
-                    <th className="w-24">HSN</th>
-                    <th className="w-20">GST</th>
-                    <th className="w-28">MRP (₹)</th>
-                    <th className="w-28">Price (₹)</th>
-                    <th className="w-28 text-center">Qty</th>
-                    <th className="w-28">Discount (₹)</th>
-                    <th className="min-w-[170px]">Delivery instruction</th>
-                    <th className="w-28 text-right">Amount</th>
-                    <th className="w-10" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-50">
-                  {rows.map((r, i) => (
-                    <tr key={r.id} className="align-middle [&>td]:px-2 [&>td]:py-2">
-                      <td className="pl-3 text-xs text-ink-400">{i + 1}</td>
-                      <td>
-                        <input
-                          value={r.name}
-                          onChange={(e) => setRow(r.id, { name: e.target.value })}
-                          placeholder="Item name / description…"
-                          aria-label="Item name"
-                          className={cn(cell, "text-left")}
-                        />
-                      </td>
-                      <td>
+            {/* Rows — two-line cards: name + amount on top, details underneath */}
+            <div className="space-y-3">
+              {rows.map((r, i) => {
+                const lbl = "mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500";
+                return (
+                  <div key={r.id} className="rounded-xl border border-ink-100 bg-white p-3 md:p-4">
+                    <div className="flex items-center gap-3">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink-900/5 text-xs font-semibold text-ink-500">{i + 1}</span>
+                      <input
+                        value={r.name}
+                        onChange={(e) => setRow(r.id, { name: e.target.value })}
+                        placeholder="Item name / description…"
+                        aria-label="Item name"
+                        className={cn(cell, "min-w-0 flex-1 py-2.5 text-left font-medium")}
+                      />
+                      <span className="w-28 shrink-0 text-right text-base font-bold tabular-nums text-ink-900">{formatINR(Math.max(0, r.price * r.qty - lineDiscount(r)))}</span>
+                      <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6 md:pl-10">
+                      <div>
+                        <label className={lbl}>HSN</label>
                         <input
                           value={r.hsn ?? ""}
                           onChange={(e) => setRow(r.id, { hsn: e.target.value })}
@@ -401,8 +392,9 @@ export default function BillingPage() {
                           inputMode="numeric"
                           className={cn(cell, "text-left")}
                         />
-                      </td>
-                      <td>
+                      </div>
+                      <div>
+                        <label className={lbl}>GST</label>
                         <select
                           value={r.gstRate == null ? "none" : String(r.gstRate)}
                           onChange={(e) => setRow(r.id, { gstRate: e.target.value === "none" ? null : Number(e.target.value) })}
@@ -416,8 +408,9 @@ export default function BillingPage() {
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td>
+                      </div>
+                      <div>
+                        <label className={lbl}>MRP (₹)</label>
                         <MoneyInput
                           value={r.mrp || 0}
                           onChange={(paise) => setRow(r.id, { mrp: paise })}
@@ -426,22 +419,25 @@ export default function BillingPage() {
                           title="MRP per unit — defaults to the catalog MRP; blank = same as price"
                           className={cell}
                         />
-                      </td>
-                      <td>
+                      </div>
+                      <div>
+                        <label className={lbl}>Price (₹)</label>
                         <MoneyInput value={r.price || 0} onChange={(paise) => setRow(r.id, { price: paise })} placeholder="Price" aria-label="Price per unit" className={cell} />
-                      </td>
-                      <td>
-                        <div className="mx-auto flex w-24 items-center justify-between rounded-lg border border-ink-200 bg-ivory-50 px-0.5">
-                          <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} aria-label="Decrease quantity" className="grid h-8 w-7 place-items-center text-ink-500 hover:text-ink-900">
+                      </div>
+                      <div>
+                        <label className={lbl}>Qty</label>
+                        <div className="flex items-center justify-between rounded-lg border border-ink-200 bg-ivory-50 px-0.5">
+                          <button onClick={() => setRow(r.id, { qty: Math.max(1, r.qty - 1) })} aria-label="Decrease quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
                             <Minus className="h-3.5 w-3.5" />
                           </button>
                           <span className="text-sm font-semibold tabular-nums">{r.qty}</span>
-                          <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} aria-label="Increase quantity" className="grid h-8 w-7 place-items-center text-ink-500 hover:text-ink-900">
+                          <button onClick={() => setRow(r.id, { qty: r.qty + 1 })} aria-label="Increase quantity" className="grid h-9 w-8 place-items-center text-ink-500 hover:text-ink-900">
                             <Plus className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                      </td>
-                      <td>
+                      </div>
+                      <div>
+                        <label className={lbl}>Discount (₹)</label>
                         <MoneyInput
                           value={lineDiscount(r)}
                           onChange={(paise) => setRow(r.id, { discount: Math.min(paise, r.price * r.qty) })}
@@ -450,8 +446,9 @@ export default function BillingPage() {
                           aria-label="Item discount"
                           className={cell}
                         />
-                      </td>
-                      <td>
+                      </div>
+                      <div className="col-span-full">
+                        <label className={lbl}>Delivery instruction</label>
                         <input
                           value={r.instruction ?? ""}
                           onChange={(e) => setRow(r.id, { instruction: e.target.value })}
@@ -460,23 +457,17 @@ export default function BillingPage() {
                           maxLength={120}
                           className={cn(cell, "text-left")}
                         />
-                      </td>
-                      <td className="text-right font-semibold tabular-nums text-ink-900">{formatINR(Math.max(0, r.price * r.qty - lineDiscount(r)))}</td>
-                      <td>
-                        <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </div>
 
         {/* ── RIGHT: summary ── */}
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside className="min-w-0 xl:sticky xl:top-24 xl:self-start">
           <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
             {/* meta */}
             <dl className="space-y-2 border-b border-dashed border-ink-200 pb-4 text-xs">
