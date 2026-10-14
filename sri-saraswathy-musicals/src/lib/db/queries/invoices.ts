@@ -22,7 +22,7 @@ export async function getInvoiceByRefId(refId: string): Promise<Invoice | undefi
 }
 
 /** The letters used in a branch's references ("V", "1MH"…): its stored invoice code, else its initial. */
-async function branchCode(branch: string): Promise<string> {
+export async function branchCode(branch: string): Promise<string> {
   const [b] = await db.select({ code: branches.code, name: branches.name }).from(branches).where(eq(branches.id, branch)).limit(1);
   const code = (b?.code ?? "").trim().toUpperCase();
   return code || (b?.name ?? branch).trim().charAt(0).toUpperCase() || "X";

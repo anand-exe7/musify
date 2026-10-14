@@ -176,6 +176,13 @@
       "when": 1791983640575,
       "tag": "0024_invoice_reference",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791984670620,
+      "tag": "0025_quotations",
+      "breakpoints": true
     }
   ]
 }

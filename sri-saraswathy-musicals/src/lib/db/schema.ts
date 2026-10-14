@@ -37,6 +37,7 @@ import {
   STAFF_ROLES,
   ORDER_STATUSES,
   INVOICE_STATUSES,
+  QUOTATION_STATUSES,
   INVOICE_SOURCES,
   BILL_STATUSES,
   BILL_SOURCES,
@@ -306,6 +307,38 @@ export const invoices = pgTable("invoices", {
   // GST: invoice numbers must be unique.
   uniqueIndex("invoices_number_unique").on(t.number).where(sql`${t.number} <> ''`),
   uniqueIndex("invoices_reference_unique").on(t.reference).where(sql`${t.reference} <> ''`),
+]);
+
+/** Quotations (price offers). Prices are GST-inclusive, like invoices; `number` runs per branch and year (QT-2026-V001). */
+export const quotations = pgTable("quotations", {
+  /** Random id used in the customer share link. */
+  id: text("id").primaryKey(),
+  number: text("number").notNull(),
+  date: text("date").notNull(),
+  /** Last day the prices hold (30 days from issue by default). */
+  validUntil: text("valid_until").notNull(),
+  customer: text("customer").notNull(),
+  customerPhone: text("customer_phone"),
+  customerGstin: text("customer_gstin"),
+  branch: text("branch").notNull(),
+  items: jsonb("items")
+    .$type<{ name: string; hsn: string; qty: number; rate: number; gst: number; amount: number; note?: string }[]>()
+    .notNull()
+    .default([]),
+  subtotal: integer("subtotal").notNull().default(0),
+  cgst: integer("cgst").notNull().default(0),
+  sgst: integer("sgst").notNull().default(0),
+  igst: integer("igst").notNull().default(0),
+  discount: integer("discount").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  /** Advance the customer must pay to start the work / process the order (paise). */
+  advance: integer("advance").notNull().default(0),
+  status: text("status").notNull().default("open"),
+  notes: text("notes").notNull().default(""),
+}, (t) => [
+  check("quotations_status_check", oneOf(t.status, QUOTATION_STATUSES)),
+  check("quotations_branch_check", oneOf(t.branch, BRANCHES)),
+  uniqueIndex("quotations_number_unique").on(t.number),
 ]);
 
 export const vendors = pgTable("vendors", {
@@ -644,6 +677,7 @@ export type UserRow = typeof users.$inferSelect;
 export type StaffRow = typeof staff.$inferSelect;
 export type OrderRow = typeof orders.$inferSelect;
 export type InvoiceRow = typeof invoices.$inferSelect;
+export type QuotationRow = typeof quotations.$inferSelect;
 export type VendorRow = typeof vendors.$inferSelect;
 export type BranchRow = typeof branches.$inferSelect;
 export type StockInwardRow = typeof stockInward.$inferSelect;

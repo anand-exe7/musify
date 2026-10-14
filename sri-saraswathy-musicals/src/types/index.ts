@@ -130,6 +130,42 @@ export interface Invoice {
   discount?: number;
 }
 
+export interface QuotationLine {
+  name: string;
+  hsn: string;
+  qty: number;
+  /** GST-inclusive unit price (paise). */
+  rate: number;
+  gst: number;
+  /** qty × rate (paise), before the quotation-level discount. */
+  amount: number;
+  note?: string;
+}
+
+export interface Quotation {
+  /** Random id, used in the customer share link. */
+  id: string;
+  /** Per branch and year, e.g. QT-2026-V001. */
+  number: string;
+  date: string;
+  validUntil: string;
+  customer: string;
+  customerPhone?: string | null;
+  customerGstin?: string | null;
+  branch: string;
+  items: QuotationLine[];
+  subtotal: number;
+  cgst: number;
+  sgst: number;
+  igst?: number;
+  discount?: number;
+  total: number;
+  /** Advance needed to start work / process the order (paise). */
+  advance?: number;
+  status: "open" | "accepted" | "declined";
+  notes?: string;
+}
+
 export interface User {
   id: string;
   name: string;

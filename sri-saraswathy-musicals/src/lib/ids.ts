@@ -11,10 +11,11 @@
  * PUR — purchase headers (`purchases`) — the receipt a user thinks of as "a purchase"
  * PAY — vendor payment ledger rows (`vendor_payments`)
  * TRF — inter-branch stock transfers (`stock_transfers`)
+ * QUO — quotations (`quotations`) — the random id in the share link
  */
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW" | "PUR" | "PAY" | "TRF";
+export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW" | "PUR" | "PAY" | "TRF" | "QUO";
 
 function randomSuffix(len = 5): string {
   let s = "";
