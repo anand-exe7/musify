@@ -122,7 +122,7 @@ export default function ExpensesPage() {
   // Ledger — period + search + category filter, sorted.
   const ledger = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let list = periodExpenses.filter((e) => {
+    const list = periodExpenses.filter((e) => {
       if (catFilter !== "all" && e.category !== catFilter) return false;
       if (!q) return true;
       return (

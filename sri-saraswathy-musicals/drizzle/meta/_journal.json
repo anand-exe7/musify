@@ -183,6 +183,27 @@
       "when": 1791984670620,
       "tag": "0025_quotations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791987743767,
+      "tag": "0026_purchase_gst_paid_branch",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791996589479,
+      "tag": "0027_purchase_paid_allocations",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791996596883,
+      "tag": "0028_drop_purchase_paid_branch",
+      "breakpoints": true
     }
   ]
 }

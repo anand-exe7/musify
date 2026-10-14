@@ -101,7 +101,7 @@ function ShopContent() {
         <div className="hidden items-center gap-6 md:flex">
           <select
             value={origin}
-            onChange={(e) => setOrigin(e.target.value as any)}
+            onChange={(e) => setOrigin(e.target.value as "all" | "indian" | "western")}
             className="border-0 bg-transparent text-xs font-medium uppercase tracking-[0.18em] text-ink-700 focus:outline-none"
           >
             <option value="all">All origins</option>

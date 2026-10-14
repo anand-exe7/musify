@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, Save, X, RotateCcw } from "lucide-react";
 import type { Invoice } from "@/types";
 import { cn } from "@/lib/utils";
-import { BRANCH_KEYS } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
 
 type Line = Invoice["items"][number];

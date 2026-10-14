@@ -380,7 +380,8 @@ export const purchases = pgTable("purchases", {
   igst: integer("igst").notNull().default(0),
   totalAmount: integer("total_amount").notNull().default(0),
   amountPaid: integer("amount_paid").notNull().default(0),
-  paymentMode: text("payment_mode").notNull().default(""),
+  /** What each branch paid of `amountPaid` ({ "Branch 2": 150000 }). Null on older purchases, which spread it by goods value. */
+  paidAllocations: jsonb("paid_allocations").$type<Record<string, number>>(),  paymentMode: text("payment_mode").notNull().default(""),
   notes: text("notes").notNull().default(""),
   createdBy: text("created_by").notNull().default(""),
   createdAt: text("created_at").notNull(),
@@ -410,6 +411,8 @@ export const stockInward = pgTable("stock_inward", {
   variant: text("variant").notNull().default(""),
   quantity: integer("quantity").notNull().default(0),
   unitCost: integer("unit_cost").notNull().default(0),
+  /** GST rate (%) charged on this line by the vendor. */
+  gst: integer("gst").notNull().default(0),
   branch: text("branch").notNull(),
   createdBy: text("created_by").notNull().default(""),
   inwardAt: text("inward_at").notNull(),

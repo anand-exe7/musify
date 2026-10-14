@@ -5,6 +5,15 @@ import { FileText, Search, Globe, Store, Wrench, ExternalLink } from "lucide-rea
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
+import { useBranchScope } from "@/lib/store/branch";
+
+/** yyyy-mm-dd of an invoice's timestamp in the viewer's local time (so an evening bill stays on its day). */
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(+d)) return iso.slice(0, 10);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 type SourceFilter = "all" | "web" | "pos" | "service" | "manual";
 
@@ -25,6 +34,10 @@ export default function InvoicesLedgerPage() {
   const [error, setError] = useState(false);
   const [source, setSource] = useState<SourceFilter>("all");
   const [query, setQuery] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [branch, setBranch] = useState("all");
+  const allowed = useBranchScope((s) => s.allowed);
 
   useEffect(() => {
     let alive = true;
@@ -54,9 +67,19 @@ export default function InvoicesLedgerPage() {
   // placeholder instead of a misleading 0.
   const stat = (v: string | number) => (loading ? "…" : error ? "—" : String(v));
 
+  // Date range and branch narrow everything below (the totals too); source tabs and search narrow the table.
+  const inScope = useMemo(
+    () =>
+      invoices.filter((v) => {
+        const day = localDay(v.date);
+        return (!from || day >= from) && (!to || day <= to) && (branch === "all" || v.branch === branch);
+      }),
+    [invoices, from, to, branch],
+  );
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return invoices.filter(
+    return inScope.filter(
       (v) =>
         (source === "all" || (v.source ?? "manual") === source) &&
         (q === "" ||
@@ -65,17 +88,18 @@ export default function InvoicesLedgerPage() {
           v.customer.toLowerCase().includes(q) ||
           v.id.toLowerCase().includes(q)),
     );
-  }, [invoices, source, query]);
+  }, [inScope, source, query]);
 
   const stats = useMemo(() => {
     const sum = (list: Invoice[]) => list.reduce((n, v) => n + v.total, 0);
     return {
-      count: invoices.length,
-      total: sum(invoices),
-      web: invoices.filter((v) => v.source === "web").length,
-      pos: invoices.filter((v) => v.source === "pos").length,
+      count: inScope.length,
+      total: sum(inScope),
+      web: inScope.filter((v) => v.source === "web").length,
+      pos: inScope.filter((v) => v.source === "pos").length,
     };
-  }, [invoices]);
+  }, [inScope]);
+  const hasFilter = !!(from || to || branch !== "all");
 
   const filters: { key: SourceFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -103,6 +127,27 @@ export default function InvoicesLedgerPage() {
         <Stat label="Total billed" value={loading ? "…" : error ? "—" : formatINR(stats.total)} />
         <Stat label="Online" value={stat(stats.web)} />
         <Stat label="In-store" value={stat(stats.pos)} />
+      </div>
+
+      {/* Date + branch filters */}
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
+          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        </label>
+        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        </label>
+        {allowed.length > 1 && (
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Branch
+            <select value={branch} onChange={(e) => setBranch(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
+              <option value="all">All branches</option>
+              {allowed.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+            </select>
+          </label>
+        )}
+        {hasFilter && (
+          <button onClick={() => { setFrom(""); setTo(""); setBranch("all"); }} className="pb-2.5 text-xs font-semibold text-gold-600 hover:underline">Clear filters</button>
+        )}
       </div>
 
       {/* Controls */}

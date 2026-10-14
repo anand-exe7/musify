@@ -51,3 +51,7 @@ Desktop.ini
 *.tmp
 *.tmp.ts
 *.pem
+
+# Local testing helper that prints a session token
+dev-session.mjs
+lint-out.json

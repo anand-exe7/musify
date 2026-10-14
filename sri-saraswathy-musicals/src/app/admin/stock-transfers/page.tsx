@@ -63,10 +63,6 @@ export default function StockTransfersPage() {
     setToBranch(otherBranch(lockedSource ?? effectiveBranch(scopeSelected)));
   }, [lockedSource, scopeSelected]);
 
-  useEffect(() => {
-    void loadTransfers();
-  }, []);
-
   const loadTransfers = async () => {
     try {
       const res = await fetch("/api/stock-transfers", { cache: "no-store" });
@@ -75,6 +71,10 @@ export default function StockTransfersPage() {
       /* ignore */
     }
   };
+
+  useEffect(() => {
+    void loadTransfers();
+  }, []);
 
   const notify = (m: string) => {
     setToast(m);

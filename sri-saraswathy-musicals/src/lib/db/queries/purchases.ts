@@ -41,6 +41,8 @@ export interface PurchaseRecord {
   igst: number;
   totalAmount: number;
   amountPaid: number;
+  /** What each branch paid of `amountPaid` (absent on older purchases, which spread it by goods value). */
+  paidAllocations?: Record<string, number>;
   paymentMode: PurchasePaymentMode;
   notes: string;
   createdBy: string;
@@ -56,6 +58,8 @@ export interface PurchaseLineRecord {
   variant: string;
   quantity: number;
   unitCost: number;
+  /** GST rate (%) the vendor charged on this line. */
+  gst: number;
   branch: string;
   createdBy: string;
   inwardAt: string;
@@ -79,12 +83,16 @@ export interface PurchaseInput {
   igst?: number;
   totalAmount: number;
   amountPaid?: number;
+  /** How much of `amountPaid` each branch pays. Optional when the stock all lands in one branch. */
+  paidAllocations?: PaidAllocationInput[];
   paymentMode?: PurchasePaymentMode;
   notes?: string;
   lines: InwardBatchLine[];
 }
 
 export class PurchaseValidationError extends Error {}
+
+export interface PaidAllocationInput { branch: string; amount: number }
 
 function assertMode(m: unknown): asserts m is PurchasePaymentMode {
   if (m !== undefined && !PAYMENT_MODES.includes(m as PurchasePaymentMode)) {
@@ -167,6 +175,45 @@ export async function getPurchase(id: string): Promise<PurchaseWithLines | undef
 
 /* ──────────────────────────  Create  ────────────────────────── */
 
+/**
+ * How a paid amount is split across branches, the same way stock is: the person
+ * says how much each branch pays and the shares must add up to the amount. Each
+ * branch has to be one that received stock on the purchase (and, for staff, one of
+ * their own). With stock going to a single branch the split can be left out.
+ * Nothing paid means no split.
+ */
+function resolvePaidAllocations(
+  amountPaid: number,
+  given: PaidAllocationInput[] | undefined,
+  receiving: string[],
+  allowed: Branch[] | null,
+): Record<string, number> | null {
+  if (amountPaid <= 0) return null;
+  const list = (given ?? []).filter((a) => a && a.amount !== 0);
+  if (list.length === 0) {
+    if (receiving.length === 1) return { [receiving[0]]: amountPaid };
+    throw new PurchaseValidationError("Split the amount paid across the branches (it must add up to the amount paid).");
+  }
+  const out: Record<string, number> = {};
+  for (const a of list) {
+    if (!isBranch(a.branch)) throw new PurchaseValidationError("Unknown branch in the payment split.");
+    if (!Number.isInteger(a.amount) || a.amount < 0) throw new PurchaseValidationError("Each branch's share must be a whole number of paise.");
+    if (out[a.branch] !== undefined) throw new PurchaseValidationError("A branch appears twice in the payment split.");
+    if (allowed && !allowed.includes(a.branch)) {
+      throw new PurchaseValidationError(`You can only record a payment for ${allowed.map(branchLabel).join(" or ")}.`);
+    }
+    if (!receiving.includes(a.branch)) {
+      throw new PurchaseValidationError(`${branchLabel(a.branch)} isn't receiving any stock on this purchase; pick a branch that is.`);
+    }
+    out[a.branch] = a.amount;
+  }
+  const sum = Object.values(out).reduce((n, v) => n + v, 0);
+  if (sum !== amountPaid) {
+    throw new PurchaseValidationError(`The branch shares (${sum}) don't add up to the amount paid (${amountPaid}).`);
+  }
+  return out;
+}
+
 export async function createPurchase(input: PurchaseInput, createdBy: string, allowed: Branch[] | null): Promise<PurchaseWithLines> {
   if (!input.vendorId) throw new PurchaseValidationError("Vendor is required.");
   if (!input.batchId || !/^[\w-]{1,64}$/.test(input.batchId)) throw new PurchaseValidationError("Invalid batch id.");
@@ -201,6 +248,8 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
   if (amountPaid > totalAmount) {
     throw new PurchaseValidationError("Amount paid can't exceed the total.");
   }
+  const receivingNow = [...new Set(input.lines.flatMap((l) => l.allocations.filter((a) => a.quantity > 0).map((a) => a.branch)))];
+  const paidAllocations = resolvePaidAllocations(amountPaid, input.paidAllocations, receivingNow, allowed);
 
   // Derived from the whole batch id (no year, no truncation) so a retry always
   // lands on the same header and two different batches never share one.
@@ -217,6 +266,7 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
     igst,
     totalAmount,
     amountPaid,
+    paidAllocations,
     paymentMode: input.paymentMode ?? "",
     notes: input.notes ?? "",
     createdBy,
@@ -257,6 +307,7 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
         variantIndex: l.variantIndex,
         quantity: a.quantity,
         unitCost: l.unitCost,
+        gst: l.gst ?? 0,
         branch: a.branch,
         createdBy,
       });
@@ -278,7 +329,8 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
 /* ──────────────────────────  Edit  ────────────────────────── */
 
 /** Fields an admin may edit after the fact. Tax and total are derived (never
- *  taken from the client) so they can't drift from the GST split / goods. */
+ *  taken from the client) so they can't drift from the GST split / goods. Lines
+ *  can change cost and GST %, not product or quantity (that would move stock). */
 export interface PurchasePatch {
   invoiceNo?: string;
   purchaseDate?: string;
@@ -286,8 +338,11 @@ export interface PurchasePatch {
   sgst?: number;
   igst?: number;
   amountPaid?: number;
+  /** How much of the paid-at-purchase amount each branch pays. */
+  paidAllocations?: PaidAllocationInput[];
   paymentMode?: PurchasePaymentMode;
   notes?: string;
+  lines?: { id: string; unitCost?: number; gst?: number }[];
 }
 
 export async function updatePurchase(id: string, patch: PurchasePatch): Promise<PurchaseRecord | undefined> {
@@ -298,14 +353,52 @@ export async function updatePurchase(id: string, patch: PurchasePatch): Promise<
   if (patch.invoiceNo !== undefined && typeof patch.invoiceNo !== "string") throw new PurchaseValidationError("Invalid invoice number.");
   if (patch.notes !== undefined && typeof patch.notes !== "string") throw new PurchaseValidationError("Invalid notes.");
 
+  // Line edits are validated up front and written once everything checks out.
+  const lineEdits = new Map<string, { unitCost?: number; gst?: number }>();
+  for (const e of patch.lines ?? []) {
+    if (!existing.lines.some((l) => l.id === e.id)) throw new PurchaseValidationError("That line isn't part of this purchase.");
+    if (e.unitCost !== undefined) paise("Unit cost", e.unitCost);
+    if (e.gst !== undefined && (!Number.isInteger(e.gst) || e.gst < 0 || e.gst > 100)) {
+      throw new PurchaseValidationError("GST % must be a whole number from 0 to 100.");
+    }
+    lineEdits.set(e.id, { unitCost: e.unitCost, gst: e.gst });
+  }
+  const hasLines = existing.lines.length > 0;
+  const subtotal = hasLines
+    ? existing.lines.reduce((n, l) => n + l.quantity * (lineEdits.get(l.id)?.unitCost ?? l.unitCost), 0)
+    : existing.subtotal;
+
   const cgst = patch.cgst === undefined ? existing.cgst : paise("CGST", patch.cgst);
   const sgst = patch.sgst === undefined ? existing.sgst : paise("SGST", patch.sgst);
   const igst = patch.igst === undefined ? existing.igst : paise("IGST", patch.igst);
   const tax = cgst + sgst + igst;
-  const totalAmount = existing.subtotal + tax;
+  const totalAmount = subtotal + tax;
   const amountPaid = patch.amountPaid === undefined ? existing.amountPaid : paise("Amount paid", patch.amountPaid);
   if (amountPaid + existing.paymentsTotal > totalAmount) {
     throw new PurchaseValidationError("Amount paid (including later payments) can't exceed the total.");
+  }
+
+  // The paid-now amount stays split across branches that actually received stock.
+  const receiving = [...new Set(existing.lines.map((l) => l.branch))];
+  let paidAllocations: Record<string, number> | null | undefined;
+  if (amountPaid <= 0) {
+    paidAllocations = null;
+  } else if (patch.paidAllocations !== undefined) {
+    paidAllocations = resolvePaidAllocations(amountPaid, patch.paidAllocations, receiving, null);
+  } else if (existing.paidAllocations) {
+    const kept = Object.values(existing.paidAllocations).reduce((n, v) => n + v, 0);
+    if (kept !== amountPaid) {
+      if (receiving.length === 1) paidAllocations = { [receiving[0]]: amountPaid };
+      else throw new PurchaseValidationError("Split the new amount paid across the branches.");
+    }
+  } else if (amountPaid !== existing.amountPaid) {
+    // An older purchase (no split on record) whose paid amount changed needs one now.
+    paidAllocations = resolvePaidAllocations(amountPaid, undefined, receiving, null);
+  }
+
+  for (const [lineId, e] of lineEdits) {
+    const set = definedOnly({ unitCost: e.unitCost, gst: e.gst }) as Partial<typeof stockInward.$inferInsert>;
+    if (Object.keys(set).length > 0) await db.update(stockInward).set(set).where(eq(stockInward.id, lineId));
   }
 
   const set = definedOnly({
@@ -313,7 +406,9 @@ export async function updatePurchase(id: string, patch: PurchasePatch): Promise<
     purchaseDate: patch.purchaseDate,
     paymentMode: patch.paymentMode,
     notes: patch.notes,
+    paidAllocations,
     cgst, sgst, igst, tax, totalAmount, amountPaid,
+    subtotal,
   }) as Partial<typeof purchases.$inferInsert>;
   const [r] = await db.update(purchases).set(set).where(eq(purchases.id, id)).returning();
   return r ? row<PurchaseRecord>(r) : undefined;
@@ -434,7 +529,7 @@ export async function vendorOutstandings(): Promise<VendorOutstandingRow[]> {
   // it by lines in the same ratio as goods, so a mixed-branch purchase charges
   // each branch's share correctly.
   const headerPaidRows = await db
-    .select({ id: purchases.id, vendorId: purchases.vendorId, amountPaid: purchases.amountPaid })
+    .select({ id: purchases.id, vendorId: purchases.vendorId, amountPaid: purchases.amountPaid, paidAllocations: purchases.paidAllocations })
     .from(purchases)
     .where(sql`${purchases.amountPaid} > 0`);
 
@@ -470,9 +565,14 @@ export async function vendorOutstandings(): Promise<VendorOutstandingRow[]> {
   for (const r of paymentRows) {
     if (isBranch(r.branch)) bump(r.vendorId, r.branch, 0, Number(r.total));
   }
-  // Prorate header-paid with the same split used for the bill itself.
+  // The paid-now amount goes to the branches it was recorded against. Purchases
+  // from before that was captured (no split) keep the old by-goods spread.
   const headerWeights = weightsByPurchase(headerSplits);
   for (const h of headerPaidRows) {
+    if (h.paidAllocations) {
+      for (const [b, amt] of Object.entries(h.paidAllocations)) if (isBranch(b) && amt > 0) bump(h.vendorId, b, 0, amt);
+      continue;
+    }
     const w = headerWeights.get(h.id);
     if (!w) continue;
     for (const [b, share] of Object.entries(splitAcrossBranches(h.amountPaid, w))) {
@@ -566,15 +666,33 @@ export async function vendorStatement(vendorId: string, scope: Branch[] | null =
       lines: linesByPurchase.get(p.id) ?? [],
     });
     if (p.amountPaid > 0) {
-      entries.push({
-        kind: "payment",
-        id: `${p.id}:initial`,
-        at: purchasedAt(p),
-        branch: dominant.get(p.id) ?? null,
-        amount: shareOf(p, p.amountPaid),
-        mode: p.paymentMode,
-        reference: "At purchase",
-      });
+      const split = p.paidAllocations ? Object.entries(p.paidAllocations).filter(([b, v]) => isBranch(b) && v > 0) : null;
+      if (split) {
+        // One entry per paying branch; a branch-scoped ledger shows only its own.
+        for (const [b, amt] of split) {
+          if (scope && !scope.includes(b)) continue;
+          entries.push({
+            kind: "payment",
+            id: split.length === 1 ? `${p.id}:initial` : `${p.id}:initial:${b}`,
+            at: purchasedAt(p),
+            branch: b,
+            amount: amt,
+            mode: p.paymentMode,
+            reference: "At purchase",
+          });
+        }
+      } else {
+        // Older purchases: spread by goods value.
+        entries.push({
+          kind: "payment",
+          id: `${p.id}:initial`,
+          at: purchasedAt(p),
+          branch: dominant.get(p.id) ?? null,
+          amount: shareOf(p, p.amountPaid),
+          mode: p.paymentMode,
+          reference: "At purchase",
+        });
+      }
     }
   }
   // Stock received before purchase headers existed still counts toward the
@@ -670,6 +788,45 @@ export async function createVendorPayment(input: VendorPaymentInput, createdBy: 
         throw new PurchaseValidationError("Payment exceeds the purchase's balance (someone else just paid it). Refresh and retry.");
       }
     }
+  }
+  return saved;
+}
+
+/**
+ * Pay part of ONE purchase from several branches at once, like splitting stock:
+ * each branch pays its own amount. Everything is checked first; if a later row
+ * fails the earlier ones are withdrawn so the bill never ends up half-paid.
+ */
+export async function createVendorPaymentSplit(
+  input: Omit<VendorPaymentInput, "branch" | "amount"> & { purchaseId: string; allocations: PaidAllocationInput[] },
+  createdBy: string,
+  allowed: Branch[] | null,
+): Promise<Array<typeof vendorPayments.$inferSelect>> {
+  const list = (input.allocations ?? []).filter((a) => a && a.amount !== 0);
+  if (list.length === 0) throw new PurchaseValidationError("Enter an amount for at least one branch.");
+  const seen = new Set<string>();
+  for (const a of list) {
+    if (!isBranch(a.branch)) throw new PurchaseValidationError("Unknown branch in the payment split.");
+    if (!Number.isInteger(a.amount) || a.amount <= 0) throw new PurchaseValidationError("Each branch's share must be a whole number of paise > 0.");
+    if (seen.has(a.branch)) throw new PurchaseValidationError("A branch appears twice in the payment split.");
+    seen.add(a.branch);
+    if (allowed && !allowed.includes(a.branch)) {
+      throw new PurchaseValidationError(`You can only record a payment for ${allowed.map(branchLabel).join(" or ")}.`);
+    }
+  }
+  const p = await getPurchase(input.purchaseId);
+  if (!p || p.vendorId !== input.vendorId) throw new PurchaseValidationError("Purchase not found.");
+  const total = list.reduce((n, a) => n + a.amount, 0);
+  if (total > p.totalAmount - p.amountPaid - p.paymentsTotal) throw new PurchaseValidationError("Payment exceeds the purchase's balance.");
+
+  const saved: Array<typeof vendorPayments.$inferSelect> = [];
+  try {
+    for (const a of list) {
+      saved.push(await createVendorPayment({ ...input, branch: a.branch as Branch, amount: a.amount }, createdBy));
+    }
+  } catch (e) {
+    for (const r of saved) await db.delete(vendorPayments).where(eq(vendorPayments.id, r.id));
+    throw e;
   }
   return saved;
 }

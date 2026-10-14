@@ -60,6 +60,7 @@ const sections: Section[] = [
     title: "Procurement",
     items: [
       { href: "/admin/purchases", label: "Purchases", icon: PackagePlus, staff: true },
+      { href: "/admin/purchases/invoices", label: "Purchase Invoices", icon: FileText, staff: true },
       { href: "/admin/vendors", label: "Vendors", icon: Handshake },
       { href: "/admin/vendors/outstandings", label: "Vendor Outstandings", icon: Wallet, staff: true },
     ],

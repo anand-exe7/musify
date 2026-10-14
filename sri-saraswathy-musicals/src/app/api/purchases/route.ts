@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import { createPurchase, getPurchases, PurchaseValidationError, type PurchaseInput } from "@/lib/db/queries/purchases";
 import { purchaseIdsInBranch, scopePurchaseLines } from "@/lib/db/queries/purchases";
-import type { Branch } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 

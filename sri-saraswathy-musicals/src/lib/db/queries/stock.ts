@@ -17,6 +17,8 @@ export interface StockInwardRecord {
   variant: string;
   quantity: number;
   unitCost: number;
+  /** GST rate (%) the vendor charged on this line. */
+  gst: number;
   branch: string;
   createdBy: string;
   inwardAt: string;
@@ -33,6 +35,8 @@ export interface StockInwardInput {
   variantIndex: number;
   quantity: number;
   unitCost: number;
+  /** GST rate (%) on the line; defaults to 0. */
+  gst?: number;
   branch: string;
   createdBy: string;
 }
@@ -70,6 +74,7 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
     variant: variantLabel,
     quantity: input.quantity,
     unitCost: input.unitCost,
+    gst: input.gst ?? 0,
     branch: input.branch,
     createdBy: input.createdBy,
     inwardAt: new Date().toISOString(),
@@ -110,6 +115,8 @@ export interface InwardBatchLine {
   variantIndex: number;
   /** Purchase cost per unit, paise. */
   unitCost: number;
+  /** GST rate (%) on this line (purchases only). */
+  gst?: number;
   quantity: number;
   /** Per-branch split; must sum to `quantity`. */
   allocations: { branch: Branch; quantity: number }[];
@@ -134,6 +141,7 @@ export async function validateInwardBatch(
     const at = `Line ${n + 1}`;
     if (!Number.isInteger(l.quantity) || l.quantity <= 0) throw new InwardValidationError(`${at}: quantity must be a whole number ≥ 1.`);
     if (!Number.isInteger(l.unitCost) || l.unitCost < 0) throw new InwardValidationError(`${at}: invalid unit cost.`);
+    if (l.gst !== undefined && (typeof l.gst !== "number" || !(l.gst >= 0 && l.gst <= 100) || !Number.isInteger(l.gst))) throw new InwardValidationError(`${at}: GST % must be a whole number from 0 to 100.`);
     if (l.newPrice !== undefined && (!Number.isInteger(l.newPrice) || l.newPrice <= 0)) throw new InwardValidationError(`${at}: invalid selling price.`);
     if (!Array.isArray(l.allocations) || l.allocations.length === 0) throw new InwardValidationError(`${at}: no branch split.`);
     let sum = 0;
