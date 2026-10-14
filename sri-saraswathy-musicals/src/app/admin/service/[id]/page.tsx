@@ -66,7 +66,7 @@ export default function TicketDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   // cost editor draft
-  const [draft, setDraft] = useState<{ finalCost: number; advance: number; technician: string; priority: RepairPriority; deadline: string } | null>(null);
+  const [draft, setDraft] = useState<{ finalCost: number; advance: number; technician: string; priority: RepairPriority; deadline: string; gstRate: number } | null>(null);
 
   const t = ticket;
 
@@ -92,9 +92,9 @@ export default function TicketDetailPage() {
   const sm = statusMeta(t.status);
   const pr = PRIORITY_META[t.priority];
   const d = daysUntil(t.deadline);
-  const edit = draft ?? { finalCost: t.finalCost, advance: t.advance, technician: t.technician || "Unassigned", priority: t.priority, deadline: t.deadline };
+  const edit = draft ?? { finalCost: t.finalCost, advance: t.advance, technician: t.technician || "Unassigned", priority: t.priority, deadline: t.deadline, gstRate: t.gstRate };
   const setEdit = (patch: Partial<typeof edit>) => setDraft({ ...edit, ...patch });
-  const dirty = draft && (draft.finalCost !== t.finalCost || draft.advance !== t.advance || draft.technician !== (t.technician || "Unassigned") || draft.priority !== t.priority || draft.deadline !== t.deadline);
+  const dirty = draft && (draft.finalCost !== t.finalCost || draft.advance !== t.advance || draft.technician !== (t.technician || "Unassigned") || draft.priority !== t.priority || draft.deadline !== t.deadline || draft.gstRate !== t.gstRate);
 
   const changeStatus = async (status: RepairStatus) => {
     if (status === t.status) return;
@@ -118,6 +118,7 @@ export default function TicketDetailPage() {
       technician: edit.technician,
       priority: edit.priority,
       deadline: edit.deadline,
+      gstRate: Number(edit.gstRate) || 0,
     };
     const notes: string[] = [];
     if (patch.finalCost !== t.finalCost) notes.push(`final cost ${formatINR(patch.finalCost || 0)}`);
@@ -125,6 +126,7 @@ export default function TicketDetailPage() {
     if (patch.technician !== (t.technician || "Unassigned")) notes.push(`tech → ${patch.technician}`);
     if (patch.priority !== t.priority) notes.push(`priority → ${PRIORITY_META[patch.priority as RepairPriority].label}`);
     if (patch.deadline !== t.deadline) notes.push(`deadline → ${fmtDate(patch.deadline as string)}`);
+    if (patch.gstRate !== t.gstRate) notes.push(`GST → ${patch.gstRate}%`);
     updateTicket(t.id, patch, `Updated ${notes.join(" · ")}`);
     setDraft(null);
     flash("Ticket updated");
@@ -275,7 +277,9 @@ export default function TicketDetailPage() {
               </div>
               <div>
                 <label className={label}>GST (included in cost)</label>
-                <input value={`${t.gstRate}%`} disabled className={cn(field, "cursor-not-allowed bg-ink-50 text-ink-400")} />
+                <select value={edit.gstRate} onChange={(e) => setEdit({ gstRate: Number(e.target.value) })} className={field}>
+                  {[...new Set([0, 5, 12, 18, 28, edit.gstRate])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
+                </select>
               </div>
               <div>
                 <label className={label}>Priority</label>

@@ -44,7 +44,7 @@ export default function BranchesPage() {
       const res = await fetch(`/api/branches/${encodeURIComponent(b.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: b.name, city: b.city, address: b.address, gstin: b.gstin, phone: b.phone, active: b.active }),
+        body: JSON.stringify({ name: b.name, city: b.city, address: b.address, gstin: b.gstin, phone: b.phone, code: b.code, active: b.active }),
       });
       if (!res.ok) throw new Error("save failed");
       setSavedId(b.id);
@@ -102,6 +102,13 @@ export default function BranchesPage() {
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div><label className={label}>GSTIN</label><input value={b.gstin} onChange={(e) => setField(b.id, { gstin: e.target.value.toUpperCase() })} className={cn(field, "font-mono tracking-wide")} placeholder="33XXXXX0000X1ZV" /></div>
               <div><label className={label}>Phone</label><input value={b.phone} onChange={(e) => setField(b.id, { phone: e.target.value })} className={field} /></div>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={label}>Invoice code</label>
+                <input value={b.code} maxLength={6} onChange={(e) => setField(b.id, { code: e.target.value.toUpperCase() })} className={cn(field, "font-mono tracking-wide")} placeholder="e.g. 1MH" />
+                <p className="mt-1 text-[11px] text-ink-400">Invoices from this branch are numbered INV-{new Date().getFullYear()}-{b.code || "…"}001, 002…</p>
+              </div>
             </div>
             <div className="mt-5 flex justify-end">
               <button

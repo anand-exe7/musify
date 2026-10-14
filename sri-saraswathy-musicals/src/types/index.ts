@@ -99,7 +99,10 @@ export interface Order {
 
 export interface Invoice {
   id: string;
+  /** GST tax-invoice number (SSM/2026-27/0021), sequenced across all branches. */
   number: string;
+  /** Customer-facing reference, numbered per branch and year (INV-2026-1MH001). */
+  reference?: string;
   date: string;
   customer: string;
   branch: string;

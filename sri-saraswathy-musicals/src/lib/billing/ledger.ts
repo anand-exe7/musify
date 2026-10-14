@@ -10,7 +10,7 @@
 import { sql } from "drizzle-orm";
 import { db, invoices } from "@/lib/db";
 import { counters } from "@/lib/db/schema";
-import { getInvoiceByRefId, updateInvoice } from "@/lib/db/queries/invoices";
+import { getInvoiceByRefId, updateInvoice, createInvoice } from "@/lib/db/queries/invoices";
 import { getAllProducts } from "@/lib/db/queries/products";
 import { getGstSettings } from "@/lib/db/queries/settings";
 import { taxLines } from "@/lib/gst/inclusive";
@@ -50,7 +50,7 @@ async function nextInvoiceNumber(dateIso: string): Promise<string> {
 }
 
 async function insertInvoice(inv: Invoice): Promise<void> {
-  await db.insert(invoices).values(inv);
+  await createInvoice(inv); // also hands out the branch-wise reference
 }
 
 /**
@@ -214,7 +214,7 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
       // The invoice is minted once (at ready/completed, often off the intake
       // estimate). If the final cost changes afterwards, keep the number and
       // bring the amounts + paid status in line with the ticket.
-      if (existing.total !== total) {
+      if (existing.total !== total || existing.items[0]?.gst !== rate) {
         await updateInvoice(t.id, {
           items: [{ name: `Repair & service — ${t.productName}`, hsn: "9954", qty: 1, rate: base, gst: rate, amount: base }],
           subtotal: taxable, cgst, sgst, igst: 0, total,

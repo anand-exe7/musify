@@ -169,6 +169,13 @@
       "when": 1791979418881,
       "tag": "0023_user_branch_access",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791983640575,
+      "tag": "0024_invoice_reference",
+      "breakpoints": true
     }
   ]
 }

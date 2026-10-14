@@ -61,6 +61,7 @@ export default function InvoicesLedgerPage() {
         (source === "all" || (v.source ?? "manual") === source) &&
         (q === "" ||
           v.number.toLowerCase().includes(q) ||
+          (v.reference ?? "").toLowerCase().includes(q) ||
           v.customer.toLowerCase().includes(q) ||
           v.id.toLowerCase().includes(q)),
     );
@@ -125,7 +126,7 @@ export default function InvoicesLedgerPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search number or customer…"
+            placeholder="Search number, reference or customer…"
             className="w-full bg-transparent text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none"
           />
         </div>
@@ -162,7 +163,7 @@ export default function InvoicesLedgerPage() {
             ) : (
               rows.map((v) => (
                 <tr key={v.id} className="border-b border-ink-100 last:border-0 hover:bg-ivory-100/60">
-                  <td className="px-4 py-3 font-semibold text-ink-900">{v.number}</td>
+                  <td className="px-4 py-3 font-semibold text-ink-900">{v.number}{v.reference && <span className="block text-[11px] font-normal text-ink-400">{v.reference}</span>}</td>
                   <td className="px-4 py-3 text-ink-600">{fmtDate(v.date)}</td>
                   <td className="px-4 py-3 text-ink-700">{v.customer}</td>
                   <td className="px-4 py-3 text-ink-600">{branchLabel(v.branch)}</td>

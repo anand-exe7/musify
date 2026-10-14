@@ -1,6 +1,6 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { invoices } from "@/lib/db/schema";
+import { invoices, branches, counters } from "@/lib/db/schema";
 import type { Invoice } from "@/types";
 import { HttpError } from "@/lib/api/errors";
 import { isBranch } from "@/lib/stock";
@@ -21,8 +21,34 @@ export async function getInvoiceByRefId(refId: string): Promise<Invoice | undefi
   return r ? row<Invoice>(r) : undefined;
 }
 
+/** The letters used in a branch's references ("V", "1MH"…): its stored invoice code, else its initial. */
+async function branchCode(branch: string): Promise<string> {
+  const [b] = await db.select({ code: branches.code, name: branches.name }).from(branches).where(eq(branches.id, branch)).limit(1);
+  const code = (b?.code ?? "").trim().toUpperCase();
+  return code || (b?.name ?? branch).trim().charAt(0).toUpperCase() || "X";
+}
+
+/**
+ * Next customer-facing reference for a branch, e.g. `INV-2026-1MH001`. Each
+ * (branch code, year) has its own counter, bumped atomically in one upsert so
+ * concurrent sales never share a number. This is separate from the GST tax-invoice
+ * number (`SSM/2026-27/0021`), which runs across all branches.
+ */
+export async function nextBranchReference(branch: string, dateIso: string): Promise<string> {
+  const code = await branchCode(branch);
+  const d = new Date(dateIso);
+  const year = Number.isNaN(d.getTime()) ? new Date().getFullYear() : d.getFullYear();
+  const [r] = await db
+    .insert(counters)
+    .values({ key: `invref:${code}:${year}`, value: 1 })
+    .onConflictDoUpdate({ target: counters.key, set: { value: sql`${counters.value} + 1` } })
+    .returning({ value: counters.value });
+  return `INV-${year}-${code}${String(r?.value ?? 1).padStart(3, "0")}`;
+}
+
 export async function createInvoice(inv: Invoice): Promise<Invoice> {
-  const [r] = await db.insert(invoices).values(inv).returning();
+  const withRef = { ...inv, reference: inv.reference || (await nextBranchReference(inv.branch, inv.date)) };
+  const [r] = await db.insert(invoices).values(withRef).returning();
   return row<Invoice>(r);
 }
 

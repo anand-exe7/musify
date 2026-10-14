@@ -268,7 +268,10 @@ export const orders = pgTable("orders", {
 /** GST sales invoices (see `data/invoices.ts`). */
 export const invoices = pgTable("invoices", {
   id: text("id").primaryKey(),
+  /** GST tax-invoice number (SSM/2026-27/0021) — one sequence across all branches. */
   number: text("number").notNull(),
+  /** Customer-facing reference, numbered per branch and year (INV-2026-1MH001). */
+  reference: text("reference").notNull().default(""),
   date: text("date").notNull(),
   customer: text("customer").notNull(),
   branch: text("branch").notNull(),
@@ -302,6 +305,7 @@ export const invoices = pgTable("invoices", {
   check("invoices_branch_check", oneOf(t.branch, BRANCHES)),
   // GST: invoice numbers must be unique.
   uniqueIndex("invoices_number_unique").on(t.number).where(sql`${t.number} <> ''`),
+  uniqueIndex("invoices_reference_unique").on(t.reference).where(sql`${t.reference} <> ''`),
 ]);
 
 export const vendors = pgTable("vendors", {

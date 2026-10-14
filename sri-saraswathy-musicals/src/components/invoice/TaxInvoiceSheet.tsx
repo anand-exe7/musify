@@ -67,7 +67,10 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             <div>
               <p className="font-display text-2xl font-bold leading-tight text-ink-900">{BUSINESS.name}</p>
               <p className="mt-0.5 text-xs text-ink-500">{BUSINESS.tagline}</p>
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-ivory-100 px-2 py-1 text-[11px] text-ink-500">
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-700">
+                {BUSINESS.branches.map((b) => b.area).join(" · ")}
+              </p>
+              <p className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-ivory-100 px-2 py-1 text-[11px] text-ink-500">
                 GSTIN <span className="font-semibold tracking-wide text-ink-800">{BUSINESS.gstin}</span>
               </p>
             </div>
@@ -78,6 +81,9 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             </p>
             <p className="mt-1 font-display text-xl font-bold text-ink-900">{invoice.number}</p>
             <dl className="mt-3 space-y-1.5 text-xs">
+              {invoice.reference && (
+                <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Invoice No</dt><dd className="font-semibold text-ink-800">{invoice.reference}</dd></div>
+              )}
               <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Date</dt><dd className="font-medium text-ink-700">{fmtDate(invoice.date)}</dd></div>
               {invoice.refId && (
                 <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Ref</dt><dd className="font-medium text-ink-700">{invoice.refId}</dd></div>
@@ -195,6 +201,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         <div className="mt-7 rounded-xl border border-ink-100 bg-ivory-50/60 p-4">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-400">Terms and conditions</p>
           <p className="mt-1.5 text-sm text-ink-700">Goods once sold cannot be taken back or exchanged.</p>
+          <p className="mt-1 text-sm text-ink-700">Subject to &lsquo;Chennai&rsquo; jurisdiction only.</p>
         </div>
 
         {/* Footer */}

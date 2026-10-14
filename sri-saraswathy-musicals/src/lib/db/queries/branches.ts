@@ -1,4 +1,5 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
+import { HttpError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { branches } from "@/lib/db/schema";
 import { BUSINESS } from "@/lib/data/business";
@@ -11,6 +12,8 @@ export interface BranchProfile {
   address: string;
   gstin: string;
   phone: string;
+  /** Letters used in this branch's invoice references (e.g. "V", "1MH"). */
+  code: string;
   active: boolean;
 }
 
@@ -46,6 +49,13 @@ export async function getBranches(): Promise<BranchProfile[]> {
 }
 
 export async function updateBranch(id: string, patch: Partial<BranchProfile>): Promise<BranchProfile | undefined> {
+  if (patch.code !== undefined) {
+    const code = patch.code.trim().toUpperCase();
+    if (!/^[A-Z0-9]{1,6}$/.test(code)) throw new HttpError(400, "Invoice code must be 1–6 letters or digits.");
+    const [clash] = await db.select({ id: branches.id }).from(branches).where(and(eq(branches.code, code), ne(branches.id, id))).limit(1);
+    if (clash) throw new HttpError(400, `The code ${code} is already used by another branch.`);
+    patch = { ...patch, code };
+  }
   const set = definedOnly(patch) as Partial<typeof branches.$inferInsert>;
   if (Object.keys(set).length === 0) {
     const [r] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);

@@ -216,7 +216,11 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
                   <td className="px-2 py-2"><input className={inp} value={l.hsn} onChange={(e) => setLine(idx, { hsn: e.target.value })} /></td>
                   <td className="px-2 py-2"><input type="number" min={0} className={cn(inp, "text-center tabular-nums")} value={l.qty} onChange={(e) => setLine(idx, { qty: Number(e.target.value) || 0 })} /></td>
                   <td className="px-2 py-2"><input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(l.rate)} onChange={(e) => setLine(idx, { rate: rupeesToPaise(e.target.value) })} /></td>
-                  <td className="px-2 py-2"><input type="number" min={0} className={cn(inp, "text-right tabular-nums")} value={l.gst} onChange={(e) => setLine(idx, { gst: Number(e.target.value) || 0 })} /></td>
+                  <td className="px-2 py-2">
+                    <select className={cn(inp, "text-right tabular-nums")} value={l.gst} onChange={(e) => setLine(idx, { gst: Number(e.target.value) || 0 })}>
+                      {[...new Set([0, 5, 12, 18, 28, l.gst || 0])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
+                    </select>
+                  </td>
                   <td className="px-2 py-2"><input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(l.mrp ?? 0)} onChange={(e) => setLine(idx, { mrp: rupeesToPaise(e.target.value) })} /></td>
                   <td className="px-2 py-2"><input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(l.discount ?? 0)} onChange={(e) => setLine(idx, { discount: rupeesToPaise(e.target.value) })} /></td>
                   <td className="px-2 py-2 text-right font-semibold tabular-nums text-ink-900">
