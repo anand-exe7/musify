@@ -15,7 +15,7 @@
  */
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW" | "PUR" | "PAY" | "TRF" | "QUO";
+export type DocPrefix = "INV" | "INQ" | "REP" | "SER" | "ORD" | "VEN" | "INW" | "PUR" | "PAY" | "TRF" | "QUO" | "OPB";
 
 function randomSuffix(len = 5): string {
   let s = "";

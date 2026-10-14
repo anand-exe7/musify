@@ -7,9 +7,13 @@ import { useBranchScope } from "@/lib/store/branch";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
-import { MoneyInput } from "@/components/ui/MoneyInput";
-import { BRANCH_KEYS, type Branch, type BranchFilter, isBranch, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
-import { BranchOptions } from "@/components/admin/BranchOptions";
+import { PaymentDialog } from "@/components/purchases/PaymentDialog";
+import { PayVendorDialog } from "@/components/purchases/PayVendorDialog";
+import { OpeningBalanceDialog } from "@/components/purchases/OpeningBalanceDialog";
+import { ApplyPaymentDialog, type LoosePayment } from "@/components/purchases/ApplyPaymentDialog";
+import type { PurchaseRow } from "@/components/purchases/types";
+import { useAuth } from "@/lib/store/auth";
+import { BRANCH_KEYS, type Branch, type BranchFilter, branchLabel } from "@/lib/stock";
 
 interface OutstandingRow {
   vendorId: string;
@@ -152,6 +156,17 @@ export default function VendorOutstandingsPage() {
           </button>
         </div>
       </div>
+
+      <details className="mb-6 rounded-xl border border-ink-100 bg-ivory-50 px-4 py-3 text-sm text-ink-600">
+        <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-ink-500">How this works</summary>
+        <ul className="mt-3 list-disc space-y-1.5 pl-5">
+          <li><b>Outstanding</b> for a branch = what it bought (goods + GST) − what it paid. A minus means that branch paid for another branch&apos;s goods.</li>
+          <li><b>Starting balance:</b> open a vendor with <i>View</i> and use <i>+ Opening balance</i> (admin) to enter what a branch already owed before this system. It then behaves like a bill.</li>
+          <li><b>Paying:</b> every payment is made against one bill. Open a vendor, press <i>Pay</i> on the bill, and enter how much each branch pays. Only branches that received that bill&apos;s stock can pay it.</li>
+          <li><b>Pay vendor:</b> enter one amount and it is spread over the oldest unpaid bills. The table shows which bill gets what and which branch pays it before you save, and every bill keeps its own paid / left figures.</li>
+          <li><b>Older payments</b> that weren&apos;t against a bill appear as &ldquo;Payments not against a bill&rdquo; — an admin can apply them to bills.</li>
+        </ul>
+      </details>
 
       {/* Branch filter */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -298,19 +313,26 @@ function StatementDrawer({
 }) {
   const [data, setData] = useState<StatementResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [paying, setPaying] = useState(false);
-  const [amount, setAmount] = useState(0);
-  const [mode, setMode] = useState<"CASH" | "UPI" | "CARD" | "BANK" | "OTHER">("CASH");
-  const [branch, setBranch] = useState<Branch>(lockedBranch ?? DEFAULT_BRANCH);
-  const [reference, setReference] = useState("");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
+  const isAdmin = useAuth((s) => s.isAdmin);
+  const [bills, setBills] = useState<PurchaseRow[]>([]);
+  const [loose, setLoose] = useState<LoosePayment[]>([]);
+  const [payBill, setPayBill] = useState<PurchaseRow | null>(null);
+  const [payingVendor, setPayingVendor] = useState(false);
+  const [applying, setApplying] = useState<LoosePayment | null>(null);
+  const [addingOpening, setAddingOpening] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const load = async () => {
     try {
       const res = await fetch(`/api/vendors/${vendorId}/statement`, { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
       setData((await res.json()) as StatementResponse);
+      const [pr, lr] = await Promise.all([
+        fetch("/api/purchases", { cache: "no-store" }),
+        fetch(`/api/vendors/${vendorId}/unapplied`, { cache: "no-store" }),
+      ]);
+      if (pr.ok) setBills(((await pr.json()) as PurchaseRow[]).filter((p) => p.vendorId === vendorId));
+      if (lr.ok) setLoose((await lr.json()) as LoosePayment[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load statement.");
     }
@@ -328,32 +350,15 @@ function StatementDrawer({
 
   const outstanding = rows.length > 0 ? rows[rows.length - 1].running : 0;
 
-  const submitPayment = async () => {
-    if (amount <= 0) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/vendor-payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendorId, branch, amount, mode, reference, notes }),
-      });
-      if (!res.ok) {
-        const b = await res.json().catch(() => null);
-        throw new Error(typeof b?.error === "string" ? b.error : "Payment failed.");
-      }
-      setPaying(false);
-      setAmount(0); setReference(""); setNotes("");
-      await load();
-      await onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Payment failed.");
-    } finally {
-      setSaving(false);
-    }
+  const done = async (msg: string) => {
+    setPayBill(null); setPayingVendor(false); setApplying(null); setAddingOpening(false);
+    setToast(msg);
+    setTimeout(() => setToast(null), 3200);
+    await load();
+    await onChanged();
   };
-
-  const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
-  const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
+  const balanceOf = (p: PurchaseRow) => Math.max(0, p.totalAmount - p.amountPaid - p.paymentsTotal);
+  const unpaid = bills.filter((p) => balanceOf(p) > 0).sort((x, y) => (x.purchaseDate || x.createdAt).localeCompare(y.purchaseDate || y.createdAt));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-ink-950/40 backdrop-blur-sm" onClick={onClose}>
@@ -373,35 +378,48 @@ function StatementDrawer({
             <span className={cn("text-lg font-bold tabular-nums", outstanding > 0 ? "text-danger" : "text-ink-900")}>{formatINR(outstanding)}</span>
           </div>
 
-          {!paying ? (
-            <button onClick={() => { setAmount(Math.max(0, outstanding)); setPaying(true); }} className="mb-5 flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800">
-              <Receipt className="h-4 w-4" /> Record On-Account Payment
-            </button>
-          ) : (
-            <div className="mb-5 space-y-3 rounded-xl border border-ink-100 bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-ink-500">New Payment</p>
-              <div><label className={label}>Amount (₹)</label><MoneyInput value={amount} onChange={setAmount} className={field + " text-right tabular-nums"} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={label}>Mode</label>
-                  <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className={field}>
-                    {(["CASH", "UPI", "CARD", "BANK", "OTHER"] as const).map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={label}>Branch (from)</label>
-                  <select value={branch} onChange={(e) => setBranch(e.target.value as Branch)} disabled={!!lockedBranch} className={field}>
-                    <BranchOptions />
-                  </select>
-                </div>
+          <div className="mb-5">
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500">Unpaid bills</h4>
+              <div className="flex items-center gap-3">
+                {unpaid.length > 0 && (
+                  <button onClick={() => setPayingVendor(true)} className="rounded-lg bg-gold-500 px-3 py-1 text-xs font-bold text-ink-900 hover:bg-gold-400">Pay vendor</button>
+                )}
+                {isAdmin && (
+                  <button onClick={() => setAddingOpening(true)} className="text-xs font-semibold text-gold-600 hover:underline">+ Opening balance</button>
+                )}
               </div>
-              <div><label className={label}>Reference</label><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} placeholder="Cheque / txn id" /></div>
-              <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} /></div>
-              <div className="flex gap-2">
-                <button onClick={() => setPaying(false)} className="flex-1 rounded-lg border border-ink-200 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-                <button onClick={submitPayment} disabled={saving || amount <= 0} className="flex-1 rounded-lg bg-ink-900 py-2 text-xs font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
-                  {saving ? "Saving…" : "Save Payment"}
-                </button>
+            </div>
+            <div className="space-y-2">
+              {unpaid.map((b) => (
+                <div key={b.id} className="flex items-center gap-3 rounded-xl border border-ink-100 bg-white px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink-900">{b.openingBranch ? `Opening balance · ${branchLabel(b.openingBranch)}` : b.invoiceNo || b.id}</p>
+                    <p className="text-[11px] text-ink-400">{b.purchaseDate || b.createdAt.slice(0, 10)} · total {formatINR(b.totalAmount)}</p>
+                  </div>
+                  <span className="text-sm font-bold tabular-nums text-danger">{formatINR(balanceOf(b))}</span>
+                  <button onClick={() => setPayBill(b)} className="inline-flex items-center gap-1 rounded-lg bg-ink-900 px-3 py-1.5 text-xs font-semibold text-ivory-50 hover:bg-ink-800">
+                    <Receipt className="h-3.5 w-3.5" /> Pay
+                  </button>
+                </div>
+              ))}
+              {unpaid.length === 0 && <p className="rounded-xl border border-dashed border-ink-200 px-3 py-4 text-center text-xs text-ink-400">No unpaid bills.</p>}
+            </div>
+            <p className="mt-2 text-[11px] text-ink-400">Pay one bill with its Pay button, or use Pay vendor to spread one amount over the oldest bills. Either way each payment lands on a bill, so every invoice shows what is still owed on it.</p>
+          </div>
+
+          {loose.length > 0 && (
+            <div className="mb-5 rounded-xl border border-gold-500/40 bg-gold-500/5 p-3">
+              <h4 className="mb-1 text-xs font-bold uppercase tracking-wider text-ink-600">Payments not against a bill</h4>
+              <p className="mb-2 text-[11px] text-ink-500">Paid to the vendor before payments had to name a bill.{isAdmin ? " Apply each one to the bills it settled." : " An admin can apply them to bills."}</p>
+              <div className="space-y-1.5">
+                {loose.map((l) => (
+                  <div key={l.id} className="flex items-center gap-3 text-xs">
+                    <span className="flex-1 text-ink-700">{l.paidAt.slice(0, 10)} · {branchLabel(l.branch)} · {l.mode || "—"}</span>
+                    <b className="tabular-nums text-ink-900">{formatINR(l.amount)}</b>
+                    {isAdmin && <button onClick={() => setApplying(l)} className="rounded-lg border border-ink-200 px-2.5 py-1 font-semibold text-ink-700 hover:bg-ink-900/5">Apply to bills</button>}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -446,6 +464,11 @@ function StatementDrawer({
             </table>
           </div>
         </div>
+        {payingVendor && <PayVendorDialog vendorId={vendorId} vendorName={vendorName} bills={bills} onClose={() => setPayingVendor(false)} onDone={done} />}
+        {payBill && <PaymentDialog purchase={payBill} vendorName={vendorName} onClose={() => setPayBill(null)} onDone={done} />}
+        {addingOpening && <OpeningBalanceDialog vendorId={vendorId} onClose={() => setAddingOpening(false)} onDone={done} />}
+        {applying && <ApplyPaymentDialog payment={applying} bills={bills} onClose={() => setApplying(null)} onDone={done} />}
+        {toast && <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>}
       </aside>
     </div>
   );

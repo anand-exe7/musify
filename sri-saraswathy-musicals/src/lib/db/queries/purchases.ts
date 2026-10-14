@@ -43,6 +43,8 @@ export interface PurchaseRecord {
   amountPaid: number;
   /** What each branch paid of `amountPaid` (absent on older purchases, which spread it by goods value). */
   paidAllocations?: Record<string, number>;
+  /** Set on an opening-balance bill: the branch that owes it (it has no lines). */
+  openingBranch?: string | null;
   paymentMode: PurchasePaymentMode;
   notes: string;
   createdBy: string;
@@ -140,7 +142,7 @@ function purchasedAt(p: { purchaseDate: string; createdAt: string }): string {
 
 /** `amountPaid` is what was paid at purchase time; later part-payments live in
  *  vendor_payments and are surfaced here as `paymentsTotal`. Paid = both. */
-export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal: number; lines: PurchaseLineRecord[] })[]> {
+export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal: number; lines: PurchaseLineRecord[]; branchOwed: Record<string, number> })[]> {
   const list = rows<PurchaseRecord>(await db.select().from(purchases).orderBy(desc(purchases.createdAt)));
   const sums = await db
     .select({ purchaseId: vendorPayments.purchaseId, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
@@ -157,7 +159,56 @@ export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal:
     arr.push(l);
     linesById.set(l.purchaseId as string, arr);
   }
-  return list.map((p) => ({ ...p, paymentsTotal: byId.get(p.id) ?? 0, lines: linesById.get(p.id) ?? [] }));
+  const byBranch = await db
+    .select({ purchaseId: vendorPayments.purchaseId, branch: vendorPayments.branch, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
+    .from(vendorPayments)
+    .where(sql`${vendorPayments.purchaseId} IS NOT NULL`)
+    .groupBy(vendorPayments.purchaseId, vendorPayments.branch);
+  const laterByBill = new Map<string, Record<string, number>>();
+  for (const r of byBranch) {
+    const m = laterByBill.get(r.purchaseId as string) ?? {};
+    m[r.branch] = Number(r.sum);
+    laterByBill.set(r.purchaseId as string, m);
+  }
+  return list.map((p) => {
+    const lines = linesById.get(p.id) ?? [];
+    return { ...p, paymentsTotal: byId.get(p.id) ?? 0, lines, branchOwed: branchOwedOn(p, lines, laterByBill.get(p.id) ?? {}) };
+  });
+}
+
+/**
+ * What each branch still owes on one bill: its share of the total (by the goods it
+ * took) minus what that branch has paid (at purchase and later). Never below 0.
+ * Every branch that received stock is listed, even at 0.
+ */
+export function branchOwedOn(
+  p: { totalAmount: number; amountPaid: number; paidAllocations?: Record<string, number>; openingBranch?: string | null },
+  lines: { branch: string; quantity: number; unitCost: number }[],
+  later: Record<string, number>,
+): Record<string, number> {
+  if (p.openingBranch) return { [p.openingBranch]: Math.max(0, p.totalAmount - p.amountPaid - Object.values(later).reduce((n, v) => n + v, 0)) };
+  const goods: Record<string, number> = {};
+  for (const l of lines) goods[l.branch] = (goods[l.branch] ?? 0) + l.quantity * l.unitCost;
+  const branches = Object.keys(goods);
+  if (branches.length === 0) return {};
+  const sum = branches.reduce((n, b) => n + goods[b], 0);
+  const share = splitByWeightsPlain(p.totalAmount, goods, sum);
+  const atPurchase = p.paidAllocations ?? (p.amountPaid > 0 ? splitByWeightsPlain(p.amountPaid, goods, sum) : {});
+  const out: Record<string, number> = {};
+  for (const b of branches) out[b] = Math.max(0, (share[b] ?? 0) - (atPurchase[b] ?? 0) - (later[b] ?? 0));
+  return out;
+}
+
+function splitByWeightsPlain(amount: number, w: Record<string, number>, sum: number): Record<string, number> {
+  const bs = Object.keys(w);
+  const out: Record<string, number> = {};
+  let left = amount;
+  bs.forEach((b, i) => {
+    const part = i === bs.length - 1 ? left : sum > 0 ? Math.round((amount * w[b]) / sum) : Math.round(amount / bs.length);
+    out[b] = part;
+    left -= part;
+  });
+  return out;
 }
 
 export async function getPurchase(id: string): Promise<PurchaseWithLines | undefined> {
@@ -343,6 +394,8 @@ export interface PurchasePatch {
   paymentMode?: PurchasePaymentMode;
   notes?: string;
   lines?: { id: string; unitCost?: number; gst?: number }[];
+  /** Opening-balance bills only: the amount owed. */
+  openingAmount?: number;
 }
 
 export async function updatePurchase(id: string, patch: PurchasePatch): Promise<PurchaseRecord | undefined> {
@@ -363,6 +416,7 @@ export async function updatePurchase(id: string, patch: PurchasePatch): Promise<
     }
     lineEdits.set(e.id, { unitCost: e.unitCost, gst: e.gst });
   }
+  if (existing.openingBranch) return updateOpeningBalance(existing, patch);
   const hasLines = existing.lines.length > 0;
   const subtotal = hasLines
     ? existing.lines.reduce((n, l) => n + l.quantity * (lineEdits.get(l.id)?.unitCost ?? l.unitCost), 0)
@@ -469,7 +523,7 @@ async function purchasedByVendorBranch(vendorId?: string): Promise<Map<string, n
   const out = new Map<string, number>();
   const add = (v: string, b: Branch, n: number) => out.set(`${v}::${b}`, (out.get(`${v}::${b}`) ?? 0) + n);
 
-  const heads = await db.select({ id: purchases.id, vendorId: purchases.vendorId, total: purchases.totalAmount })
+  const heads = await db.select({ id: purchases.id, vendorId: purchases.vendorId, total: purchases.totalAmount, openingBranch: purchases.openingBranch })
     .from(purchases)
     .where(vendorId ? eq(purchases.vendorId, vendorId) : undefined);
   const lineRows = await db
@@ -490,6 +544,7 @@ async function purchasedByVendorBranch(vendorId?: string): Promise<Map<string, n
   }
   const perHeader = weightsByPurchase(lineRows);
   for (const h of heads) {
+    if (h.openingBranch) { if (isBranch(h.openingBranch)) add(h.vendorId, h.openingBranch, h.total); continue; }
     const w = perHeader.get(h.id);
     if (!w) continue; // header with no lines: no branch to charge it to
     for (const [b, share] of Object.entries(splitAcrossBranches(h.total, w))) add(h.vendorId, b as Branch, share);
@@ -655,6 +710,15 @@ export async function vendorStatement(vendorId: string, scope: Branch[] | null =
 
   const entries: VendorStatementEntry[] = [];
   for (const p of purch) {
+    if (p.openingBranch) {
+      if (scope && !scope.includes(p.openingBranch)) continue;
+      entries.push({
+        kind: "purchase", id: p.id, at: purchasedAt(p),
+        branch: isBranch(p.openingBranch) ? p.openingBranch : null,
+        amount: p.totalAmount, invoiceNo: "Opening balance", lines: [],
+      });
+      continue;
+    }
     if (scope && !linesByPurchase.has(p.id)) continue;
     entries.push({
       kind: "purchase",
@@ -749,6 +813,9 @@ export async function createVendorPayment(input: VendorPaymentInput, createdBy: 
     if (!p || p.vendorId !== input.vendorId) throw new PurchaseValidationError("Purchase not found.");
     // The payment must come out of a branch the purchase actually landed stock in,
     // otherwise per-branch outstandings drift (one branch stays owing, another goes negative).
+    if (p.openingBranch && p.openingBranch !== input.branch) {
+      throw new PurchaseValidationError(`This opening balance is owed by ${branchLabel(p.openingBranch)}; pay it from there.`);
+    }
     if (p.lines.length > 0 && !p.lines.some((l) => l.branch === input.branch)) {
       throw new PurchaseValidationError(`This purchase has no stock in ${branchLabel(input.branch)}; pay it from a branch it was received into.`);
     }
@@ -831,6 +898,45 @@ export async function createVendorPaymentSplit(
   return saved;
 }
 
+/**
+ * Pay several of one vendor's bills in a single go (the rows come from the "Pay
+ * vendor" screen: which bill, which branch pays, how much). Every row is checked
+ * first — each bill's total against its balance, each branch against the bill and the
+ * user's access — and if one still fails the rows already saved are withdrawn.
+ */
+export async function payVendorBills(
+  input: { vendorId: string; rows: { purchaseId: string; branch: string; amount: number }[]; mode: VendorPaymentInput["mode"]; reference?: string; paidAt?: string; notes?: string },
+  createdBy: string,
+  allowed: Branch[] | null,
+): Promise<Array<typeof vendorPayments.$inferSelect>> {
+  const rows = (input.rows ?? []).filter((r) => r && r.amount !== 0);
+  if (rows.length === 0) throw new PurchaseValidationError("Enter an amount to pay.");
+  const perBill = new Map<string, number>();
+  for (const r of rows) {
+    if (!isBranch(r.branch)) throw new PurchaseValidationError("Unknown branch in the payment.");
+    if (!Number.isInteger(r.amount) || r.amount <= 0) throw new PurchaseValidationError("Each amount must be a whole number of paise > 0.");
+    if (allowed && !allowed.includes(r.branch)) {
+      throw new PurchaseValidationError(`You can only record a payment for ${allowed.map(branchLabel).join(" or ")}.`);
+    }
+    perBill.set(r.purchaseId, (perBill.get(r.purchaseId) ?? 0) + r.amount);
+  }
+  for (const [id, sum] of perBill) {
+    const p = await getPurchase(id);
+    if (!p || p.vendorId !== input.vendorId) throw new PurchaseValidationError("A bill in this payment isn't this vendor's.");
+    if (sum > p.totalAmount - p.amountPaid - p.paymentsTotal) throw new PurchaseValidationError(`${p.invoiceNo || p.id} has less outstanding than that.`);
+  }
+  const saved: Array<typeof vendorPayments.$inferSelect> = [];
+  try {
+    for (const r of rows) {
+      saved.push(await createVendorPayment({ vendorId: input.vendorId, purchaseId: r.purchaseId, branch: r.branch as Branch, amount: r.amount, mode: input.mode, reference: input.reference, paidAt: input.paidAt, notes: input.notes }, createdBy));
+    }
+  } catch (e) {
+    for (const r of saved) await db.delete(vendorPayments).where(eq(vendorPayments.id, r.id));
+    throw e;
+  }
+  return saved;
+}
+
 export async function getVendorPayments(vendorId?: string): Promise<Array<typeof vendorPayments.$inferSelect>> {
   if (vendorId) {
     return await db.select().from(vendorPayments).where(eq(vendorPayments.vendorId, vendorId)).orderBy(desc(vendorPayments.paidAt));
@@ -841,6 +947,103 @@ export async function getVendorPayments(vendorId?: string): Promise<Array<typeof
 export async function deleteVendorPayment(id: string): Promise<boolean> {
   const r = await db.delete(vendorPayments).where(eq(vendorPayments.id, id)).returning({ id: vendorPayments.id });
   return r.length > 0;
+}
+
+/* ──────────────────────────  Opening balances  ─────────────── */
+
+export interface OpeningBalanceInput { vendorId: string; branch: string; amount: number; asOf?: string; notes?: string }
+
+/**
+ * What we already owed a vendor before this system. It's stored as a bill with no
+ * items (owed by one branch) so it shows in outstandings and the statement and can
+ * be paid against like any other invoice.
+ */
+export async function createOpeningBalance(input: OpeningBalanceInput, createdBy: string): Promise<PurchaseWithLines> {
+  if (!isBranch(input.branch)) throw new PurchaseValidationError("Unknown branch.");
+  if (!Number.isInteger(input.amount) || input.amount <= 0) throw new PurchaseValidationError("Opening balance must be more than 0.");
+  assertDate(input.asOf);
+  const [vendor] = await db.select({ id: vendors.id }).from(vendors).where(eq(vendors.id, input.vendorId)).limit(1);
+  if (!vendor) throw new PurchaseValidationError("Unknown vendor.");
+  const [dup] = await db.select({ id: purchases.id }).from(purchases)
+    .where(and(eq(purchases.vendorId, input.vendorId), eq(purchases.openingBranch, input.branch))).limit(1);
+  if (dup) throw new PurchaseValidationError(`${branchLabel(input.branch)} already has an opening balance for this vendor; edit that one.`);
+  const id = genDocId("OPB");
+  await db.insert(purchases).values({
+    id, vendorId: input.vendorId, invoiceNo: "Opening balance", purchaseDate: input.asOf ?? "",
+    subtotal: input.amount, tax: 0, cgst: 0, sgst: 0, igst: 0, totalAmount: input.amount, amountPaid: 0,
+    openingBranch: input.branch, notes: input.notes ?? "", createdBy, createdAt: new Date().toISOString(),
+  });
+  return (await getPurchase(id)) as PurchaseWithLines;
+}
+
+async function updateOpeningBalance(existing: PurchaseWithLines, patch: PurchasePatch): Promise<PurchaseRecord | undefined> {
+  assertDate(patch.purchaseDate);
+  const amount = patch.openingAmount === undefined ? existing.totalAmount : patch.openingAmount;
+  if (!Number.isInteger(amount) || amount <= 0) throw new PurchaseValidationError("Opening balance must be more than 0.");
+  if (amount < existing.paymentsTotal) throw new PurchaseValidationError("The balance can't be less than what's already been paid against it.");
+  const set = definedOnly({
+    purchaseDate: patch.purchaseDate, notes: typeof patch.notes === "string" ? patch.notes : undefined,
+    subtotal: amount, totalAmount: amount,
+  }) as Partial<typeof purchases.$inferInsert>;
+  const [r] = await db.update(purchases).set(set).where(eq(purchases.id, existing.id)).returning();
+  return r ? row<PurchaseRecord>(r) : undefined;
+}
+
+/** Remove an opening balance that nothing has been paid against yet. */
+export async function deleteOpeningBalance(id: string): Promise<boolean> {
+  const p = await getPurchase(id);
+  if (!p?.openingBranch) throw new PurchaseValidationError("Only an opening balance can be removed here.");
+  if (p.paymentsTotal > 0) throw new PurchaseValidationError("Payments are recorded against this balance; remove them first.");
+  const r = await db.delete(purchases).where(eq(purchases.id, id)).returning({ id: purchases.id });
+  return r.length > 0;
+}
+
+/* ──────────────────  Applying an unassigned payment to bills  ─────── */
+
+/** Payments recorded for the vendor in general, from before every payment had to name a bill. */
+export async function unappliedPayments(vendorId: string): Promise<Array<typeof vendorPayments.$inferSelect>> {
+  return await db.select().from(vendorPayments)
+    .where(and(eq(vendorPayments.vendorId, vendorId), sql`${vendorPayments.purchaseId} IS NULL`))
+    .orderBy(vendorPayments.paidAt);
+}
+
+/**
+ * Attach a vendor-level payment to specific bills. The shares must not exceed the
+ * payment; whatever is left stays unassigned. The first share reuses the payment's
+ * row and the rest become copies of it (same branch, mode and date), so branch
+ * outstandings don't move. New rows are written before the original changes, so a
+ * failure part-way leaves the payment whole.
+ */
+export async function applyPaymentToBills(
+  paymentId: string,
+  shares: { purchaseId: string; amount: number }[],
+): Promise<void> {
+  const [pay] = await db.select().from(vendorPayments).where(eq(vendorPayments.id, paymentId)).limit(1);
+  if (!pay) throw new PurchaseValidationError("Payment not found.");
+  if (pay.purchaseId) throw new PurchaseValidationError("This payment is already against a bill.");
+  const list = (shares ?? []).filter((x) => x && x.amount !== 0);
+  if (list.length === 0) throw new PurchaseValidationError("Pick at least one bill.");
+  const seen = new Set<string>();
+  let sum = 0;
+  for (const x of list) {
+    if (!Number.isInteger(x.amount) || x.amount <= 0) throw new PurchaseValidationError("Each share must be a whole number of paise > 0.");
+    if (seen.has(x.purchaseId)) throw new PurchaseValidationError("A bill appears twice.");
+    seen.add(x.purchaseId);
+    sum += x.amount;
+    const p = await getPurchase(x.purchaseId);
+    if (!p || p.vendorId !== pay.vendorId) throw new PurchaseValidationError("Bill not found for this vendor.");
+    if (x.amount > p.totalAmount - p.amountPaid - p.paymentsTotal) throw new PurchaseValidationError(`${p.invoiceNo || p.id} has less outstanding than that.`);
+  }
+  if (sum > pay.amount) throw new PurchaseValidationError("The shares add up to more than the payment.");
+
+  const [first, ...rest] = list;
+  for (const x of rest) {
+    await db.insert(vendorPayments).values({ ...pay, id: genDocId("PAY"), purchaseId: x.purchaseId, amount: x.amount, createdAt: new Date().toISOString() });
+  }
+  if (sum < pay.amount) {
+    await db.insert(vendorPayments).values({ ...pay, id: genDocId("PAY"), purchaseId: null, amount: pay.amount - sum, createdAt: new Date().toISOString() });
+  }
+  await db.update(vendorPayments).set({ purchaseId: first.purchaseId, amount: first.amount }).where(eq(vendorPayments.id, pay.id));
 }
 
 /* ──────────────────────────  Branch scoping helpers  ─────── */
@@ -855,6 +1058,8 @@ export async function purchaseIdsInBranch(branches: Branch[]): Promise<Set<strin
     .where(inArray(stockInward.branch, branches));
   const out = new Set<string>();
   for (const row of r) if (row.purchaseId) out.add(row.purchaseId);
+  const opening = await db.select({ id: purchases.id }).from(purchases).where(inArray(purchases.openingBranch, branches));
+  for (const o of opening) out.add(o.id);
   return out;
 }
 
@@ -873,5 +1078,8 @@ export async function purchaseVisibleTo(purchaseId: string, scope: Branch[] | nu
     .from(stockInward)
     .where(and(eq(stockInward.purchaseId, purchaseId), inArray(stockInward.branch, scope)))
     .limit(1);
-  return !!hit;
+  if (hit) return true;
+  const [open] = await db.select({ id: purchases.id }).from(purchases)
+    .where(and(eq(purchases.id, purchaseId), inArray(purchases.openingBranch, scope))).limit(1);
+  return !!open;
 }

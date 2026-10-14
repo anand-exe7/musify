@@ -204,6 +204,13 @@
       "when": 1791996596883,
       "tag": "0028_drop_purchase_paid_branch",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791998220695,
+      "tag": "0029_purchase_opening_balance",
+      "breakpoints": true
     }
   ]
 }

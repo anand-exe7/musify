@@ -381,7 +381,10 @@ export const purchases = pgTable("purchases", {
   totalAmount: integer("total_amount").notNull().default(0),
   amountPaid: integer("amount_paid").notNull().default(0),
   /** What each branch paid of `amountPaid` ({ "Branch 2": 150000 }). Null on older purchases, which spread it by goods value. */
-  paidAllocations: jsonb("paid_allocations").$type<Record<string, number>>(),  paymentMode: text("payment_mode").notNull().default(""),
+  paidAllocations: jsonb("paid_allocations").$type<Record<string, number>>(),
+  /** Set on an "opening balance" bill (what was owed before this system): the branch that owes it. It has no lines. */
+  openingBranch: text("opening_branch"),
+  paymentMode: text("payment_mode").notNull().default(""),
   notes: text("notes").notNull().default(""),
   createdBy: text("created_by").notNull().default(""),
   createdAt: text("created_at").notNull(),

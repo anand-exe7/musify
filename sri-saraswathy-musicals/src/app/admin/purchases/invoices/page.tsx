@@ -10,6 +10,7 @@ import { downloadCsv } from "@/lib/csv";
 import { branchLabel } from "@/lib/stock";
 import { PaymentDialog } from "@/components/purchases/PaymentDialog";
 import { PurchaseEditDialog } from "@/components/purchases/PurchaseEditDialog";
+import { OpeningBalanceDialog } from "@/components/purchases/OpeningBalanceDialog";
 import type { PurchaseRow } from "@/components/purchases/types";
 
 function fmt(d: string) {
@@ -35,6 +36,7 @@ export default function PurchaseInvoicesPage() {
   const [branch, setBranch] = useState("all");
   const [paying, setPaying] = useState<PurchaseRow | null>(null);
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
+  const [addingOpening, setAddingOpening] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -69,7 +71,7 @@ export default function PurchaseInvoicesPage() {
       const day = dayOf(p);
       if (from && day < from) return false;
       if (to && day > to) return false;
-      if (branch !== "all" && !p.lines.some((l) => l.branch === branch)) return false;
+      if (branch !== "all" && !(p.openingBranch === branch || p.lines.some((l) => l.branch === branch))) return false;
       if (!q) return true;
       return p.id.toLowerCase().includes(q) || p.invoiceNo.toLowerCase().includes(q) || vendorName(p.vendorId).toLowerCase().includes(q);
     });
@@ -87,7 +89,7 @@ export default function PurchaseInvoicesPage() {
     const head = ["Date", "Purchase ID", "Vendor Invoice", "Vendor", "Branches", "Subtotal", "CGST", "SGST", "IGST", "Total", "Paid", "Balance", "Mode", "Notes"];
     const body = filtered.map((p) => [
       dayOf(p), p.id, p.invoiceNo, vendorName(p.vendorId),
-      [...new Set(p.lines.map((l) => branchLabel(l.branch)))].join(" / "),
+      (p.openingBranch ? [branchLabel(p.openingBranch)] : [...new Set(p.lines.map((l) => branchLabel(l.branch)))]).join(" / "),
       r2(p.subtotal), r2(p.cgst), r2(p.sgst), r2(p.igst), r2(p.totalAmount),
       r2(p.amountPaid + p.paymentsTotal), r2(Math.max(0, p.totalAmount - p.amountPaid - p.paymentsTotal)),
       p.paymentMode, p.notes,
@@ -107,7 +109,14 @@ export default function PurchaseInvoicesPage() {
           onDone={async (m) => { setPaying(null); notify(m); await load(); }}
         />
       )}
-      {editing && (
+      {(addingOpening || editing?.openingBranch) && (
+        <OpeningBalanceDialog
+          existing={editing?.openingBranch ? editing : undefined}
+          onClose={() => { setAddingOpening(false); setEditing(null); }}
+          onDone={async (m) => { setAddingOpening(false); setEditing(null); notify(m); await load(); }}
+        />
+      )}
+      {editing && !editing.openingBranch && (
         <PurchaseEditDialog
           purchase={editing}
           onClose={() => setEditing(null)}
@@ -121,9 +130,16 @@ export default function PurchaseInvoicesPage() {
           <h1 className="text-2xl font-bold text-ink-900">Purchase Invoices</h1>
           <p className="mt-1 text-sm text-ink-500">Every vendor bill you&apos;ve recorded. Pay a bill, or edit its costs, GST and amount paid.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {isAdmin && (
+          <button onClick={() => setAddingOpening(true)} className="inline-flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">
+            Opening balance
+          </button>
+        )}
         <Link href="/admin/purchases" className="inline-flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900">
           <Plus className="h-4 w-4" /> New purchase
         </Link>
+        </div>
       </div>
 
       <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -175,7 +191,7 @@ export default function PurchaseInvoicesPage() {
               const paidAll = p.amountPaid + p.paymentsTotal;
               const bal = Math.max(0, p.totalAmount - paidAll);
               const gstTotal = p.tax || p.cgst + p.sgst + p.igst;
-              const branches = [...new Set(p.lines.map((l) => branchLabel(l.branch)))];
+              const branches = p.openingBranch ? [branchLabel(p.openingBranch)] : [...new Set(p.lines.map((l) => branchLabel(l.branch)))];
               return (
                 <Fragment key={p.id}>
                   <tr className="text-ink-700">
@@ -185,7 +201,7 @@ export default function PurchaseInvoicesPage() {
                         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expanded === p.id && "rotate-180")} />
                         {p.id}
                       </button>
-                      <div className="pl-5 text-[10px] font-normal text-ink-400">{p.lines.length} item{p.lines.length === 1 ? "" : "s"}</div>
+                      <div className="pl-5 text-[10px] font-normal text-ink-400">{p.openingBranch ? "Opening balance" : `${p.lines.length} item${p.lines.length === 1 ? "" : "s"}`}</div>
                     </td>
                     <td className="text-ink-600">{p.invoiceNo || <span className="text-ink-300">—</span>}</td>
                     <td className="text-ink-700">{vendorName(p.vendorId)}</td>
@@ -201,7 +217,7 @@ export default function PurchaseInvoicesPage() {
                           <Receipt className="h-3.5 w-3.5" /> Pay
                         </button>
                         {isAdmin && (
-                          <button onClick={() => setEditing(p)} title="Edit purchase invoice" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600">
+                          <button onClick={() => setEditing(p)} title={p.openingBranch ? "Edit opening balance" : "Edit purchase invoice"} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600">
                             <Pencil className="h-3.5 w-3.5" /> Edit
                           </button>
                         )}
@@ -229,7 +245,7 @@ export default function PurchaseInvoicesPage() {
                                 <td className="text-right tabular-nums">{formatINR(l.quantity * l.unitCost)}</td>
                               </tr>
                             ))}
-                            {p.lines.length === 0 && <tr><td colSpan={7} className="py-2 text-ink-400">No items linked to this purchase.</td></tr>}
+                            {p.lines.length === 0 && <tr><td colSpan={7} className="py-2 text-ink-400">{p.openingBranch ? "Owed before this system was set up." : "No items linked to this purchase."}</td></tr>}
                           </tbody>
                         </table>
                         {p.amountPaid > 0 && (

@@ -23,13 +23,14 @@ export function GET(request: NextRequest) {
   });
 }
 
-/** On-account/lump-sum payment, not tied to a specific purchase. */
+/** Pay a vendor: every payment is against one bill (`purchaseId`), never the vendor in general. */
 export function POST(request: NextRequest) {
   return handle("staff", async ({ user, access }) => {
     const body = await readJson<VendorPaymentInput>(request);
+    if (!body.purchaseId) return badRequest("Pick the invoice this payment is for.");
     const branch: Branch = access === "all" || branchAllowed(access, body.branch) ? body.branch : primaryBranchOf(access, DEFAULT_BRANCH);
     try {
-      const rec = await createVendorPayment({ ...body, purchaseId: null, branch }, user.id);
+      const rec = await createVendorPayment({ ...body, branch }, user.id);
       return created(rec);
     } catch (e) {
       if (e instanceof PurchaseValidationError) return badRequest(e.message);

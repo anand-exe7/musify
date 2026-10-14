@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, badRequest, readJson } from "@/lib/api/http";
-import { getPurchase, updatePurchase, purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
+import { getPurchase, updatePurchase, deleteOpeningBalance, purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,19 @@ export function PATCH(request: NextRequest, { params }: { params: Promise<{ id: 
     try {
       const rec = await updatePurchase(id, body);
       return rec ? ok(rec) : notFound("Purchase not found");
+    } catch (e) {
+      if (e instanceof PurchaseValidationError) return badRequest(e.message);
+      throw e;
+    }
+  });
+}
+
+/** Only an opening balance with no payments against it can be removed. */
+export function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return handle("admin", async () => {
+    const { id } = await params;
+    try {
+      return (await deleteOpeningBalance(id)) ? ok({ ok: true }) : notFound("Purchase not found");
     } catch (e) {
       if (e instanceof PurchaseValidationError) return badRequest(e.message);
       throw e;

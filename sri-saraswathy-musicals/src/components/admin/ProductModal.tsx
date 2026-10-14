@@ -117,9 +117,13 @@ export function ProductModal({
       slug: (draft.slug?.trim() || slugify(name)) || draft.id,
       basePrice: Number(draft.basePrice) || 0,
       hsn: (draft.hsn ?? "").trim(),
-      // New products start at 0 — stock comes in through Stock Inward so the vendor is recorded.
+      // A new product's stock figures are its opening stock (no vendor bill); later stock comes in through Purchases.
       variants: isNew
-        ? draft.variants.map((v) => ({ ...v, stock: 0, stockByBranch: emptyStockByBranch() }))
+        ? draft.variants.map((v) => {
+            const stockByBranch = emptyStockByBranch();
+            for (const b of BRANCH_KEYS) stockByBranch[b] = Math.max(0, Math.round(variantStockAt(v, b)));
+            return { ...v, stock: BRANCH_KEYS.reduce((n, b) => n + stockByBranch[b], 0), stockByBranch };
+          })
         : draft.variants,
       isGstApplicable: draft.gstRate != null,
       photos,
@@ -373,14 +377,14 @@ export function ProductModal({
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} disabled={isNew} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? "Receive opening stock via Stock Inward (records the vendor)" : branchLabel(b)} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
+                      <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? `Opening stock at ${branchLabel(b)}` : branchLabel(b)} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {isNew && <p className="mt-2 text-[11px] text-ink-400">Opening stock isn&apos;t entered here — receive it on the <strong>Stock Inward</strong> page so the vendor and cost are recorded.</p>}
+            {isNew && <p className="mt-2 text-[11px] text-ink-400">The stock figures are the <strong>opening stock</strong> you already have in each branch — no vendor bill is created. For stock bought from now on, use <strong>Purchases</strong> so the vendor and cost are recorded.</p>}
           </div>
         </div>
 
