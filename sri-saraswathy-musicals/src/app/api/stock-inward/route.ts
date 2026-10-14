@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import { getInwards, createInward, createInwardBatch, InwardValidationError, type StockInwardInput, type InwardBatchLine } from "@/lib/db/queries/stock";
-import type { Branch } from "@/lib/stock";
+import { DEFAULT_BRANCH, isBranch, type Branch } from "@/lib/stock";
 import { scopeByBranch } from "@/lib/auth/server";
+import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export function POST(request: NextRequest) {
     if (Array.isArray(body?.lines)) {
       if (!body.vendorId) return badRequest("Inward requires `vendorId`");
       try {
-        const recs = await createInwardBatch(body.vendorId, body.lines, user.id, access === "all" ? null : (access as Branch), body.batchId);
+        const recs = await createInwardBatch(body.vendorId, body.lines, user.id, access === "all" ? null : access, body.batchId);
         return created(recs);
       } catch (e) {
         if (e instanceof InwardValidationError) return badRequest(e.message);
@@ -31,7 +32,8 @@ export function POST(request: NextRequest) {
       return badRequest("Inward requires `id`, `vendorId` and `productId`");
     }
     // Branch users can only receive stock into their own branch.
-    const branch = access === "all" ? body.branch || "Branch 1" : access;
+    const branch = access === "all" ? body.branch || DEFAULT_BRANCH : branchAllowed(access, body.branch) ? body.branch : primaryBranchOf(access, DEFAULT_BRANCH);
+    if (!isBranch(branch)) return badRequest("Unknown branch");
     const rec = await createInward({
       id: body.id,
       vendorId: body.vendorId,

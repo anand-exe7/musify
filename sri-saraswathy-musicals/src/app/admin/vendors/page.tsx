@@ -41,8 +41,6 @@ export default function VendorsPage() {
       gst: form.gst.trim(),
       email: "",
       createdAt: new Date().toISOString(),
-      outstanding: 0,
-      totalPurchases: 0,
     };
     const saved = await addVendor(vendor);
     setSaving(false);

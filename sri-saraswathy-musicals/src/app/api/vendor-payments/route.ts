@@ -7,6 +7,8 @@ import {
   type VendorPaymentInput,
 } from "@/lib/db/queries/purchases";
 import type { Branch } from "@/lib/stock";
+import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
+import { DEFAULT_BRANCH } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,7 @@ export function GET(request: NextRequest) {
   return handle("staff", async ({ access }) => {
     const vendorId = request.nextUrl.searchParams.get("vendorId") ?? undefined;
     const list = await getVendorPayments(vendorId);
-    const filtered = access === "all" ? list : list.filter((p) => p.branch === access);
+    const filtered = list.filter((p) => branchAllowed(access, p.branch));
     return ok(filtered);
   });
 }
@@ -25,7 +27,7 @@ export function GET(request: NextRequest) {
 export function POST(request: NextRequest) {
   return handle("staff", async ({ user, access }) => {
     const body = await readJson<VendorPaymentInput>(request);
-    const branch: Branch = access === "all" ? body.branch : (access as Branch);
+    const branch: Branch = access === "all" || branchAllowed(access, body.branch) ? body.branch : primaryBranchOf(access, DEFAULT_BRANCH);
     try {
       const rec = await createVendorPayment({ ...body, purchaseId: null, branch }, user.id);
       return created(rec);

@@ -62,8 +62,8 @@ function ReportInner() {
   const gstr3b = useMemo(() => buildGstr3b(gstr1), [gstr1]);
 
   // Registered person = the Tamil Nadu GSTIN; its principal place is the Porur
-  // branch (Branch 2), matching what the shop files.
-  const reg = branchInfo("Branch 2");
+  // branch (Branch 1 — Vadapalani), matching what the shop files.
+  const reg = branchInfo("Branch 1");
   const phone10 = reg.phone.replace(/\D/g, "").slice(-10);
   const business: ReportBusiness = {
     name: BUSINESS.name,

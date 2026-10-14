@@ -1,10 +1,15 @@
 // Pure stock/branch helpers — safe to import from both server and client code.
 // Kept out of `store/pos.ts` because that module is `"use client"` (Zustand).
 
-export type Branch = "Branch 1" | "Branch 2";
+import { BUSINESS } from "@/lib/data/business";
+
+/** A branch key such as "Branch 1". The set of valid keys is `BRANCH_KEYS`. */
+export type Branch = string;
 export type BranchFilter = Branch | "all";
 
 export interface Variant {
+  /** Durable identity (set once the variant is saved). `variantIndex` is its position. */
+  id?: string;
   attr: string;
   finish: string;
   price: number;
@@ -14,6 +19,8 @@ export interface Variant {
   /** @deprecated Legacy single-bucket stock, treated as sitting in Branch 1. */
   stock?: number;
   disabled?: boolean;
+  /** This variant's own photo. */
+  photo?: string | null;
 }
 
 /** On-hand at a specific branch for one variant. Tolerates the legacy shape:
@@ -29,7 +36,7 @@ export function variantStockAt(v: Variant, branch: Branch): number {
 /** Total on-hand across every branch for one variant. */
 export function variantStock(v: Variant): number {
   if (v.stockByBranch) {
-    return (Number(v.stockByBranch["Branch 1"]) || 0) + (Number(v.stockByBranch["Branch 2"]) || 0);
+    return BRANCH_KEYS.reduce((n, b) => n + (Number(v.stockByBranch?.[b]) || 0), 0);
   }
   return Number(v.stock) || 0;
 }
@@ -49,7 +56,24 @@ export function setVariantStockAt(v: Variant, branch: Branch, qty: number): Vari
 }
 
 /** Every branch the app knows about. Validate untrusted branch strings against this. */
-export const BRANCH_KEYS: readonly Branch[] = ["Branch 1", "Branch 2"];
+export const BRANCH_KEYS: readonly Branch[] = BUSINESS.branches.map((b) => b.key);
+
+/** What people call a branch — its area, e.g. "Vadapalani" (falls back to the key). */
+export function branchLabel(branch: string | null | undefined): string {
+  if (!branch) return "";
+  return BUSINESS.branches.find((b) => b.key === branch)?.area ?? branch;
+}
+
+/** Manager role for a branch: "Branch 3" → "branch3-manager". */
+export const branchManagerRole = (branch: Branch): string => `${branch.toLowerCase().replace(/\s+/g, "")}-manager`;
+
+/** The branch that new records default to (and that legacy flat stock sits in). */
+export const DEFAULT_BRANCH: Branch = BRANCH_KEYS[0];
+
+/** `{ "Branch 1": 0, "Branch 2": 0, … }` — a zeroed per-branch stock map. */
+export function emptyStockByBranch(): Record<Branch, number> {
+  return Object.fromEntries(BRANCH_KEYS.map((b) => [b, 0]));
+}
 
 export function isBranch(v: unknown): v is Branch {
   return typeof v === "string" && (BRANCH_KEYS as readonly string[]).includes(v);
@@ -105,7 +129,7 @@ export function applyStockDeltas(
     if (after < 0 && !opts.allowShort) {
       const what = opts.label ? `${opts.label} — ` : "";
       throw new StockShortfallError(
-        `${what}only ${onHand} in stock at ${d.branch}, ${-d.delta} needed`,
+        `${what}only ${onHand} in stock at ${branchLabel(d.branch)}, ${-d.delta} needed`,
         d.variantIndex,
         d.branch,
         onHand,

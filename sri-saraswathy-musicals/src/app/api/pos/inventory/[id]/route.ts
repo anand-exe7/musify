@@ -3,6 +3,7 @@ import { handle, ok, notFound, noContent, readJson, badRequest } from "@/lib/api
 import { updateInventoryProduct, deleteInventoryProduct, type StockChange } from "@/lib/db/queries/pos";
 import { isBranch } from "@/lib/stock";
 import type { InvProduct, Variant } from "@/lib/store/pos";
+import { branchAllowed } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export function PATCH(request: NextRequest, ctx: Ctx) {
       if (!c || !isBranch(c.branch) || !Number.isInteger(c.variantIndex) || (c.variantIndex as number) < 0 || !Number.isInteger(c.from) || !Number.isInteger(c.to) || (c.to as number) < 0) {
         return badRequest("Invalid stock change");
       }
-      if (access !== "all" && c.branch !== access) return badRequest("You can only change stock at your own branch");
+      if (!branchAllowed(access, c.branch)) return badRequest("You can only change stock at your own branches");
       stockChanges.push(c as StockChange);
     }
     let patch: Partial<InvProduct>;

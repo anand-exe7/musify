@@ -17,6 +17,7 @@ import { ChevronRight, Check, Lock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
 import type { UserAddress } from "@/types";
+import { BRANCH_KEYS, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
 
 const steps = ["Address", "Delivery", "Payment", "Review"];
 
@@ -62,7 +63,7 @@ export default function CheckoutPage() {
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
-  const [branchPick, setBranch] = useState<"Branch 1" | "Branch 2" | null>(null);
+  const [branchPick, setBranch] = useState<string | null>(null);
   const payment = "card" as const;
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
@@ -130,19 +131,21 @@ export default function CheckoutPage() {
   // Which stores can supply the whole cart. A web order is fulfilled from ONE
   // store, so a store is only offered as "available" when every line is in stock there.
   const branchShort = useMemo(() => {
-    const out: Record<"Branch 1" | "Branch 2", string[]> = { "Branch 1": [], "Branch 2": [] };
+    const out: Record<string, string[]> = Object.fromEntries(BRANCH_KEYS.map((b) => [b, [] as string[]]));
     for (const i of cartItems) {
       const have = i.variant?.stockByBranch;
       if (!have) continue;
-      for (const b of ["Branch 1", "Branch 2"] as const) {
+      for (const b of BRANCH_KEYS) {
         if ((have[b] ?? 0) < i.quantity) out[b].push(i.product.name);
       }
     }
     return out;
   }, [cartItems]);
   // Until the shopper chooses, start on the first store that can fill the cart.
-  const branch: "Branch 1" | "Branch 2" =
-    branchPick ?? (branchShort["Branch 1"].length === 0 ? "Branch 1" : branchShort["Branch 2"].length === 0 ? "Branch 2" : "Branch 1");
+  const branch: string =
+    branchPick ?? BRANCH_KEYS.find((b) => branchShort[b].length === 0) ?? DEFAULT_BRANCH;
+  // Other stores that could supply the whole cart if the chosen one cannot.
+  const altBranches = BRANCH_KEYS.filter((b) => b !== branch && branchShort[b].length === 0);
 
   // The one source of prices, tax, shipping and discounts: the server.
   const {
@@ -384,23 +387,23 @@ export default function CheckoutPage() {
                   <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Fulfilling branch</span>
                   <select
                     value={branch}
-                    onChange={(e) => setBranch(e.target.value as "Branch 1" | "Branch 2")}
+                    onChange={(e) => setBranch(e.target.value)}
                     className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
                   >
                     {BUSINESS.branches.map((b) => (
                       <option key={b.key} value={b.key}>
-                        {b.key} — {b.city} · {b.area}
-                        {branchShort[b.key as "Branch 1" | "Branch 2"].length > 0 ? " (can't supply your whole cart)" : ""}
+                        {b.area} — {b.city}
+                        {branchShort[b.key].length > 0 ? " (can't supply your whole cart)" : ""}
                       </option>
                     ))}
                   </select>
                   <span className="mt-1.5 block text-[11px] text-ink-500">Your order is billed and dispatched from this store.</span>
                   {branchShort[branch].length > 0 && (
                     <span className="mt-1.5 block text-[11px] font-medium text-danger">
-                      {branch} is short on {branchShort[branch].join(", ")}.
-                      {branchShort[branch === "Branch 1" ? "Branch 2" : "Branch 1"].length === 0
-                        ? ` ${branch === "Branch 1" ? "Branch 2" : "Branch 1"} has everything — switch to it, or ask us about moving stock.`
-                        : " Neither store has the whole cart; reduce a quantity or contact us."}
+                      {branchLabel(branch)} is short on {branchShort[branch].join(", ")}.
+                      {altBranches.length > 0
+                        ? ` ${altBranches.map(branchLabel).join(" or ")} ${altBranches.length > 1 ? "have" : "has"} everything — switch to ${altBranches.length > 1 ? "one of them" : "it"}, or ask us about moving stock.`
+                        : " No store has the whole cart; reduce a quantity or contact us."}
                     </span>
                   )}
                 </label>
@@ -470,7 +473,7 @@ export default function CheckoutPage() {
               <div className="mt-6 space-y-2 text-sm">
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
                 <p className="text-ink-500">Delivery <span className="text-ink-900">{delivery}</span></p>
-                <p className="text-ink-500">Branch <span className="text-ink-900">{branch}</span></p>
+                <p className="text-ink-500">Branch <span className="text-ink-900">{branchLabel(branch)}</span></p>
                 <p className="text-ink-500">Payment <span className="text-ink-900">Razorpay</span></p>
               </div>
             </motion.div>

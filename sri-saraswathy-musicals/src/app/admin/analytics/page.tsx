@@ -9,6 +9,7 @@ import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
 import { Download } from "lucide-react";
+import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
 /** A sale is "GST" when it actually carried tax: POS bills honour their saved
  *  `gstEnabled` snapshot; web + service sales are always taxed. */
@@ -60,9 +61,9 @@ export default function AnalyticsPage() {
 
   // Branch scope: a branch user is locked to their own branch.
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
+  const allowedBranches = useBranchScope((s) => s.allowed);
   const lockedBranch: BranchFilter | null =
-    !canSwitchBranch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+    !canSwitchBranch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [tab, setTab] = useState<(typeof TABS)[number]>("revenue");
   const [period, setPeriod] = useState<Period>("all");
@@ -272,7 +273,7 @@ export default function AnalyticsPage() {
           {lockedBranch ? (
             <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
           ) : (
-            ([["all", "Overall"], ["Branch 1", "Branch 1"], ["Branch 2", "Branch 2"]] as const).map(([k, label]) => (
+            ([["all", "Overall"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
               <button key={k} onClick={() => setBranch(k)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
                 {label}
               </button>
@@ -585,7 +586,7 @@ function SalesTab({ scoped, query, setQuery, billGst }: { scoped: Bill[]; query:
                   <td className="font-medium">{b.customerName || <span className="text-ink-300">—</span>}</td>
                   <td className="text-ink-600">{b.phone || "—"}</td>
                   <td className="text-ink-600">{b.customerGstin || <span className="text-ink-300">—</span>}</td>
-                  <td className="text-ink-600">{b.branch}</td>
+                  <td className="text-ink-600">{branchLabel(b.branch)}</td>
                   <td className="uppercase text-ink-500">{b.source}</td>
                   <td className="text-center tabular-nums">{b.items.reduce((q, i) => q + i.qty, 0)}</td>
                   <td className="text-right tabular-nums">{formatINR(b.subtotal)}</td>

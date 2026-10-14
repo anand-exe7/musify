@@ -2,10 +2,11 @@ import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posBills, products, coupons, posCategories, invoices, type ProductRow } from "@/lib/db/schema";
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
-import { isBranch, applyStockDeltas, type Branch, type StockDelta, type Variant as StockVariant } from "@/lib/stock";
+import { isBranch, type Branch, type StockDelta } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
 import { adjustProductStock, takeStock, type StockLine } from "@/lib/db/queries/stockOps";
 import { slugify } from "@/lib/utils";
+import { selectProduct, selectProducts, insertVariants, syncVariants } from "./variants";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
 import { row, rows, definedOnly } from "./_util";
@@ -131,7 +132,7 @@ function toInvProduct(r: ProductRow): InvProduct {
     hsn: r.hsn,
     isGstApplicable: r.isGstApplicable,
     cost: r.cost,
-    variants: r.variants,
+    variants: r.variants.map((v) => ({ ...v, photo: v.photo ?? undefined })),
   };
 }
 
@@ -161,12 +162,11 @@ function toInsertRow(p: InvProduct): typeof products.$inferInsert {
     specs: p.specs ?? [],
     features: p.features ?? [],
     images: p.images ?? [],
-    photo: p.photo ?? null,
-    photos: p.photos ?? null,
+    photo: p.photo || null,
+    photos: p.photos && p.photos.length > 0 ? p.photos : null,
     featured: p.featured ?? false,
     bestSeller: p.bestSeller ?? false,
     isNew: p.newArrival ?? false,
-    variants: p.variants ?? [],
   };
 }
 
@@ -204,22 +204,22 @@ function toColumnPatch(patch: Partial<InvProduct>): Partial<typeof products.$inf
   if (p.specs !== undefined) v.specs = p.specs;
   if (p.features !== undefined) v.features = p.features;
   if (p.images !== undefined) v.images = p.images;
-  if (p.photo !== undefined) v.photo = p.photo ?? null;
-  if (p.photos !== undefined) v.photos = p.photos ?? null;
+  if (p.photo !== undefined) v.photo = p.photo || null;
+  if (p.photos !== undefined) v.photos = p.photos && p.photos.length > 0 ? p.photos : null;
   if (p.featured !== undefined) v.featured = p.featured;
   if (p.bestSeller !== undefined) v.bestSeller = p.bestSeller;
   if (p.newArrival !== undefined) v.isNew = p.newArrival;
-  if (p.variants !== undefined) v.variants = p.variants;
   return v;
 }
 
 export async function getInventory(): Promise<InvProduct[]> {
-  return (await db.select().from(products)).map(toInvProduct);
+  return (await selectProducts()).map(toInvProduct);
 }
 
 export async function createInventoryProduct(p: InvProduct): Promise<InvProduct> {
-  const [r] = await db.insert(products).values(toInsertRow(p)).returning();
-  return toInvProduct(r);
+  await db.insert(products).values(toInsertRow(p));
+  await insertVariants(p.id, p.variants ?? []);
+  return toInvProduct((await selectProduct(p.id)) as ProductRow);
 }
 
 /** A stock figure the editor changed: it saw `from` and wants `to`. */
@@ -230,21 +230,16 @@ export interface StockChange {
   to: number;
 }
 
-const EDIT_ATTEMPTS = 6;
-
 /**
  * Save an edit from the product editor.
  *
  * Stock is not the editor's to overwrite: sales and receipts keep changing it
  * while the form is open, so saving the form's stale copy would hand sold units
- * back. When the variants are only being edited (same count as in the database)
- * their stock is taken from the database, and each stock figure the user really
- * changed is applied as the difference they made (`to − from`), on top of
- * whatever the stock is now. The write is a compare-and-swap on `variants`, so
- * a sale that lands mid-save triggers a re-read instead of being lost.
- *
- * Adding or removing a variant re-numbers them, so that (admin-only) case is
- * written as the editor has it.
+ * back. Each stock figure the user really changed is therefore applied as the
+ * difference they made (`to − from`) on top of whatever the stock is now, as an
+ * atomic update. The variants' details (name, price, photo, order) are saved
+ * separately and never touch stock; new variants are added with their opening
+ * stock and removed ones must be empty.
  */
 export async function updateInventoryProduct(
   id: string,
@@ -256,54 +251,17 @@ export async function updateInventoryProduct(
     .filter((c) => c.to !== c.from)
     .map((c) => ({ variantIndex: c.variantIndex, branch: c.branch, delta: c.to - c.from }));
 
-  if (patch.variants === undefined && deltas.length === 0) {
-    if (Object.keys(set).length === 0) {
-      const [r] = await db.select().from(products).where(eq(products.id, id)).limit(1);
-      return r ? toInvProduct(r) : undefined;
-    }
-    const [r] = await db.update(products).set(set).where(eq(products.id, id)).returning();
-    return r ? toInvProduct(r) : undefined;
-  }
+  const existing = await selectProduct(id);
+  if (!existing) return undefined;
 
-  for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt++) {
-    const [prod] = await db.select().from(products).where(eq(products.id, id)).limit(1);
-    if (!prod) return undefined;
-    const prev = (prod.variants ?? []) as StockVariant[];
+  // Stock deltas address variants by their current position, so apply them
+  // before a variant edit can re-number anything.
+  if (deltas.length > 0) await adjustProductStock(id, deltas, { allowShort: true });
+  if (patch.variants !== undefined) await syncVariants(id, patch.variants);
+  if (Object.keys(set).length > 0) await db.update(products).set(set).where(eq(products.id, id));
 
-    let next: StockVariant[];
-    try {
-      if (patch.variants !== undefined && patch.variants.length !== prev.length) {
-        next = patch.variants as StockVariant[]; // variants added/removed: written as edited
-      } else {
-        const base: StockVariant[] =
-          patch.variants === undefined
-            ? prev
-            : (patch.variants as StockVariant[]).map((v, i) => {
-                const { stock: _s, stockByBranch: _b, ...rest } = v;
-                void _s;
-                void _b;
-                const live = prev[i];
-                return {
-                  ...rest,
-                  ...(live.stockByBranch !== undefined ? { stockByBranch: live.stockByBranch } : {}),
-                  ...(live.stock !== undefined ? { stock: live.stock } : {}),
-                };
-              });
-        next = applyStockDeltas(base, deltas, { allowShort: true });
-      }
-    } catch (e) {
-      throw new HttpError(400, e instanceof Error ? e.message : "Invalid stock change");
-    }
-
-    const updated = await db
-      .update(products)
-      .set({ ...set, variants: next as ProductRow["variants"] })
-      .where(and(eq(products.id, id), sql`${products.variants} = ${JSON.stringify(prev)}::jsonb`))
-      .returning();
-    if (updated.length > 0) return toInvProduct(updated[0]);
-    // Stock moved between our read and write — go round again with the new numbers.
-  }
-  throw new HttpError(409, "This product's stock is changing right now — please save again.");
+  const fresh = await selectProduct(id);
+  return fresh ? toInvProduct(fresh) : undefined;
 }
 
 export async function deleteInventoryProduct(id: string): Promise<boolean> {

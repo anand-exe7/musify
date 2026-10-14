@@ -26,7 +26,7 @@ export interface Inquiry {
   productInterest?: string;
   message: string;
   status: InquiryStatus;
-  branch?: "Branch 1" | "Branch 2" | "Any";
+  branch?: string;
 }
 
 export const INQUIRY_STATUS_META: Record<InquiryStatus, { label: string; tone: string }> = {

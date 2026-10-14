@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, Save, X, RotateCcw } from "lucide-react";
 import type { Invoice } from "@/types";
 import { cn } from "@/lib/utils";
+import { BRANCH_KEYS } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 type Line = Invoice["items"][number];
 
@@ -140,8 +142,7 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
         <div>
           <label className={lbl}>Branch</label>
           <select className={inp} value={draft.branch} onChange={(e) => setField("branch", e.target.value as Invoice["branch"])}>
-            <option value="Branch 1">Branch 1</option>
-            <option value="Branch 2">Branch 2</option>
+            <BranchOptions />
           </select>
         </div>
         <div>

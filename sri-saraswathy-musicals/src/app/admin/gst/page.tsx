@@ -9,6 +9,7 @@ import { safeGstr1, MONTHS, type Period as ReportRange } from "@/lib/gst/report"
 import { rateWiseSummary, invoiceRateOf, toCsv } from "@/lib/gst/summary";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
+import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
 type Tab = "rules" | "collections" | "returns";
 
@@ -219,9 +220,9 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
 
   // Branch users are pinned to their own branch.
   const canSwitch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
+  const allowedBranches = useBranchScope((s) => s.allowed);
   const lockedBranch: BranchFilter | null =
-    !canSwitch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+    !canSwitch && allowedBranches.length === 1 ? allowedBranches[0] : null;
   useEffect(() => {
     if (lockedBranch) setBranch(lockedBranch);
   }, [lockedBranch]);
@@ -294,7 +295,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
           {lockedBranch ? (
             <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
           ) : (
-            (["all", "Branch 1", "Branch 2"] as BranchFilter[]).map((b) => (
+            (["all", ...BRANCH_KEYS] as BranchFilter[]).map((b) => (
               <button key={b} onClick={() => setBranch(b)} className={cn(pill, branch === b ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>{b === "all" ? "Overall" : b}</button>
             ))
           )}
@@ -320,7 +321,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
 
       {/* Rate-wise breakdown */}
       <Card>
-        <p className="mb-4 text-sm font-bold text-ink-900">GST Summary by Rate <span className="font-normal text-ink-400">· {branch === "all" ? "all branches" : branch} · {periodLabel}</span></p>
+        <p className="mb-4 text-sm font-bold text-ink-900">GST Summary by Rate <span className="font-normal text-ink-400">· {branch === "all" ? "all branches" : branchLabel(branch)} · {periodLabel}</span></p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>

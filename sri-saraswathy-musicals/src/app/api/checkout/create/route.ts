@@ -7,11 +7,10 @@ import { nextOrderId } from "@/lib/db/queries/orders";
 import { createRazorpayOrder, razorpayConfigured, razorpayKeyId } from "@/lib/payments/razorpay";
 import { sendOrderConfirmation } from "@/lib/email/resend";
 import { recordOrderInvoice } from "@/lib/billing/ledger";
+import { isBranch, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
 import type { Order } from "@/types";
 
 export const dynamic = "force-dynamic";
-
-type Branch = "Branch 1" | "Branch 2";
 
 interface CreateBody {
   items: { productId: string; variantKey?: string; quantity: number }[];
@@ -35,7 +34,7 @@ interface CreateBody {
 export function POST(request: NextRequest) {
   return handle("user", async ({ user }) => {
     const body = await readJson<CreateBody>(request);
-    const branch: Branch = body.branch === "Branch 2" ? "Branch 2" : "Branch 1";
+    const branch: Branch = isBranch(body.branch) ? body.branch : DEFAULT_BRANCH;
     const priced = await priceOrder(body.items, body.delivery, body.shipState, {
       couponCode: body.couponCode,
       branch,

@@ -11,6 +11,8 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { ProductModal } from "@/components/admin/ProductModal";
 import { useAuth } from "@/lib/store/auth";
 import { downloadCsv } from "@/lib/csv";
+import { BRANCH_KEYS, DEFAULT_BRANCH, emptyStockByBranch, isBranch, type Branch, branchLabel } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 /** One line in the receive form. B1 + B2 always equal `qty`. */
 interface Line {
@@ -18,8 +20,8 @@ interface Line {
   product: InvProduct;
   variantIndex: number;
   qty: number;
-  b1: number;
-  b2: number;
+  /** Units received into each branch; always sums to `qty`. */
+  alloc: Record<string, number>;
   unitCost: number; // paise
   /** Opt-in: also change this variant's selling price (paise) on save. */
   updatePrice: boolean;
@@ -64,8 +66,8 @@ export default function PurchasesPage() {
   const hydrateVendors = useVendors((s) => s.hydrate);
 
   const canSwitch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
-  const lockedBranch = !canSwitch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+  const allowedBranches = useBranchScope((s) => s.allowed);
+  const lockedBranch = !canSwitch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [vendorTerm, setVendorTerm] = useState("");
@@ -129,8 +131,7 @@ export default function PurchasesPage() {
         product: p,
         variantIndex: 0,
         qty: 1,
-        b1: lockedBranch === "Branch 2" ? 0 : 1,
-        b2: lockedBranch === "Branch 2" ? 1 : 0,
+        alloc: { ...emptyStockByBranch(), [lockedBranch ?? DEFAULT_BRANCH]: 1 },
         unitCost: p.cost && p.cost > 0 ? p.cost : 0,
         updatePrice: false,
         newPrice: 0,
@@ -140,24 +141,36 @@ export default function PurchasesPage() {
   };
 
   const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
+  /** Re-balance `alloc` so it sums to `qty`: every branch except `keep` stays
+   *  put (trimmed from the last branch back if over), and `keep` takes the rest. */
+  const fitAlloc = (alloc: Record<string, number>, qty: number, keep: string): Record<string, number> => {
+    const next = { ...alloc };
+    let others = BRANCH_KEYS.filter((b) => b !== keep).reduce((n, b) => n + (next[b] || 0), 0);
+    for (const b of [...BRANCH_KEYS].reverse()) {
+      if (others <= qty) break;
+      if (b === keep) continue;
+      const cut = Math.min(next[b] || 0, others - qty);
+      next[b] = (next[b] || 0) - cut;
+      others -= cut;
+    }
+    next[keep] = qty - others;
+    return next;
+  };
   const setQty = (l: Line, qty: number) => {
-    const b1 = lockedBranch ? (lockedBranch === "Branch 1" ? qty : 0) : Math.min(l.b1, qty);
-    patch(l.key, { qty, b1, b2: qty - b1 });
+    const keep = lockedBranch ?? BRANCH_KEYS.find((b) => (l.alloc[b] || 0) > 0) ?? DEFAULT_BRANCH;
+    patch(l.key, { qty, alloc: lockedBranch ? { ...emptyStockByBranch(), [lockedBranch]: qty } : fitAlloc(l.alloc, qty, keep) });
   };
-  const setB1 = (l: Line, v: number) => {
-    const b1 = Math.min(v, l.qty);
-    patch(l.key, { b1, b2: l.qty - b1 });
-  };
-  const setB2 = (l: Line, v: number) => {
-    const b2 = Math.min(v, l.qty);
-    patch(l.key, { b2, b1: l.qty - b2 });
+  const setBranchQty = (l: Line, branch: string, v: number) => {
+    const value = Math.min(v, l.qty);
+    const keep = BRANCH_KEYS.find((b) => b !== branch) ?? branch;
+    patch(l.key, { alloc: fitAlloc({ ...l.alloc, [branch]: value }, l.qty, keep) });
   };
 
   const vendorName = (id: string) => vendors.find((v) => v.id === id)?.name ?? id;
 
   const lineError = (l: Line): string | null => {
     if (l.qty < 1) return "Qty must be ≥ 1";
-    if (l.b1 + l.b2 !== l.qty) return "Split doesn't match qty";
+    if (BRANCH_KEYS.reduce((n, b) => n + (l.alloc[b] || 0), 0) !== l.qty) return "Split doesn't match qty";
     if (l.updatePrice && l.newPrice <= 0) return "Enter the new selling price";
     return null;
   };
@@ -180,8 +193,12 @@ export default function PurchasesPage() {
   };
 
   const totals = lines.reduce(
-    (t, l) => ({ qty: t.qty + l.qty, b1: t.b1 + l.b1, b2: t.b2 + l.b2, cost: t.cost + l.qty * l.unitCost }),
-    { qty: 0, b1: 0, b2: 0, cost: 0 },
+    (t, l) => ({
+      qty: t.qty + l.qty,
+      alloc: Object.fromEntries(BRANCH_KEYS.map((b) => [b, (t.alloc[b] || 0) + (l.alloc[b] || 0)])) as Record<string, number>,
+      cost: t.cost + l.qty * l.unitCost,
+    }),
+    { qty: 0, alloc: emptyStockByBranch(), cost: 0 },
   );
   const tax = cgst + sgst + igst;
   const grandTotal = totals.cost + tax;
@@ -230,10 +247,7 @@ export default function PurchasesPage() {
             unitCost: l.unitCost,
             quantity: l.qty,
             ...(isAdmin && l.updatePrice && l.newPrice > 0 ? { newPrice: l.newPrice } : {}),
-            allocations: [
-              { branch: "Branch 1", quantity: l.b1 },
-              { branch: "Branch 2", quantity: l.b2 },
-            ],
+            allocations: BRANCH_KEYS.filter((b) => (l.alloc[b] || 0) > 0).map((b) => ({ branch: b, quantity: l.alloc[b] })),
           })),
         }),
       });
@@ -409,8 +423,7 @@ export default function PurchasesPage() {
                   <th>Variant</th>
                   <th className="w-28">Unit cost (₹)</th>
                   <th className="w-20 text-right pr-2">Total qty</th>
-                  <th className="w-20 text-right pr-2">Branch 1</th>
-                  <th className="w-20 text-right pr-2">Branch 2</th>
+                  {BRANCH_KEYS.map((b) => <th key={b} className="w-20 text-right pr-2">{branchLabel(b)}</th>)}
                   <th className="w-24 text-right pr-2">Line total</th>
                   <th className="w-10" />
                 </tr>
@@ -450,8 +463,9 @@ export default function PurchasesPage() {
                       </td>
                       <td className="pr-2"><MoneyInput value={l.unitCost} onChange={(paise) => patch(l.key, { unitCost: paise })} className={num} placeholder="0" /></td>
                       <td className="pr-2"><input type="number" min={1} step={1} value={l.qty || ""} onChange={(e) => setQty(l, toInt(e.target.value))} className={num} /></td>
-                      <td className="pr-2"><input type="number" min={0} step={1} value={l.b1} disabled={!!lockedBranch} onChange={(e) => setB1(l, toInt(e.target.value))} className={num} /></td>
-                      <td className="pr-2"><input type="number" min={0} step={1} value={l.b2} disabled={!!lockedBranch} onChange={(e) => setB2(l, toInt(e.target.value))} className={num} /></td>
+                      {BRANCH_KEYS.map((b) => (
+                        <td key={b} className="pr-2"><input type="number" min={0} step={1} value={l.alloc[b] || 0} disabled={!!lockedBranch} onChange={(e) => setBranchQty(l, b, toInt(e.target.value))} className={num} /></td>
+                      ))}
                       <td className="pr-2 text-right tabular-nums text-ink-700">{formatINR(l.qty * l.unitCost)}</td>
                       <td className="pr-2">
                         <button onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} aria-label="Remove line" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
@@ -462,7 +476,7 @@ export default function PurchasesPage() {
                   );
                 })}
                 {lines.length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-ink-400">Search above to add products to this purchase.</td></tr>
+                  <tr><td colSpan={7 + BRANCH_KEYS.length} className="px-4 py-10 text-center text-sm text-ink-400">Search above to add products to this purchase.</td></tr>
                 )}
               </tbody>
               {lines.length > 0 && (
@@ -470,8 +484,7 @@ export default function PurchasesPage() {
                   <tr className="border-t border-ink-100 bg-[#FAF7EF] text-xs font-semibold text-ink-900">
                     <td colSpan={4} className="px-3 py-3 text-right uppercase tracking-wider text-ink-500">Totals</td>
                     <td className="pr-2 text-right tabular-nums">{totals.qty}</td>
-                    <td className="pr-2 text-right tabular-nums">{totals.b1}</td>
-                    <td className="pr-2 text-right tabular-nums">{totals.b2}</td>
+                    {BRANCH_KEYS.map((b) => <td key={b} className="pr-2 text-right tabular-nums">{totals.alloc[b]}</td>)}
                     <td className="pr-2 text-right tabular-nums">{formatINR(totals.cost)}</td>
                     <td />
                   </tr>
@@ -520,7 +533,7 @@ export default function PurchasesPage() {
 
           <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-4">
             <p className="text-xs text-ink-500">
-              {lockedBranch ? `Stock is received into ${lockedBranch}.` : "Branch 1 + Branch 2 always add up to the total qty."}
+              {lockedBranch ? `Stock is received into ${branchLabel(lockedBranch)}.` : "The branch quantities must add up to the total qty."}
             </p>
             <button onClick={submit} disabled={!canSubmit} className="flex items-center gap-2 rounded-xl bg-ink-900 px-5 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-50">
               <PackagePlus className="h-4 w-4" /> {saving ? "Saving…" : "Save Purchase"}
@@ -608,7 +621,7 @@ export default function PurchasesPage() {
                                 <tr key={l.id} className="text-ink-700">
                                   <td className="py-1.5 font-medium text-ink-900">{l.productName}</td>
                                   <td>{l.variant || "—"}</td>
-                                  <td>{l.branch}</td>
+                                  <td>{branchLabel(l.branch)}</td>
                                   <td className="text-right tabular-nums">{l.quantity}</td>
                                   <td className="text-right tabular-nums">{formatINR(l.unitCost)}</td>
                                   <td className="text-right tabular-nums">{formatINR(l.quantity * l.unitCost)}</td>
@@ -639,14 +652,14 @@ function PaymentDialog({
 }: {
   purchase: PurchaseRow;
   vendorName: string;
-  lockedBranch: "Branch 1" | "Branch 2" | null;
+  lockedBranch: Branch | null;
   onClose: () => void;
   onDone: (msg: string) => void;
 }) {
   const bal = Math.max(0, purchase.totalAmount - purchase.amountPaid - purchase.paymentsTotal);
   const [amount, setAmount] = useState<number>(bal);
   const [mode, setMode] = useState<"CASH" | "UPI" | "CARD" | "BANK" | "OTHER">("CASH");
-  const [branch, setBranch] = useState<"Branch 1" | "Branch 2">(lockedBranch ?? "Branch 1");
+  const [branch, setBranch] = useState<Branch>(lockedBranch ?? DEFAULT_BRANCH);
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -694,8 +707,7 @@ function PaymentDialog({
             <div>
               <label className={label}>Branch (paid from)</label>
               <select value={branch} onChange={(e) => setBranch(e.target.value as typeof branch)} disabled={!!lockedBranch} className={field}>
-                <option value="Branch 1">Branch 1</option>
-                <option value="Branch 2">Branch 2</option>
+                <BranchOptions />
               </select>
             </div>
           </div>

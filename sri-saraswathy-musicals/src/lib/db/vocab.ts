@@ -6,12 +6,15 @@
  */
 import { sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { BUSINESS } from "@/lib/data/business";
+import { branchManagerRole } from "@/lib/stock";
 
-export const BRANCHES = ["Branch 1", "Branch 2"] as const;
+/** Every branch key — derived from the business profile, the single list. */
+export const BRANCHES: readonly string[] = BUSINESS.branches.map((b) => b.key);
 /** Inquiries may also be addressed to either branch. */
-export const INQUIRY_BRANCHES = [...BRANCHES, "Any"] as const;
+export const INQUIRY_BRANCHES: readonly string[] = [...BRANCHES, "Any"];
 
-export const USER_ROLES = ["admin", "branch1-manager", "branch2-manager", "cashier", "customer"] as const;
+export const USER_ROLES: readonly string[] = ["admin", ...BRANCHES.map(branchManagerRole), "cashier", "customer"];
 export const STAFF_ROLES = ["Admin", "Manager", "Cashier", "Staff"] as const;
 export const ORDER_STATUSES = ["delivered", "shipped", "processing", "cancelled"] as const;
 export const INVOICE_STATUSES = ["paid", "pending", "cancelled"] as const;

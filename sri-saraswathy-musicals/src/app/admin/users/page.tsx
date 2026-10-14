@@ -4,44 +4,46 @@ import { ShieldCheck, Info } from "lucide-react";
 import { useAuth } from "@/lib/store/auth";
 import type { User } from "@/types";
 import { cn } from "@/lib/utils";
+import { BUSINESS } from "@/lib/data/business";
+import { isBranch, branchManagerRole, branchLabel, DEFAULT_BRANCH } from "@/lib/stock";
 
 /** The four access levels an admin can assign. Each maps to a concrete
  *  (isAdmin, branch, role) combination on the user record. */
-type Access = "admin" | "Branch 1" | "Branch 2" | "none";
+type Access = "admin" | "staff" | "none";
 
 const ACCESS_OPTIONS: { value: Access; label: string }[] = [
-  { value: "admin", label: "Admin · All Branches" },
-  { value: "Branch 1", label: "Branch 1 (Vadapalani)" },
-  { value: "Branch 2", label: "Branch 2 (Porur)" },
+  { value: "admin", label: "Admin · All branches" },
+  { value: "staff", label: "Branch staff · pick branches" },
   { value: "none", label: "No admin access" },
 ];
 
+/** The branches a non-admin user may work in (primary first). */
+function branchesOfUser(u: User): string[] {
+  return [...new Set([...(u.branchAccess ?? []), ...(u.branch ? [u.branch] : [])])].filter(isBranch);
+}
+
 function accessOf(u: User): Access {
   if (u.isAdmin) return "admin";
-  if (u.branch === "Branch 1" || u.branch === "Branch 2") return u.branch;
-  return "none";
+  return branchesOfUser(u).length > 0 ? "staff" : "none";
+}
+
+/** DB fields implied by a list of branches (the first is the primary / role branch). */
+function patchForBranches(list: string[]): Partial<User> {
+  return { isAdmin: false, branchAccess: list, branch: list[0], role: branchManagerRole(list[0]) };
 }
 
 /** Turn an access choice into the DB fields it implies. */
-function patchForAccess(a: Access): Partial<User> {
-  switch (a) {
-    case "admin":
-      return { isAdmin: true, branch: null, role: "admin" };
-    case "Branch 1":
-      return { isAdmin: false, branch: "Branch 1", role: "branch1-manager" };
-    case "Branch 2":
-      return { isAdmin: false, branch: "Branch 2", role: "branch2-manager" };
-    default:
-      return { isAdmin: false, branch: null, role: "customer" };
-  }
+function patchForAccess(a: Access, current: string[]): Partial<User> {
+  if (a === "admin") return { isAdmin: true, branch: null, branchAccess: [], role: "admin" };
+  if (a === "staff") return patchForBranches(current.length > 0 ? current : [DEFAULT_BRANCH]);
+  return { isAdmin: false, branch: null, branchAccess: [], role: "customer" };
 }
 
-const ACCESS_TONE: Record<Access, string> = {
-  admin: "bg-gold-100 text-gold-700",
-  "Branch 1": "bg-info/15 text-info",
-  "Branch 2": "bg-info/15 text-info",
-  none: "bg-ink-100 text-ink-500",
-};
+const accessTone = (a: Access): string =>
+  a === "admin" ? "bg-gold-100 text-gold-700" : a === "none" ? "bg-ink-100 text-ink-500" : "bg-info/15 text-info";
+
+const accessText = (a: Access, list: string[]): string =>
+  a === "none" ? "Customer" : a === "admin" ? "Admin" : list.map(branchLabel).join(" · ");
 
 export default function UsersPage() {
   const meId = useAuth((s) => s.user?.id);
@@ -126,7 +128,7 @@ export default function UsersPage() {
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         <p>
           <span className="font-semibold text-ink-800">Admin · All Branches</span> sees everything and can switch branches.
-          A branch assignment scopes that person to one shop. Changes take effect the next time they sign in.
+          Branch staff are limited to the branches you tick — one or several. Changes take effect the next time they sign in.
         </p>
       </div>
 
@@ -143,6 +145,7 @@ export default function UsersPage() {
           <tbody className="divide-y divide-ink-50">
             {rows.map((u) => {
               const access = accessOf(u);
+              const userBranches = branchesOfUser(u);
               const isMe = u.id === meId;
               return (
                 <tr key={u.id} className="text-ink-800">
@@ -151,7 +154,7 @@ export default function UsersPage() {
                       <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-900 text-sm font-semibold text-gold-400">{u.name?.[0]?.toUpperCase() || "?"}</div>
                       <div>
                         <p className="font-semibold text-ink-900">{u.name || "—"}{isMe && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-gold-600">You</span>}</p>
-                        <span className={cn("mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", ACCESS_TONE[access])}>{access === "none" ? "Customer" : access === "admin" ? "Admin" : access}</span>
+                        <span className={cn("mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", accessTone(access))}>{accessText(access, userBranches)}</span>
                       </div>
                     </div>
                   </td>
@@ -161,13 +164,37 @@ export default function UsersPage() {
                       value={access}
                       disabled={isMe}
                       title={isMe ? "You can't change your own access" : undefined}
-                      onChange={(e) => patchUser(u.id, patchForAccess(e.target.value as Access))}
+                      onChange={(e) => patchUser(u.id, patchForAccess(e.target.value as Access, userBranches))}
                       className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-xs font-semibold text-ink-900 focus:border-gold-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {ACCESS_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
+                    {access === "staff" && (
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                        {BUSINESS.branches.map((br) => {
+                          const on = userBranches.includes(br.key);
+                          return (
+                            <label key={br.key} className="flex items-center gap-1.5 text-xs text-ink-700">
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                disabled={isMe || (on && userBranches.length === 1)}
+                                title={on && userBranches.length === 1 ? "A staff member needs at least one branch" : undefined}
+                                onChange={() => {
+                                  const next = on ? userBranches.filter((k) => k !== br.key) : [...userBranches, br.key];
+                                  // keep the shop's own order so the primary branch is predictable
+                                  const ordered = BUSINESS.branches.map((x) => x.key).filter((k) => next.includes(k));
+                                  patchUser(u.id, patchForBranches(ordered));
+                                }}
+                              />
+                              {br.area}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="text-right">
                     <button

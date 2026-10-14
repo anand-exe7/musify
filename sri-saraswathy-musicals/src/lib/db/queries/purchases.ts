@@ -21,7 +21,7 @@ import { db } from "@/lib/db";
 import { purchases, stockInward, vendorPayments, vendors } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { genDocId } from "@/lib/ids";
-import { BRANCH_KEYS, isBranch, type Branch } from "@/lib/stock";
+import { BRANCH_KEYS, isBranch, type Branch, branchLabel } from "@/lib/stock";
 import { setVariantPrice } from "./stockOps";
 import { createInward, validateInwardBatch, type InwardBatchLine } from "./stock";
 import { definedOnly, row, rows } from "./_util";
@@ -167,14 +167,14 @@ export async function getPurchase(id: string): Promise<PurchaseWithLines | undef
 
 /* ──────────────────────────  Create  ────────────────────────── */
 
-export async function createPurchase(input: PurchaseInput, createdBy: string, allowedBranch: Branch | null): Promise<PurchaseWithLines> {
+export async function createPurchase(input: PurchaseInput, createdBy: string, allowed: Branch[] | null): Promise<PurchaseWithLines> {
   if (!input.vendorId) throw new PurchaseValidationError("Vendor is required.");
   if (!input.batchId || !/^[\w-]{1,64}$/.test(input.batchId)) throw new PurchaseValidationError("Invalid batch id.");
   assertMode(input.paymentMode);
   assertDate(input.purchaseDate);
-  await validateInwardBatch(input.lines, allowedBranch);
+  await validateInwardBatch(input.lines, allowed);
   // Only a full admin may change selling prices (staff have a price lock).
-  if (allowedBranch !== null && input.lines.some((l) => l.newPrice !== undefined)) {
+  if (allowed !== null && input.lines.some((l) => l.newPrice !== undefined)) {
     throw new PurchaseValidationError("Only an admin can change selling prices.");
   }
   const [vendor] = await db.select({ id: vendors.id }).from(vendors).where(eq(vendors.id, input.vendorId)).limit(1);
@@ -337,12 +337,12 @@ const zeroByBranch = () => Object.fromEntries(BRANCH_KEYS.map((b) => [b, 0])) as
  * are free. Every share is computed here so outstandings and statements agree,
  * and the leftover paise go to the last branch so the shares sum to `amount`.
  */
-function splitAcrossBranches(amount: number, w: BranchWeights): Partial<Record<Branch, number>> {
+function splitAcrossBranches(amount: number, w: BranchWeights): Record<Branch, number> {
   const goodsSum = BRANCH_KEYS.reduce((n, b) => n + w.goods[b], 0);
   const weights = goodsSum > 0 ? w.goods : w.qty;
   const used = BRANCH_KEYS.filter((b) => weights[b] > 0);
   const sum = used.reduce((n, b) => n + weights[b], 0);
-  const out: Partial<Record<Branch, number>> = {};
+  const out: Record<Branch, number> = {};
   let left = amount;
   used.forEach((b, i) => {
     const share = i === used.length - 1 ? left : Math.round((amount * weights[b]) / sum);
@@ -504,7 +504,8 @@ export interface VendorStatementLine {
   branch: string;
 }
 
-export async function vendorStatement(vendorId: string, branch: Branch | null = null): Promise<VendorStatementEntry[]> {
+/** `scope` limits the ledger to those branches (`null` = every branch). */
+export async function vendorStatement(vendorId: string, scope: Branch[] | null = null): Promise<VendorStatementEntry[]> {
   const [purch, pays, inwards, lineRows] = await Promise.all([
     db.select().from(purchases).where(eq(purchases.vendorId, vendorId)),
     db.select().from(vendorPayments).where(eq(vendorPayments.vendorId, vendorId)),
@@ -526,7 +527,7 @@ export async function vendorStatement(vendorId: string, branch: Branch | null = 
   const linesByPurchase = new Map<string, VendorStatementLine[]>();
   const legacy: typeof lineRows = [];
   for (const l of lineRows) {
-    if (branch && l.branch !== branch) continue; // branch staff only see their own lines
+    if (scope && !scope.includes(l.branch)) continue; // branch staff only see their own lines
     if (!l.purchaseId) { legacy.push(l); continue; }
     const arr = linesByPurchase.get(l.purchaseId) ?? [];
     arr.push(toLine(l));
@@ -537,23 +538,24 @@ export async function vendorStatement(vendorId: string, branch: Branch | null = 
   const weights = weightsByPurchase(inwards);
   const dominant = new Map<string, Branch>();
   for (const [id, w] of weights.entries()) {
-    const [b1, b2] = BRANCH_KEYS;
     const goodsSum = BRANCH_KEYS.reduce((n, b) => n + w.goods[b], 0);
     const key = goodsSum > 0 ? w.goods : w.qty;
-    dominant.set(id, key[b1] >= key[b2] ? b1 : b2);
+    dominant.set(id, BRANCH_KEYS.reduce((best, b) => (key[b] > key[best] ? b : best), BRANCH_KEYS[0]));
   }
 
-  // A branch-scoped statement shows only purchases that landed stock in that
-  // branch, at that branch's share of the bill (same split as the outstandings).
+  // A branch-scoped statement shows only purchases that landed stock in those
+  // branches, at their share of the bill (same split as the outstandings).
   const shareOf = (p: (typeof purch)[number], amount: number): number => {
-    if (!branch) return amount;
+    if (!scope) return amount;
     const w = weights.get(p.id);
-    return w ? (splitAcrossBranches(amount, w)[branch] ?? 0) : 0;
+    if (!w) return 0;
+    const split = splitAcrossBranches(amount, w);
+    return scope.reduce((n, b) => n + (split[b] ?? 0), 0);
   };
 
   const entries: VendorStatementEntry[] = [];
   for (const p of purch) {
-    if (branch && !linesByPurchase.has(p.id)) continue;
+    if (scope && !linesByPurchase.has(p.id)) continue;
     entries.push({
       kind: "purchase",
       id: p.id,
@@ -588,7 +590,7 @@ export async function vendorStatement(vendorId: string, branch: Branch | null = 
     });
   }
   for (const pay of pays) {
-    if (branch && pay.branch !== branch) continue;
+    if (scope && !scope.includes(pay.branch)) continue;
     entries.push({
       kind: "payment",
       id: pay.id,
@@ -630,7 +632,7 @@ export async function createVendorPayment(input: VendorPaymentInput, createdBy: 
     // The payment must come out of a branch the purchase actually landed stock in,
     // otherwise per-branch outstandings drift (one branch stays owing, another goes negative).
     if (p.lines.length > 0 && !p.lines.some((l) => l.branch === input.branch)) {
-      throw new PurchaseValidationError(`This purchase has no stock in ${input.branch}; pay it from a branch it was received into.`);
+      throw new PurchaseValidationError(`This purchase has no stock in ${branchLabel(input.branch)}; pay it from a branch it was received into.`);
     }
     if (input.amount > p.totalAmount - p.amountPaid - p.paymentsTotal) throw new PurchaseValidationError("Payment exceeds the purchase's balance.");
   }
@@ -688,11 +690,12 @@ export async function deleteVendorPayment(id: string): Promise<boolean> {
 
 /** A purchase is in-scope for a branch user when at least one of its lines
  *  landed in that branch. */
-export async function purchaseIdsInBranch(branch: Branch): Promise<Set<string>> {
+export async function purchaseIdsInBranch(branches: Branch[]): Promise<Set<string>> {
+  if (branches.length === 0) return new Set();
   const r = await db
     .selectDistinct({ purchaseId: stockInward.purchaseId })
     .from(stockInward)
-    .where(eq(stockInward.branch, branch));
+    .where(inArray(stockInward.branch, branches));
   const out = new Set<string>();
   for (const row of r) if (row.purchaseId) out.add(row.purchaseId);
   return out;
@@ -700,17 +703,18 @@ export async function purchaseIdsInBranch(branch: Branch): Promise<Set<string>> 
 
 /** Branch staff see only their own branch's lines of a purchase; the other
  *  branch's items and unit costs are not theirs to read. */
-export function scopePurchaseLines<T extends { lines: { branch: string }[] }>(p: T, access: Branch | "all"): T {
-  return access === "all" ? p : { ...p, lines: p.lines.filter((l) => l.branch === access) };
+export function scopePurchaseLines<T extends { lines: { branch: string }[] }>(p: T, scope: Branch[] | null): T {
+  return scope === null ? p : { ...p, lines: p.lines.filter((l) => scope.includes(l.branch)) };
 }
 
-/** True when `access` is full-admin, or the purchase has a line in that branch. */
-export async function purchaseVisibleTo(purchaseId: string, access: Branch | "all"): Promise<boolean> {
-  if (access === "all") return true;
+/** True when `scope` is unrestricted (`null`), or the purchase has a line in one of those branches. */
+export async function purchaseVisibleTo(purchaseId: string, scope: Branch[] | null): Promise<boolean> {
+  if (scope === null) return true;
+  if (scope.length === 0) return false;
   const [hit] = await db
     .select({ id: stockInward.id })
     .from(stockInward)
-    .where(and(eq(stockInward.purchaseId, purchaseId), eq(stockInward.branch, access)))
+    .where(and(eq(stockInward.purchaseId, purchaseId), inArray(stockInward.branch, scope)))
     .limit(1);
   return !!hit;
 }

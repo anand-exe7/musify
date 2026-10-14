@@ -24,7 +24,8 @@ vi.mock("@/lib/db", async () => {
 });
 
 import { db } from "@/lib/db";
-import { products, orders, stockTransfers, vendors } from "@/lib/db/schema";
+import { products, orders, stockTransfers, vendors, variantStock } from "@/lib/db/schema";
+import { insertVariants, selectProduct } from "@/lib/db/queries/variants";
 import { eq } from "drizzle-orm";
 import { takeStock, adjustProductStock } from "@/lib/db/queries/stockOps";
 import { createTransfer, createTransferBatch } from "@/lib/db/queries/stockTransfers";
@@ -37,11 +38,12 @@ const v = (b1: number, b2 = 0, attr = "Std"): Variant => ({ attr, finish: "", pr
 
 async function seed(id: string, variants: Variant[]) {
   await db.delete(products).where(eq(products.id, id));
-  await db.insert(products).values({ id, slug: id, name: `Product ${id}`, category: "string", variants });
+  await db.insert(products).values({ id, slug: id, name: `Product ${id}`, category: "string" });
+  await insertVariants(id, variants);
 }
 const stockOf = async (id: string, i: number, b: "Branch 1" | "Branch 2") => {
-  const [p] = await db.select().from(products).where(eq(products.id, id));
-  return variantStockAt((p.variants as Variant[])[i], b);
+  const p = await selectProduct(id);
+  return variantStockAt(p!.variants[i], b);
 };
 
 beforeAll(async () => {
@@ -141,17 +143,18 @@ describe("product editor saves", () => {
     // The editor opened with Branch 1 = 5; then a web order took 2.
     await adjustProductStock("p-e", [{ variantIndex: 0, branch: "Branch 1", delta: -2 }]);
     // The admin only fixes the price; the form still carries the stale 5.
-    await updateInventoryProduct("p-e", { variants: [{ ...v(5), price: 120000 }] as never });
+    const [live] = (await selectProduct("p-e"))!.variants;
+    await updateInventoryProduct("p-e", { variants: [{ ...live, stockByBranch: { "Branch 1": 5 }, price: 120000 }] as never });
     expect(await stockOf("p-e", 0, "Branch 1")).toBe(3);
-    const [p] = await db.select().from(products).where(eq(products.id, "p-e"));
-    expect((p.variants as Variant[])[0].price).toBe(120000);
+    expect((await selectProduct("p-e"))!.variants[0].price).toBe(120000);
   });
 
   it("applies a deliberate stock edit as a difference on top of live stock", async () => {
     await seed("p-d", [v(5)]);
     await adjustProductStock("p-d", [{ variantIndex: 0, branch: "Branch 1", delta: -2 }]); // now 3
     // The admin saw 5 and typed 8: that is "+3".
-    await updateInventoryProduct("p-d", { variants: [v(8)] as never }, [{ variantIndex: 0, branch: "Branch 1", from: 5, to: 8 }]);
+    const [liveD] = (await selectProduct("p-d"))!.variants;
+    await updateInventoryProduct("p-d", { variants: [{ ...liveD, stockByBranch: { "Branch 1": 8 } }] as never }, [{ variantIndex: 0, branch: "Branch 1", from: 5, to: 8 }]);
     expect(await stockOf("p-d", 0, "Branch 1")).toBe(6);
   });
 
@@ -162,10 +165,46 @@ describe("product editor saves", () => {
     expect(await stockOf("p-o", 0, "Branch 2")).toBe(7);
   });
 
-  it("writes added/removed variants as the editor has them", async () => {
-    await seed("p-s", [v(5, 0, "A"), v(5, 0, "B")]);
-    await updateInventoryProduct("p-s", { variants: [v(9, 0, "A")] as never });
-    const [p] = await db.select().from(products).where(eq(products.id, "p-s"));
-    expect((p.variants as Variant[]).length).toBe(1);
+  it("adds a new variant with its opening stock and keeps existing ones", async () => {
+    await seed("p-s", [v(5, 0, "A")]);
+    const [a] = (await selectProduct("p-s"))!.variants;
+    await updateInventoryProduct("p-s", { variants: [a, v(9, 0, "B")] as never });
+    const p = (await selectProduct("p-s"))!;
+    expect(p.variants.map((x) => x.attr)).toEqual(["A", "B"]);
+    expect(await stockOf("p-s", 0, "Branch 1")).toBe(5);
+    expect(await stockOf("p-s", 1, "Branch 1")).toBe(9);
+    expect(p.variants[0].id).toBe(a.id); // identity survives the edit
+  });
+
+  it("removes an empty variant but refuses to drop one that still holds stock", async () => {
+    await seed("p-r", [v(0, 0, "Empty"), v(4, 0, "Stocked")]);
+    const [empty, stocked] = (await selectProduct("p-r"))!.variants;
+    await expect(updateInventoryProduct("p-r", { variants: [empty] as never })).rejects.toMatchObject({ status: 409 });
+    await updateInventoryProduct("p-r", { variants: [stocked] as never });
+    expect((await selectProduct("p-r"))!.variants.map((x) => x.attr)).toEqual(["Stocked"]);
+    expect(await stockOf("p-r", 0, "Branch 1")).toBe(4);
+  });
+});
+
+describe("atomic stock", () => {
+  it("two sales racing for the last unit: exactly one wins", async () => {
+    await seed("p-race", [v(1)]);
+    const take = () => takeStock([{ productId: "p-race", variantIndex: 0, quantity: 1 }], "Branch 1");
+    const results = await Promise.allSettled([take(), take()]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await stockOf("p-race", 0, "Branch 1")).toBe(0);
+  });
+
+  it("the database itself refuses a negative balance", async () => {
+    await seed("p-neg", [v(2)]);
+    const p = (await selectProduct("p-neg"))!;
+    await expect(db.update(variantStock).set({ qty: -1 }).where(eq(variantStock.variantId, p.variants[0].id))).rejects.toThrow();
+  });
+
+  it("a stock bucket for a new branch is created on first receipt", async () => {
+    await seed("p-b3", [v(0)]);
+    await adjustProductStock("p-b3", [{ variantIndex: 0, branch: "Branch 3", delta: 4 }]);
+    const p = (await selectProduct("p-b3"))!;
+    expect(p.variants[0].stockByBranch["Branch 3"]).toBe(4);
   });
 });

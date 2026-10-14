@@ -19,6 +19,8 @@ import { BUSINESS, waLink } from "@/lib/data/business";
 import { formatINR, toPaise, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
+import { BRANCH_KEYS, isBranch, branchLabel } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 interface Row {
   id: string;
@@ -56,11 +58,11 @@ export default function BillingPage() {
   const addBill = usePOS((s) => s.addBill);
 
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
+  const allowedBranches = useBranchScope((s) => s.allowed);
   const scopeSelected = useBranchScope((s) => s.selected);
   // Branch users are pinned to their own branch; admins act as the topbar pick.
   const lockedBranch: Branch | null =
-    !canSwitchBranch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+    !canSwitchBranch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [source, setSource] = useState<Source>("offline");
   const [branch, setBranch] = useState<Branch>(lockedBranch ?? effectiveBranch(scopeSelected));
@@ -489,8 +491,7 @@ export default function BillingPage() {
                     title={lockedBranch ? "Locked to your branch" : undefined}
                     className="rounded-md border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-medium focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    <option>Branch 1</option>
-                    <option>Branch 2</option>
+                    <BranchOptions />
                   </select>
                 </dd>
               </div>
@@ -717,7 +718,7 @@ export default function BillingPage() {
                         <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
                         <p className="text-xs font-medium tabular-nums text-ink-700">{formatINR(p.basePrice)}{multi && <span className="ml-1 text-ink-400">· {enabled.length} variants</span>}</p>
                         <p className={cn("text-[11px]", out ? "text-danger" : "text-ink-400")}>
-                          {out ? "Out of stock" : `${stock} in stock · ${branch}`}
+                          {out ? "Out of stock" : `${stock} in stock · ${branchLabel(branch)}`}
                         </p>
                       </div>
                       {!out && (
@@ -728,7 +729,7 @@ export default function BillingPage() {
                     </button>
                     {multi && pickFor === p.id && (
                       <div className="col-span-full space-y-1.5 rounded-xl border border-gold-300 bg-gold-50/40 p-2.5">
-                        <p className="px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">Choose a variant of {p.name} · {branch}</p>
+                        <p className="px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">Choose a variant of {p.name} · {branchLabel(branch)}</p>
                         {enabled.map(({ v, vi }) => {
                           const vStock = variantStockAt(v, branch);
                           const vName = `${p.name} — ${v.attr}${v.finish ? ` · ${v.finish}` : ""}`;

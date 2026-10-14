@@ -18,7 +18,7 @@ import { variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
 import { evaluateCoupon } from "@/lib/checkout/coupon";
 import { taxLines } from "@/lib/gst/inclusive";
 import { isIntraSupply } from "@/lib/gst/place-of-supply";
-import { variantStockAt, isBranch, type Branch } from "@/lib/stock";
+import { variantStockAt, isBranch, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
 
 export type DeliveryMethod = "standard" | "white-glove" | "express";
 export const DELIVERY_METHODS: readonly DeliveryMethod[] = ["standard", "white-glove", "express"];
@@ -115,7 +115,7 @@ export async function priceOrder(
   opts: { couponCode?: string | null; branch?: Branch } = {},
 ): Promise<PricedOrder> {
   if (!DELIVERY_METHODS.includes(delivery)) throw new HttpError(400, "Unknown delivery method");
-  const branch: Branch = isBranch(opts.branch) ? opts.branch : "Branch 1";
+  const branch: Branch = isBranch(opts.branch) ? opts.branch : DEFAULT_BRANCH;
 
   const wanted = (rawItems || []).filter((i) => i && i.productId && Number(i.quantity) > 0);
   if (wanted.length === 0) throw new HttpError(400, "Cart is empty");

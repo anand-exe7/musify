@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api/http";
 import { vendorOutstandings } from "@/lib/db/queries/purchases";
+import { branchAllowed } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,6 @@ export const dynamic = "force-dynamic";
 export function GET() {
   return handle("staff", async ({ access }) => {
     const list = await vendorOutstandings();
-    return ok(access === "all" ? list : list.filter((r) => r.branch === access));
+    return ok(list.filter((r) => branchAllowed(access, r.branch)));
   });
 }

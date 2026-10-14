@@ -24,6 +24,8 @@ import {
   doublePrecision,
   jsonb,
   check,
+  index,
+  primaryKey,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -95,25 +97,50 @@ export const products = pgTable("products", {
   featured: boolean("featured").notNull().default(false),
   bestSeller: boolean("best_seller").notNull().default(false),
   isNew: boolean("is_new").notNull().default(false),
-  /** Purchasable variants. `price` is paise. `stockByBranch` splits on-hand by
-   *  branch — introduced in Phase 4. Legacy rows may still carry `stock` and are
-   *  read via `variantStockAt` in `store/pos.ts`. */
-  variants: jsonb("variants")
-    .$type<
-      {
-        attr: string;
-        finish: string;
-        price: number;
-        weight: number;
-        stockByBranch?: Partial<Record<"Branch 1" | "Branch 2", number>>;
-        /** @deprecated kept for backward compatibility with pre-Phase-4 rows. */
-        stock?: number;
-        disabled?: boolean;
-      }[]
-    >()
-    .notNull()
-    .default([]),
 });
+
+/**
+ * A purchasable variant of a product. `position` is the 0-based index the app
+ * calls `variantIndex` (stock history and POS bill lines record it), so it must
+ * stay stable: variants are never silently renumbered or dropped while they hold
+ * stock. `id` is the durable identity.
+ */
+export const productVariants = pgTable("product_variants", {
+  id: text("id").primaryKey(),
+  productId: text("product_id")
+    .notNull()
+    .references(() => products.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+  attr: text("attr").notNull().default(""),
+  finish: text("finish").notNull().default(""),
+  /** Selling price, paise. */
+  price: integer("price").notNull().default(0),
+  weight: integer("weight").notNull().default(0),
+  /** This variant's own photo (a compressed WebP data URI or a URL). */
+  photo: text("photo"),
+  disabled: boolean("disabled").notNull().default(false),
+}, (t) => [
+  index("product_variants_product_idx").on(t.productId, t.position),
+  check("product_variants_price_check", sql`${t.price} >= 0`),
+]);
+
+/**
+ * On-hand units of one variant at one branch. The CHECK makes a negative balance
+ * impossible at the database level; writes are single `UPDATE … qty = qty + n`
+ * statements, so concurrent sales can't overwrite each other.
+ */
+export const variantStock = pgTable("variant_stock", {
+  variantId: text("variant_id")
+    .notNull()
+    .references(() => productVariants.id, { onDelete: "cascade" }),
+  branch: text("branch")
+    .notNull()
+    .references(() => branches.id, { onDelete: "restrict" }),
+  qty: integer("qty").notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.variantId, t.branch] }),
+  check("variant_stock_qty_check", sql`${t.qty} >= 0`),
+]);
 
 export const categories = pgTable("categories", {
   id: text("id").primaryKey(),
@@ -132,7 +159,10 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   phone: text("phone").notNull().default(""),
   role: text("role").notNull(),
+  /** Primary branch — always the first entry of `branchAccess` (kept for display). */
   branch: text("branch"),
+  /** Every branch this (non-admin) user may work in. Full admins ignore it. */
+  branchAccess: jsonb("branch_access").$type<string[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
   /** Authoritative admin flag — `true` grants access to the `/admin` area. */
   isAdmin: boolean("is_admin").notNull().default(false),
@@ -147,6 +177,7 @@ export const users = pgTable("users", {
 }, (t) => [
   check("users_role_check", oneOf(t.role, USER_ROLES)),
   check("users_branch_check", oneOf(t.branch, BRANCHES)),
+  uniqueIndex("users_email_unique").on(sql`lower(${t.email})`),
 ]);
 
 /** Saved delivery addresses for a customer account. */
@@ -269,6 +300,8 @@ export const invoices = pgTable("invoices", {
   check("invoices_status_check", oneOf(t.status, INVOICE_STATUSES)),
   check("invoices_source_check", oneOf(t.source, INVOICE_SOURCES)),
   check("invoices_branch_check", oneOf(t.branch, BRANCHES)),
+  // GST: invoice numbers must be unique.
+  uniqueIndex("invoices_number_unique").on(t.number).where(sql`${t.number} <> ''`),
 ]);
 
 export const vendors = pgTable("vendors", {
@@ -281,8 +314,6 @@ export const vendors = pgTable("vendors", {
   email: text("email").notNull().default(""),
   address: text("address").notNull().default(""),
   createdAt: text("created_at").notNull().default(""),
-  outstanding: integer("outstanding").notNull().default(0),
-  totalPurchases: integer("total_purchases").notNull().default(0),
 });
 
 /**
@@ -412,6 +443,8 @@ export const branches = pgTable("branches", {
   /** Per-branch GSTIN; blank falls back to the business-wide GSTIN. */
   gstin: text("gstin").notNull().default(""),
   phone: text("phone").notNull().default(""),
+  /** Short letter used in branch-coded document numbers (e.g. "V", "P"). */
+  code: text("code").notNull().default(""),
   active: boolean("active").notNull().default(true),
 });
 
@@ -597,7 +630,11 @@ export const counters = pgTable("counters", {
 
 /* ─────────────────────────  Inferred row types  ────────────────────── */
 
-export type ProductRow = typeof products.$inferSelect;
+/** A variant with its per-branch stock folded in (what the app works with). */
+export type VariantData = Omit<typeof productVariants.$inferSelect, "productId" | "position"> & {
+  stockByBranch: Record<string, number>;
+};
+export type ProductRow = typeof products.$inferSelect & { variants: VariantData[] };
 export type CategoryRow = typeof categories.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
 export type StaffRow = typeof staff.$inferSelect;
@@ -612,7 +649,7 @@ export type StockTransferRow = typeof stockTransfers.$inferSelect;
 export type ExpenseRow = typeof expenses.$inferSelect;
 export type PosBillRow = typeof posBills.$inferSelect;
 /** The unified catalog is the single source for inventory too. */
-export type InventoryProductRow = typeof products.$inferSelect;
+export type InventoryProductRow = ProductRow;
 export type CouponRow = typeof coupons.$inferSelect;
 export type RepairTicketRow = typeof repairTickets.$inferSelect;
 export type InquiryRow = typeof inquiries.$inferSelect;

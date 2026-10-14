@@ -8,7 +8,8 @@ import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { BRANCH_KEYS, type Branch, type BranchFilter } from "@/lib/stock";
+import { BRANCH_KEYS, type Branch, type BranchFilter, isBranch, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 interface OutstandingRow {
   vendorId: string;
@@ -39,8 +40,8 @@ export default function VendorOutstandingsPage() {
   const vendors = useVendors((s) => s.vendors);
   const hydrateVendors = useVendors((s) => s.hydrate);
   const canSwitch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
-  const lockedBranch: BranchFilter | null = !canSwitch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+  const allowedBranches = useBranchScope((s) => s.allowed);
+  const lockedBranch: BranchFilter | null = !canSwitch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [rows, setRows] = useState<OutstandingRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +120,7 @@ export default function VendorOutstandingsPage() {
   const exportCSV = () => {
     const r2 = (paise: number) => (paise / 100).toFixed(2);
     const head = ["Vendor", "Branch", "Purchased", "Paid", "Outstanding"];
-    const body = scoped.map((r) => [vendorName(r.vendorId), r.branch, r2(r.purchased), r2(r.paid), r2(r.outstanding)]);
+    const body = scoped.map((r) => [vendorName(r.vendorId), branchLabel(r.branch), r2(r.purchased), r2(r.paid), r2(r.outstanding)]);
     downloadCsv(`vendor-outstandings-${Date.now()}.csv`, [head, ...body]);
   };
 
@@ -159,7 +160,7 @@ export default function VendorOutstandingsPage() {
           {lockedBranch ? (
             <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
           ) : (
-            ([["all", "Overall"], ...BRANCH_KEYS.map((b) => [b, b] as const)] as const).map(([k, label]) => (
+            ([["all", "Overall"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
               <button key={k} onClick={() => setBranch(k as BranchFilter)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>{label}</button>
             ))
           )}
@@ -209,7 +210,7 @@ export default function VendorOutstandingsPage() {
                   <div className="flex flex-wrap gap-1.5">
                     {g.branches.map((b) => (
                       <span key={b.branch} className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", b.outstanding > 0 ? "bg-danger/10 text-danger" : "bg-success/10 text-success")}>
-                        {b.branch}: {formatINR(b.outstanding)}
+                        {branchLabel(b.branch)}: {formatINR(b.outstanding)}
                       </span>
                     ))}
                   </div>
@@ -271,7 +272,7 @@ function PurchasedItems({ entries, branch }: { entries: StatementEntry[] | "erro
                 {lines.map((l, i) => (
                   <tr key={i} className="text-ink-700">
                     <td className="py-1 font-medium text-ink-900">{l.productName}{l.variant ? ` (${l.variant})` : ""}</td>
-                    <td>{l.branch}</td>
+                    <td>{branchLabel(l.branch)}</td>
                     <td className="text-right tabular-nums">{l.quantity} × {formatINR(l.unitCost)}</td>
                     <td className="text-right tabular-nums">{formatINR(l.quantity * l.unitCost)}</td>
                   </tr>
@@ -291,7 +292,7 @@ function StatementDrawer({
 }: {
   vendorId: string;
   vendorName: string;
-  lockedBranch: "Branch 1" | "Branch 2" | null;
+  lockedBranch: Branch | null;
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
@@ -300,7 +301,7 @@ function StatementDrawer({
   const [paying, setPaying] = useState(false);
   const [amount, setAmount] = useState(0);
   const [mode, setMode] = useState<"CASH" | "UPI" | "CARD" | "BANK" | "OTHER">("CASH");
-  const [branch, setBranch] = useState<Branch>(lockedBranch ?? "Branch 1");
+  const [branch, setBranch] = useState<Branch>(lockedBranch ?? DEFAULT_BRANCH);
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -390,7 +391,7 @@ function StatementDrawer({
                 <div>
                   <label className={label}>Branch (from)</label>
                   <select value={branch} onChange={(e) => setBranch(e.target.value as Branch)} disabled={!!lockedBranch} className={field}>
-                    {BRANCH_KEYS.map((b) => <option key={b} value={b}>{b}</option>)}
+                    <BranchOptions />
                   </select>
                 </div>
               </div>
@@ -423,13 +424,13 @@ function StatementDrawer({
                     <td className="px-3 py-2 text-ink-500">{r.at.slice(0, 10)}</td>
                     <td>
                       <p className="font-medium text-ink-900">{r.kind === "purchase" ? `Purchase ${r.id}` : `Payment${r.mode ? ` · ${r.mode}` : ""}`}</p>
-                      <p className="text-[10px] text-ink-400">{r.branch ?? ""}{r.invoiceNo ? ` · Inv ${r.invoiceNo}` : ""}{r.reference ? ` · ${r.reference}` : ""}</p>
+                      <p className="text-[10px] text-ink-400">{branchLabel(r.branch)}{r.invoiceNo ? ` · Inv ${r.invoiceNo}` : ""}{r.reference ? ` · ${r.reference}` : ""}</p>
                       {r.lines && r.lines.length > 0 && (
                         <ul className="mt-1 space-y-0.5 text-[10px] text-ink-500">
                           {r.lines.map((l, i) => (
                             <li key={i}>
                               {l.productName}{l.variant ? ` (${l.variant})` : ""} — {l.quantity} × {formatINR(l.unitCost)}
-                              <span className="text-ink-400"> · {l.branch}</span>
+                              <span className="text-ink-400"> · {branchLabel(l.branch)}</span>
                             </li>
                           ))}
                         </ul>

@@ -1,7 +1,8 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { products, stockTransfers } from "@/lib/db/schema";
-import { variantStockAt, isBranch, type Branch } from "@/lib/stock";
+import { stockTransfers } from "@/lib/db/schema";
+import { selectProduct } from "./variants";
+import { variantStockAt, isBranch, type Branch, branchLabel } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
 import { adjustProductStock } from "@/lib/db/queries/stockOps";
 import { genDocId } from "@/lib/ids";
@@ -53,11 +54,7 @@ export async function createTransfer(input: StockTransferInput): Promise<StockTr
     throw new HttpError(400, "Transfer quantity must be a whole number ≥ 1");
   }
 
-  const [prod] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, input.productId))
-    .limit(1);
+  const prod = await selectProduct(input.productId);
   if (!prod) throw new HttpError(404, `Unknown product: ${input.productId}`);
 
   const variants = prod.variants ?? [];
@@ -155,12 +152,12 @@ export async function createTransferBatch(
   }
   for (const [k, { need, at }] of demand) {
     const [productId, idx] = k.split("#");
-    const [prod] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+    const prod = await selectProduct(productId);
     if (!prod) throw new TransferValidationError(`Line ${at}: product not found.`);
     const v = prod.variants?.[Number(idx)];
     if (!v) throw new TransferValidationError(`Line ${at}: variant not found.`);
     const onHand = variantStockAt(v, fromBranch);
-    if (onHand < need) throw new TransferValidationError(`Line ${at}: ${prod.name} — only ${onHand} at ${fromBranch}, ${need} requested.`);
+    if (onHand < need) throw new TransferValidationError(`Line ${at}: ${prod.name} — only ${onHand} at ${branchLabel(fromBranch)}, ${need} requested.`);
   }
 
   const saved: StockTransferRecord[] = [];

@@ -16,6 +16,7 @@ import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/Repai
 import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, rupeeInput, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { branchLabel } from "@/lib/stock";
 
 function toDateInput(iso?: string) {
   if (!iso) return "";
@@ -177,7 +178,7 @@ export default function TicketDetailPage() {
               <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", sm.tone)}>{sm.label}</span>
               <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", pr.tone)}>{pr.label}</span>
             </div>
-            <p className="mt-1 text-sm text-ink-500">{t.id} · {t.category}{t.brand ? ` · ${t.brand}` : ""} · {t.branch}</p>
+            <p className="mt-1 text-sm text-ink-500">{t.id} · {t.category}{t.brand ? ` · ${t.brand}` : ""} · {branchLabel(t.branch)}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setEditOpen(true)} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600"><Pencil className="h-4 w-4" /> Edit</button>

@@ -4,6 +4,8 @@ import { ArrowRightLeft, Search, ArrowRight, Trash2 } from "lucide-react";
 import { usePOS, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { cn } from "@/lib/utils";
+import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 interface TransferRow {
   id: string;
@@ -31,20 +33,21 @@ function fmt(d: string) {
   return isNaN(+x) ? d : x.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-const OTHER_BRANCH: Record<Branch, Branch> = { "Branch 1": "Branch 2", "Branch 2": "Branch 1" };
+/** Default destination for a source: the next branch in the list. */
+const otherBranch = (b: Branch): Branch => BRANCH_KEYS[(BRANCH_KEYS.indexOf(b) + 1) % BRANCH_KEYS.length];
 
 export default function StockTransfersPage() {
   const invProducts = usePOS((s) => s.invProducts);
   const hydratePOS = usePOS((s) => s.hydrate);
   const canSwitch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
+  const allowedBranches = useBranchScope((s) => s.allowed);
   const scopeSelected = useBranchScope((s) => s.selected);
   // Branch users are pinned as source; admins pick either direction.
   const lockedSource: Branch | null =
-    !canSwitch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+    !canSwitch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [fromBranch, setFromBranch] = useState<Branch>(lockedSource ?? effectiveBranch(scopeSelected));
-  const [toBranch, setToBranch] = useState<Branch>(OTHER_BRANCH[lockedSource ?? effectiveBranch(scopeSelected)]);
+  const [toBranch, setToBranch] = useState<Branch>(otherBranch(lockedSource ?? effectiveBranch(scopeSelected)));
   const [productTerm, setProductTerm] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [note, setNote] = useState("");
@@ -57,7 +60,7 @@ export default function StockTransfersPage() {
 
   useEffect(() => {
     setFromBranch(lockedSource ?? effectiveBranch(scopeSelected));
-    setToBranch(OTHER_BRANCH[lockedSource ?? effectiveBranch(scopeSelected)]);
+    setToBranch(otherBranch(lockedSource ?? effectiveBranch(scopeSelected)));
   }, [lockedSource, scopeSelected]);
 
   useEffect(() => {
@@ -109,8 +112,8 @@ export default function StockTransfersPage() {
     if (!productOf(l)) return "Product not found";
     if (l.qty < 1) return "Qty must be ≥ 1";
     const src = onHandAt(l, fromBranch);
-    if (l.qty > src) return `Only ${src} at ${fromBranch}`;
-    if ((demand.get(`${l.productId}#${l.variantIndex}`) ?? 0) > src) return `Rows together exceed ${src} at ${fromBranch}`;
+    if (l.qty > src) return `Only ${src} at ${branchLabel(fromBranch)}`;
+    if ((demand.get(`${l.productId}#${l.variantIndex}`) ?? 0) > src) return `Rows together exceed ${src} at ${branchLabel(fromBranch)}`;
     return null;
   };
   const totalQty = lines.reduce((n, l) => n + l.qty, 0);
@@ -181,8 +184,7 @@ export default function StockTransfersPage() {
               <label className={label}>Direction</label>
               <div className="flex items-center gap-2">
                 <select value={fromBranch} onChange={(e) => setFromBranch(e.target.value as Branch)} disabled={!!lockedSource} className={cn(field, "disabled:cursor-not-allowed disabled:opacity-70")}>
-                  <option>Branch 1</option>
-                  <option>Branch 2</option>
+                  <BranchOptions />
                 </select>
                 <button
                   onClick={swapDirection}
@@ -193,8 +195,7 @@ export default function StockTransfersPage() {
                   <ArrowRightLeft className="h-4 w-4" />
                 </button>
                 <select value={toBranch} onChange={(e) => setToBranch(e.target.value as Branch)} className={field}>
-                  <option>Branch 1</option>
-                  <option>Branch 2</option>
+                  {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
                 </select>
               </div>
               {fromBranch === toBranch && (
@@ -215,7 +216,7 @@ export default function StockTransfersPage() {
                     {productMatches.map((p) => (
                       <button key={p.id} onClick={() => addLine(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gold-50">
                         <span className="font-medium text-ink-900">{p.name}</span>
-                        <span className="text-xs text-ink-400">{productStockAt(p, fromBranch)} at {fromBranch}</span>
+                        <span className="text-xs text-ink-400">{productStockAt(p, fromBranch)} at {branchLabel(fromBranch)}</span>
                       </button>
                     ))}
                   </div>
@@ -232,7 +233,7 @@ export default function StockTransfersPage() {
                   <th className="px-3 py-3">#</th>
                   <th>Product</th>
                   <th>Variant</th>
-                  <th className="w-28 pr-2 text-right">At {fromBranch}</th>
+                  <th className="w-28 pr-2 text-right">At {branchLabel(fromBranch)}</th>
                   <th className="w-24 pr-2 text-right">Qty</th>
                   <th className="w-36 pr-2 text-right">After (src → dest)</th>
                   <th className="w-10" />
@@ -324,7 +325,7 @@ export default function StockTransfersPage() {
                       {r.variant && <p className="text-[11px] text-ink-400">{r.variant}</p>}
                     </td>
                     <td className="text-xs text-ink-600">
-                      {r.fromBranch} → {r.toBranch}
+                      {branchLabel(r.fromBranch)} → {branchLabel(r.toBranch)}
                       {r.note && <div className="text-[10px] text-ink-400">{r.note}</div>}
                     </td>
                     <td className="pr-4 text-right font-semibold tabular-nums">{r.quantity}</td>

@@ -8,6 +8,7 @@ import { useAllSales } from "@/lib/client/sales";
 import { downloadCsv, stamp } from "@/lib/csv";
 import { stockRows, itemHistoryRows, categoryHistoryRows, type PurchaseRecord } from "@/lib/reports/inventory";
 import { formatINR, cn } from "@/lib/utils";
+import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { Bell, Plus, Pencil, Trash2, AlertTriangle, X, Download, FileClock, ChevronDown } from "lucide-react";
 
 const STATUS_META = {
@@ -197,8 +198,7 @@ export default function InventoryPage() {
               <th className="px-3 py-3">Category</th>
               <th className="px-3 py-3">Dept</th>
               <th className="px-3 py-3 text-right">Price</th>
-              <th className="px-3 py-3 text-right">Branch 1</th>
-              <th className="px-3 py-3 text-right">Branch 2</th>
+              {BRANCH_KEYS.map((b) => <th key={b} className="px-3 py-3 text-right">{branchLabel(b)}</th>)}
               <th className="px-3 py-3 text-right">Total</th>
               <th className="px-3 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -222,8 +222,7 @@ export default function InventoryPage() {
                   <td className="px-3 py-3 text-ink-600">{p.category}</td>
                   <td className="px-3 py-3 text-ink-600">{p.department}</td>
                   <td className="px-3 py-3 text-right font-semibold tabular-nums text-ink-900">{formatINR(p.basePrice)}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{productStockAt(p, "Branch 1")}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{productStockAt(p, "Branch 2")}</td>
+                  {BRANCH_KEYS.map((b) => <td key={b} className="px-3 py-3 text-right tabular-nums">{productStockAt(p, b)}</td>)}
                   <td className="px-3 py-3 text-right font-bold tabular-nums text-ink-900">{productStock(p)}</td>
                   <td className="px-3 py-3">
                     <span className={cn("whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", meta.badge)}>{meta.label}</span>

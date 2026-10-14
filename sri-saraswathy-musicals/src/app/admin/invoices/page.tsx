@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FileText, Search, Globe, Store, Wrench, ExternalLink } from "lucide-react";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
+import { branchLabel } from "@/lib/stock";
 
 type SourceFilter = "all" | "web" | "pos" | "service" | "manual";
 
@@ -164,7 +165,7 @@ export default function InvoicesLedgerPage() {
                   <td className="px-4 py-3 font-semibold text-ink-900">{v.number}</td>
                   <td className="px-4 py-3 text-ink-600">{fmtDate(v.date)}</td>
                   <td className="px-4 py-3 text-ink-700">{v.customer}</td>
-                  <td className="px-4 py-3 text-ink-600">{v.branch}</td>
+                  <td className="px-4 py-3 text-ink-600">{branchLabel(v.branch)}</td>
                   <td className="px-4 py-3">
                     <span className={cn(
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",

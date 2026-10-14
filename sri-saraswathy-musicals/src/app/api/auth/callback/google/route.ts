@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getGoogleUserFromCode } from "@/lib/auth/google";
 import { upsertGoogleUser } from "@/lib/db/queries/users";
-import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/auth/session";
+import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE , branchesOf } from "@/lib/auth/session";
 import { appUrl } from "@/lib/auth/config";
 import { safeRedirect } from "@/lib/auth/redirect";
+import { isBranch } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
       email: user.email,
       name: user.name,
       isAdmin: user.isAdmin,
-      branch: user.branch === "Branch 1" || user.branch === "Branch 2" ? user.branch : null,
+      branch: isBranch(user.branch) ? user.branch : null,
+      branches: user.isAdmin ? [] : branchesOf(user),
       avatar: user.avatar ?? null,
     });
 

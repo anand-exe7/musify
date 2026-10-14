@@ -5,6 +5,7 @@ import { ProductCard } from "@/components/shop/ProductCard";
 import { useProducts, useCategories } from "@/lib/client/catalog";
 import { SlidersHorizontal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BUSINESS } from "@/lib/data/business";
 
 type SortKey = "featured" | "price-asc" | "price-desc" | "name" | "rating";
 
@@ -54,7 +55,7 @@ function ShopContent() {
           )}
         </h1>
         <p className="mt-3 text-sm text-ink-500 md:text-base">
-          {filtered.length} pieces · in stock at Vadapalani & Porur
+          {filtered.length} pieces · in stock at {BUSINESS.branches.map((b) => b.area).join(" & ")}
         </p>
       </div>
 

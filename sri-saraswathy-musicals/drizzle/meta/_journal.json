@@ -141,6 +141,34 @@
       "when": 1791100000000,
       "tag": "0019_repair_status_simplify",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791913481094,
+      "tag": "0020_branch3_and_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791978476030,
+      "tag": "0021_integrity_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791978662626,
+      "tag": "0022_variants_and_stock_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791979418881,
+      "tag": "0023_user_branch_access",
+      "breakpoints": true
     }
   ]
 }

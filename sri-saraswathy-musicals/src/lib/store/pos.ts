@@ -8,6 +8,7 @@ import {
   type Branch,
   type BranchFilter,
   type Variant,
+  DEFAULT_BRANCH,
   variantStock,
   variantStockAt,
   setVariantStockAt,
@@ -159,7 +160,7 @@ export const usePOS = create<POSState>()((set, get) => ({
   coupons: [],
   categories: [],
   branch: "all",
-  activeBranch: "Branch 1",
+  activeBranch: DEFAULT_BRANCH,
   hydrated: false,
   loadError: null,
   hydrate: async () => {

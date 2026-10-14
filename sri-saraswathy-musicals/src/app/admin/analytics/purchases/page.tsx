@@ -7,7 +7,7 @@ import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
 import { Download, FileSpreadsheet, ArrowLeft } from "lucide-react";
-import { BRANCH_KEYS, type Branch, type BranchFilter } from "@/lib/stock";
+import { BRANCH_KEYS, type Branch, type BranchFilter, isBranch, branchLabel } from "@/lib/stock";
 
 interface PurchaseRow {
   id: string;
@@ -91,8 +91,8 @@ export default function PurchaseAnalyticsPage() {
   const vendors = useVendors((s) => s.vendors);
   const hydrateVendors = useVendors((s) => s.hydrate);
   const canSwitch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
-  const lockedBranch: BranchFilter | null = !canSwitch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+  const allowedBranches = useBranchScope((s) => s.allowed);
+  const lockedBranch: BranchFilter | null = !canSwitch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [purchases, setPurchases] = useState<PurchaseRow[] | null>(null);
   const [outstandings, setOutstandings] = useState<OutstandingRow[] | null>(null);
@@ -191,7 +191,7 @@ export default function PurchaseAnalyticsPage() {
   const exportOutstandingsCSV = () => {
     const r2 = (paise: number) => (paise / 100).toFixed(2);
     const head = ["Vendor", "Branch", "Purchased", "Paid", "Outstanding"];
-    const body = outstandingsScoped.map((r) => [r.name, r.branch, r2(r.purchased), r2(r.paid), r2(r.outstanding)]);
+    const body = outstandingsScoped.map((r) => [r.name, branchLabel(r.branch), r2(r.purchased), r2(r.paid), r2(r.outstanding)]);
     downloadCsv(`vendor-outstandings-${Date.now()}.csv`, [head, ...body]);
   };
 
@@ -240,7 +240,7 @@ export default function PurchaseAnalyticsPage() {
           {lockedBranch ? (
             <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
           ) : (
-            ([["all", "Overall"], ...BRANCH_KEYS.map((b) => [b, b] as const)] as const).map(([k, label]) => (
+            ([["all", "Overall"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
               <button key={k} onClick={() => setBranch(k as BranchFilter)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>{label}</button>
             ))
           )}
@@ -359,7 +359,7 @@ export default function PurchaseAnalyticsPage() {
           </div>
         </div>
         {outstandingsScoped.length === 0 ? (
-          <p className="py-12 text-center text-sm text-ink-400">No outstandings{branch !== "all" ? ` in ${branch}` : ""}.</p>
+          <p className="py-12 text-center text-sm text-ink-400">No outstandings{branch !== "all" ? ` in ${branchLabel(branch)}` : ""}.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
@@ -376,7 +376,7 @@ export default function PurchaseAnalyticsPage() {
                 {outstandingsScoped.map((r) => (
                   <tr key={`${r.vendorId}-${r.branch}`} className="text-ink-800">
                     <td className="py-3 font-semibold text-ink-900">{r.name}</td>
-                    <td className="text-ink-600">{r.branch}</td>
+                    <td className="text-ink-600">{branchLabel(r.branch)}</td>
                     <td className="text-right tabular-nums">{formatINR(r.purchased)}</td>
                     <td className="text-right tabular-nums text-success">{formatINR(r.paid)}</td>
                     <td className={cn("text-right font-semibold tabular-nums", r.outstanding > 0 ? "text-danger" : "text-ink-400")}>{formatINR(r.outstanding)}</td>

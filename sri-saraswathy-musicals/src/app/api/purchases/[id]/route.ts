@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 export function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return handle("staff", async ({ access }) => {
     const { id } = await params;
-    if (!(await purchaseVisibleTo(id, access as Branch | "all"))) return notFound("Purchase not found");
+    if (!(await purchaseVisibleTo(id, access === "all" ? null : access))) return notFound("Purchase not found");
     const rec = await getPurchase(id);
-    return rec ? ok(scopePurchaseLines(rec, access as Branch | "all")) : notFound("Purchase not found");
+    return rec ? ok(scopePurchaseLines(rec, access === "all" ? null : access)) : notFound("Purchase not found");
   });
 }
 

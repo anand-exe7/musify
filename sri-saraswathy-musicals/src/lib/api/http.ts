@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { HttpError } from "./errors";
 import { requireUser, requireAdminUser, type AdminAuth } from "@/lib/auth/server";
-import type { SessionUser, AdminAccess } from "@/lib/auth/session";
+import { adminAccessOf, type SessionUser, type AdminAccess } from "@/lib/auth/session";
 
 export { HttpError };
 
@@ -53,7 +53,7 @@ export async function handle<A extends Access>(
     let auth: unknown;
     if (access === "user") {
       const user = await requireUser();
-      auth = { user, access: user.isAdmin ? "all" : (user.branch ?? null) };
+      auth = { user, access: adminAccessOf(user) };
     } else if (access === "staff") {
       auth = await requireAdminUser();
     } else if (access === "admin") {

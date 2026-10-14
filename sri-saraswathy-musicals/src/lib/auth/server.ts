@@ -11,9 +11,10 @@
  * for places that just need to know who is probably signed in.
  */
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, verifySessionToken, adminAccessOf, type SessionUser, type AdminAccess, type BranchKey } from "./session";
+import { SESSION_COOKIE, verifySessionToken, adminAccessOf, branchesOf, branchAllowed, type SessionUser, type AdminAccess } from "./session";
 import { HttpError } from "@/lib/api/errors";
 import { getUser } from "@/lib/db/queries/users";
+import { isBranch } from "@/lib/stock";
 
 /** The signed-in user per the cookie alone (NOT re-checked against the DB). */
 export async function getSession(): Promise<SessionUser | null> {
@@ -36,7 +37,8 @@ export async function getVerifiedSession(): Promise<SessionUser | null> {
     email: fresh.email,
     name: fresh.name,
     isAdmin: fresh.isAdmin === true,
-    branch: fresh.branch === "Branch 1" || fresh.branch === "Branch 2" ? fresh.branch : null,
+    branch: isBranch(fresh.branch) ? fresh.branch : null,
+    branches: fresh.isAdmin === true ? [] : branchesOf(fresh),
     avatar: fresh.avatar ?? null,
   };
 }
@@ -57,7 +59,7 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 export interface AdminAuth {
   user: SessionUser;
-  access: "all" | BranchKey;
+  access: "all" | string[];
 }
 
 /**
@@ -74,16 +76,16 @@ export async function requireAdminUser(): Promise<AdminAuth> {
 }
 
 /** Like {@link requireAdminUser} but returns only the access level. */
-export async function requireAdminAccess(): Promise<"all" | BranchKey> {
+export async function requireAdminAccess(): Promise<"all" | string[]> {
   return (await requireAdminUser()).access;
 }
 
 /**
  * Narrow branch-tagged rows to the caller's scope. A full admin ("all") sees
- * everything; a branch user sees only rows whose `branch` matches theirs
+ * everything; a branch user sees only rows whose `branch` is one of theirs
  * (rows with no branch are hidden from branch users — visible only to admins).
  */
 export function scopeByBranch<T extends { branch?: string | null }>(rows: T[], access: AdminAccess): T[] {
   if (access === "all" || access === null) return rows;
-  return rows.filter((r) => r.branch === access);
+  return rows.filter((r) => branchAllowed(access, r.branch));
 }

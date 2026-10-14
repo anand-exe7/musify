@@ -14,6 +14,7 @@ import { useBranchScope } from "@/lib/store/branch";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { DEFAULT_BRANCH } from "@/lib/stock";
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: "today", label: "Today" },
@@ -162,7 +163,7 @@ export default function ExpensesPage() {
       notes: form.notes.trim() || null,
       expenseDate: form.date || today(),
       createdAt: new Date().toISOString(),
-      branch: scopeSelected === "all" ? "Branch 1" : scopeSelected,
+      branch: scopeSelected === "all" ? DEFAULT_BRANCH : scopeSelected,
     };
     const okSave = await addExpense(expense);
     if (!okSave) return notify("Couldn't save the expense.");

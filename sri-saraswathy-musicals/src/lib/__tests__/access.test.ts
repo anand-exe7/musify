@@ -14,7 +14,8 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/db/queries/users", () => ({ getUser: async (id: string) => dbUsers.get(id) }));
 
 import { handle } from "@/lib/api/http";
-import { createSessionToken, verifySessionToken } from "@/lib/auth/session";
+import { createSessionToken, verifySessionToken, branchAllowed } from "@/lib/auth/session";
+import { scopeByBranch } from "@/lib/auth/server";
 
 const dbUser = (over: Record<string, unknown> = {}) => ({
   id: "u1", name: "U", email: "u@x.com", active: true, isAdmin: false, branch: null, avatar: null, ...over,
@@ -70,7 +71,21 @@ describe("handle(access)", () => {
     dbUsers.set("u1", dbUser({ branch: "Branch 2" }));
     let seen: unknown;
     await handle("staff", async (a) => { seen = a; return NextResponse.json({}); });
-    expect(seen).toMatchObject({ access: "Branch 2", user: { id: "u1", branch: "Branch 2", isAdmin: false } });
+    expect(seen).toMatchObject({ access: ["Branch 2"], user: { id: "u1", branch: "Branch 2", isAdmin: false } });
+  });
+  it("gives a multi-branch user all of their branches, and only those", async () => {
+    await signIn();
+    dbUsers.set("u1", dbUser({ branch: "Branch 1", branchAccess: ["Branch 1", "Branch 3"] }));
+    let seen: { access: unknown } | undefined;
+    await handle("staff", async (a) => { seen = a as { access: unknown }; return NextResponse.json({}); });
+    expect(seen?.access).toEqual(["Branch 1", "Branch 3"]);
+    expect(branchAllowed(seen?.access as string[], "Branch 3")).toBe(true);
+    expect(branchAllowed(seen?.access as string[], "Branch 2")).toBe(false);
+    expect(scopeByBranch([{ branch: "Branch 1" }, { branch: "Branch 2" }, { branch: "Branch 3" }], seen?.access as string[]).map((r) => r.branch)).toEqual(["Branch 1", "Branch 3"]);
+  });
+  it("a full admin may act on any branch", () => {
+    expect(branchAllowed("all", "Branch 2")).toBe(true);
+    expect(branchAllowed(null, "Branch 2")).toBe(false);
   });
 });
 

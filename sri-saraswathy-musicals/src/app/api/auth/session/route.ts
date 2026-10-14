@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { handle, ok } from "@/lib/api/http";
 import { getSession } from "@/lib/auth/server";
 import { getUser } from "@/lib/db/queries/users";
-import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/auth/session";
+import { createSessionToken, branchesOf, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/auth/session";
+import { isBranch } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -41,17 +42,16 @@ export function GET() {
       email: freshUser.email,
       name: freshUser.name,
       isAdmin: freshUser.isAdmin,
-      branch:
-        freshUser.branch === "Branch 1" || freshUser.branch === "Branch 2"
-          ? freshUser.branch
-          : null,
+      branch: isBranch(freshUser.branch) ? freshUser.branch : null,
+      branches: freshUser.isAdmin ? [] : branchesOf(freshUser),
       avatar: freshUser.avatar ?? null,
     } as const;
 
-    // Check whether the cookie needs refreshing (isAdmin or branch changed).
+    // Check whether the cookie needs refreshing (isAdmin or branch access changed).
     const needsRefresh =
       session.isAdmin !== sessionUser.isAdmin ||
-      session.branch !== sessionUser.branch;
+      session.branch !== sessionUser.branch ||
+      JSON.stringify(session.branches ?? []) !== JSON.stringify(sessionUser.branches);
 
     if (needsRefresh) {
       // Re-issue the session cookie with the updated values.

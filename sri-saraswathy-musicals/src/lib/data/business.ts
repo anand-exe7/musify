@@ -4,7 +4,8 @@
  */
 
 export interface BranchInfo {
-  key: "Branch 1" | "Branch 2";
+  /** Stable id stored in every `branch` column, e.g. "Branch 3". */
+  key: string;
   city: string;
   area: string;
   street: string;
@@ -20,13 +21,19 @@ export interface BranchInfo {
 export const BUSINESS = {
   name: "Sri Saraswathy Musicals",
   tagline: "Instruments, set up by hand · Since 1978",
-  // Registered Tamil Nadu GSTIN (covers both Chennai branches).
+  // Registered Tamil Nadu GSTIN (covers every Chennai branch).
   gstin: "33BDVPP9993A1ZV",
   owner: "R Punitha",
   // Primary WhatsApp line customers reach for inquiries & service (Vadapalani branch).
   whatsapp: "919940638409",
   email: "sshw1964@yahoo.co.in",
   website: "srisaraswathymusicals.in",
+  /**
+   * THE list of branches. Adding a branch = add one entry here (key "Branch N"),
+   * then run a migration that widens the `*_branch_check` constraints (they are
+   * built from this list) — everything else (stock buckets, switchers, forms,
+   * storefront) derives from it.
+   */
   branches: [
     {
       key: "Branch 1",
@@ -50,10 +57,22 @@ export const BUSINESS = {
       maps: "https://maps.app.goo.gl/uhTzDhPpkhXfBYxW9",
       hours: "Mon — Sat · 10:00 to 20:00",
     },
+    {
+      key: "Branch 3",
+      city: "Chennai",
+      area: "Ashok Nagar",
+      street: "68A, 100 Feet Road",
+      zip: "Chennai 600083",
+      // TODO: replace with the Ashok Nagar branch's own numbers.
+      phone: "+91 99406 38409",
+      whatsapp: "919940638409",
+      maps: "https://www.google.com/maps/search/?api=1&query=Sri+Saraswathy+Musicals+68A+100+Feet+Road+Ashok+Nagar+Chennai+600083",
+      hours: "Mon — Sat · 10:00 to 20:00",
+    },
   ] as BranchInfo[],
 } as const;
 
-export function branchInfo(key: "Branch 1" | "Branch 2"): BranchInfo {
+export function branchInfo(key: string): BranchInfo {
   return BUSINESS.branches.find((b) => b.key === key) ?? BUSINESS.branches[0];
 }
 

@@ -8,7 +8,7 @@ interface QuoteBody {
   items: CartLineInput[];
   delivery: DeliveryMethod;
   shipState?: string;
-  branch?: "Branch 1" | "Branch 2";
+  branch?: string;
   couponCode?: string;
 }
 

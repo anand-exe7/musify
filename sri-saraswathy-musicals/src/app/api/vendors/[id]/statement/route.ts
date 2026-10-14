@@ -10,13 +10,13 @@ export const dynamic = "force-dynamic";
 export function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return handle("staff", async ({ access }) => {
     const { id } = await params;
-    const scope = access === "all" ? null : (access as Branch);
+    const scope = access === "all" ? null : access;
     const [entries, byBranch] = await Promise.all([
       vendorStatement(id, scope),
       vendorBranchPurchaseTotals(id),
     ]);
     // Branch staff only get their own branch's total.
-    if (scope) for (const b of BRANCH_KEYS) if (b !== scope) byBranch[b] = 0;
+    if (scope) for (const b of BRANCH_KEYS) if (!scope.includes(b)) byBranch[b] = 0;
     return ok({ entries, byBranch });
   });
 }

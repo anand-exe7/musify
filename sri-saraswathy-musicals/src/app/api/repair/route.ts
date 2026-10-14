@@ -3,6 +3,8 @@ import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import { getTickets, createTicket } from "@/lib/db/queries/repair";
 import { scopeByBranch } from "@/lib/auth/server";
 import type { RepairTicket } from "@/lib/store/repair";
+import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
+import { DEFAULT_BRANCH } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +19,8 @@ export function POST(request: NextRequest) {
   return handle("staff", async ({ access }) => {
     const body = await readJson<RepairTicket>(request);
     if (!body?.id) return badRequest("Repair ticket requires `id`");
-    // A branch user can only file tickets for their own branch.
-    if (access !== "all") body.branch = access;
+    // A branch user can only file tickets for one of their branches.
+    if (access !== "all" && !branchAllowed(access, body.branch)) body.branch = primaryBranchOf(access, DEFAULT_BRANCH);
     return created(await createTicket(body));
   });
 }

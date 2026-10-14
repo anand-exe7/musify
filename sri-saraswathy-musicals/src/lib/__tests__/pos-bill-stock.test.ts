@@ -25,7 +25,7 @@ vi.mock("@/lib/db", async () => {
 
 import { db } from "@/lib/db";
 import { products } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { insertVariants, selectProduct } from "@/lib/db/queries/variants";
 import { createBill, deleteBill } from "@/lib/db/queries/pos";
 import { recordBillInvoice } from "@/lib/billing/ledger";
 import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
@@ -34,8 +34,8 @@ import type { Bill } from "@/lib/store/pos";
 
 const variant: Variant = { attr: "Std", finish: "", price: 100000, weight: 0, stockByBranch: { "Branch 1": 10, "Branch 2": 7 } };
 const stock = async (b: "Branch 1" | "Branch 2") => {
-  const [p] = await db.select().from(products).where(eq(products.id, "bill-p"));
-  return variantStockAt((p.variants as Variant[])[0], b);
+  const p = await selectProduct("bill-p");
+  return variantStockAt(p!.variants[0], b);
 };
 
 const bill = (id: string, branch: Bill["branch"], qty: number): Bill => ({
@@ -46,7 +46,8 @@ const bill = (id: string, branch: Bill["branch"], qty: number): Bill => ({
 });
 
 beforeAll(async () => {
-  await db.insert(products).values({ id: "bill-p", slug: "bill-p", name: "Bill product", category: "string", variants: [variant] });
+  await db.insert(products).values({ id: "bill-p", slug: "bill-p", name: "Bill product", category: "string" });
+  await insertVariants("bill-p", [variant]);
 }, 60_000);
 
 describe("billing panel sale", () => {

@@ -1,7 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { stockInward, products } from "@/lib/db/schema";
-import { isBranch, BRANCH_KEYS, type Branch } from "@/lib/stock";
+import { stockInward, type ProductRow } from "@/lib/db/schema";
+import { selectProduct } from "./variants";
+import { isBranch, BRANCH_KEYS, type Branch, branchLabel } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
 import { adjustProductStock } from "@/lib/db/queries/stockOps";
 import { genDocId } from "@/lib/ids";
@@ -52,11 +53,7 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
   }
   const branch = input.branch;
 
-  const [prod] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, input.productId))
-    .limit(1);
+  const prod = await selectProduct(input.productId);
   if (!prod) throw new HttpError(404, `Unknown product: ${input.productId}`);
 
   const variants = prod.variants ?? [];
@@ -129,10 +126,10 @@ export class InwardValidationError extends Error {}
  */
 export async function validateInwardBatch(
   lines: InwardBatchLine[],
-  allowedBranch: Branch | null,
+  allowed: Branch[] | null,
 ): Promise<void> {
   if (!Array.isArray(lines) || lines.length === 0) throw new InwardValidationError("Add at least one line.");
-  const cache = new Map<string, (typeof products.$inferSelect) | undefined>();
+  const cache = new Map<string, ProductRow | undefined>();
   for (const [n, l] of lines.entries()) {
     const at = `Line ${n + 1}`;
     if (!Number.isInteger(l.quantity) || l.quantity <= 0) throw new InwardValidationError(`${at}: quantity must be a whole number ≥ 1.`);
@@ -146,15 +143,14 @@ export async function validateInwardBatch(
       if (seen.has(a.branch)) throw new InwardValidationError(`${at}: duplicate branch in split.`);
       seen.add(a.branch);
       if (!Number.isInteger(a.quantity) || a.quantity < 0) throw new InwardValidationError(`${at}: invalid split quantity.`);
-      if (allowedBranch && a.branch !== allowedBranch && a.quantity > 0) {
-        throw new InwardValidationError(`${at}: you can only receive into ${allowedBranch}.`);
+      if (allowed && !allowed.includes(a.branch) && a.quantity > 0) {
+        throw new InwardValidationError(`${at}: you can only receive into ${allowed.map(branchLabel).join(" or ")}.`);
       }
       sum += a.quantity;
     }
     if (sum !== l.quantity) throw new InwardValidationError(`${at}: split (${sum}) doesn't match quantity (${l.quantity}).`);
     if (!cache.has(l.productId)) {
-      const [prod] = await db.select().from(products).where(eq(products.id, l.productId)).limit(1);
-      cache.set(l.productId, prod);
+      cache.set(l.productId, await selectProduct(l.productId));
     }
     const prod = cache.get(l.productId);
     if (!prod) throw new InwardValidationError(`${at}: product not found.`);
@@ -172,7 +168,7 @@ export async function createInwardBatch(
   vendorId: string,
   lines: InwardBatchLine[],
   createdBy: string,
-  allowedBranch: Branch | null,
+  allowed: Branch[] | null,
   /** Client-generated id for the whole submission. Resubmitting the same one
    *  completes any missing lines and returns the rest as saved (double-click /
    *  retry safe). */
@@ -184,7 +180,7 @@ export async function createInwardBatch(
   // every row has a fixed id `<batchId>-<n>`, and createInward returns a row that
   // was already saved instead of adding its stock again. A batch that stopped
   // part-way is therefore completed, not mistaken for finished.
-  await validateInwardBatch(lines, allowedBranch);
+  await validateInwardBatch(lines, allowed);
   const saved: StockInwardRecord[] = [];
   let n = 0;
   for (const l of lines) {

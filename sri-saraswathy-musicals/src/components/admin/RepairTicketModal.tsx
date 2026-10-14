@@ -12,6 +12,8 @@ import type { Branch } from "@/lib/store/pos";
 import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { BRANCH_KEYS, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 /** Date input helper — ISO ⇄ yyyy-mm-dd */
 function toDateInput(iso?: string) {
@@ -49,7 +51,7 @@ function blank(): RepairTicket {
     accessories: "",
     status: "received",
     priority: "normal",
-    branch: "Branch 1",
+    branch: DEFAULT_BRANCH,
     technician: "Unassigned",
     deadline: dl.toISOString(),
     estimate: 0,
@@ -113,7 +115,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
     };
     if (isNew) {
       clean.events = [
-        { at: new Date().toISOString(), label: `Ticket raised · received at ${clean.branch}` },
+        { at: new Date().toISOString(), label: `Ticket raised · received at ${branchLabel(clean.branch)}` },
       ];
       addTicket(clean);
     } else {
@@ -232,8 +234,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
               <div>
                 <label className={label}>Branch</label>
                 <select value={d.branch} onChange={(e) => set({ branch: e.target.value as Branch })} className={field}>
-                  <option>Branch 1</option>
-                  <option>Branch 2</option>
+                  <BranchOptions />
                 </select>
               </div>
               <div>

@@ -342,7 +342,7 @@ export function Header() {
             </div>
             <div className="mt-auto p-6 text-xs uppercase tracking-[0.24em] text-ink-400">
               <p>Sri Saraswathy Musicals</p>
-              <p>{BUSINESS.branches[0].area} · {BUSINESS.branches[1].area} · Est. 1978</p>
+              <p>{BUSINESS.branches.map((b) => b.area).join(" · ")} · Est. 1978</p>
             </div>
           </motion.div>
         )}

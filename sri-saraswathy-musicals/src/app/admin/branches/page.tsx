@@ -1,4 +1,5 @@
 "use client";
+import { branchLabel } from "@/lib/stock";
 import { useEffect, useState } from "react";
 import { Building2, ShieldCheck, Check } from "lucide-react";
 import { useAuth } from "@/lib/store/auth";
@@ -83,7 +84,7 @@ export default function BranchesPage() {
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Building2 className="h-4 w-4 text-gold-600" />
-                <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">{b.id}</h2>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">{b.name || branchLabel(b.id)}</h2>
               </div>
               <button
                 onClick={() => setField(b.id, { active: !b.active })}

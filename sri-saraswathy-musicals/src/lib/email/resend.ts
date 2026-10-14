@@ -8,6 +8,7 @@ import { Resend } from "resend";
 import type { Order } from "@/types";
 import { getAllProducts } from "@/lib/db/queries/products";
 import { formatINR } from "@/lib/utils";
+import { BUSINESS } from "@/lib/data/business";
 
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
@@ -42,7 +43,7 @@ async function renderOrderEmail(order: Order): Promise<string> {
       <tr><td style="padding:12px 0;font-weight:bold;border-top:2px solid #111;">Total</td><td style="padding:12px 0;text-align:right;font-weight:bold;border-top:2px solid #111;">${formatINR(order.total)}</td></tr>
     </table>
     <p style="color:#555;margin-top:16px;">${order.address}</p>
-    <p style="color:#999;font-size:12px;margin-top:24px;">Sri Saraswathy Musicals · Vadapalani · Porur</p>
+    <p style="color:#999;font-size:12px;margin-top:24px;">Sri Saraswathy Musicals · ${BUSINESS.branches.map((b) => b.area).join(" · ")}</p>
   </div>`;
 }
 

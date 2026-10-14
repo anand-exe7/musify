@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import type { User } from "@/types";
+import { isBranch } from "@/lib/stock";
 import { row, rows, definedOnly } from "./_util";
 
 export async function getUsers(): Promise<User[]> {
@@ -18,13 +19,24 @@ export async function getUserByEmail(email: string): Promise<User | undefined> {
   return r ? row<User>(r) : undefined;
 }
 
+/** Keep `branch` (primary) and `branchAccess` (full list) consistent, and drop unknown branches. */
+function withBranchAccess<T extends Partial<User>>(u: T): T {
+  if (u.branchAccess === undefined && u.branch === undefined) return u;
+  const list =
+    u.branchAccess !== undefined
+      ? u.branchAccess
+      : u.branch ? [u.branch] : [];
+  const clean = [...new Set(list.filter((b) => isBranch(b)))];
+  return { ...u, branchAccess: clean, branch: clean[0] ?? null };
+}
+
 export async function createUser(u: User): Promise<User> {
-  const [r] = await db.insert(users).values(u).returning();
+  const [r] = await db.insert(users).values(withBranchAccess(u) as typeof users.$inferInsert).returning();
   return row<User>(r);
 }
 
 export async function updateUser(id: string, patch: Partial<User>): Promise<User | undefined> {
-  const set = definedOnly(patch) as Partial<typeof users.$inferInsert>;
+  const set = definedOnly(withBranchAccess(patch)) as Partial<typeof users.$inferInsert>;
   if (Object.keys(set).length === 0) return getUser(id);
   const [r] = await db.update(users).set(set).where(eq(users.id, id)).returning();
   return r ? row<User>(r) : undefined;

@@ -18,7 +18,7 @@ export interface CheckoutDraft extends PricedOrder {
   phone: string;
   address: string;
   shipState: string;
-  branch: "Branch 1" | "Branch 2";
+  branch: string;
   razorpayOrderId: string;
 }
 

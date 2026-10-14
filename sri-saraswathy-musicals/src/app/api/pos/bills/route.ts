@@ -4,6 +4,8 @@ import { getBills, createBill } from "@/lib/db/queries/pos";
 import { recordBillInvoice } from "@/lib/billing/ledger";
 import { scopeByBranch } from "@/lib/auth/server";
 import type { Bill } from "@/lib/store/pos";
+import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
+import { DEFAULT_BRANCH } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +20,8 @@ export function POST(request: NextRequest) {
   return handle("staff", async ({ access }) => {
     const body = await readJson<Bill>(request);
     if (!body?.id) return badRequest("Bill requires `id`");
-    // A branch user can only raise bills for their own branch.
-    if (access !== "all") body.branch = access;
+    // A branch user can only raise bills for one of their branches.
+    if (access !== "all" && !branchAllowed(access, body.branch)) body.branch = primaryBranchOf(access, DEFAULT_BRANCH);
     const bill = await createBill(body);
     await recordBillInvoice(bill);
     return created(bill);

@@ -9,11 +9,13 @@ export type Category =
 export type Origin = "western" | "indian";
 
 /** On-hand at each physical store. */
-export type BranchStock = { "Branch 1": number; "Branch 2": number };
+export type BranchStock = Record<string, number>;
 
 /** A purchasable option under a product (size/finish combo). Money in paise;
  *  `stock` is on-hand across every branch, `stockByBranch` the same split by store. */
 export interface ProductVariant {
+  /** Durable variant id (absent on legacy/local data). */
+  id?: string;
   attr: string;
   finish: string;
   price: number;
@@ -21,6 +23,8 @@ export interface ProductVariant {
   stock: number;
   stockByBranch?: BranchStock;
   disabled?: boolean;
+  /** This variant's own photo, when it has one. */
+  photo?: string;
 }
 
 export interface Product {
@@ -76,7 +80,7 @@ export interface Order {
   paymentMethod?: string;
   paymentId?: string;
   shipState?: string;
-  branch?: "Branch 1" | "Branch 2";
+  branch?: string;
   /** `price` is the GST-inclusive unit price; `gstRate` the rate snapshotted at order time. */
   items: { productId: string; variantKey?: string; variantLabel?: string; quantity: number; price: number; gstRate?: number }[];
   /** Goods total before the coupon, GST-inclusive. */
@@ -98,7 +102,7 @@ export interface Invoice {
   number: string;
   date: string;
   customer: string;
-  branch: "Branch 1" | "Branch 2";
+  branch: string;
   /** `rate` is the GST-inclusive unit price; `mrp` the unit MRP and `discount` the line discount, both paise (optional on older invoices). */
   items: { name: string; hsn: string; qty: number; rate: number; gst: number; amount: number; mrp?: number; discount?: number; instruction?: string }[];
   subtotal: number;
@@ -128,9 +132,11 @@ export interface User {
   name: string;
   email: string;
   phone: string;
-  role: "admin" | "branch1-manager" | "branch2-manager" | "cashier" | "customer";
+  role: string;
   /** `null`/absent = no branch (full admin, or a plain customer). */
-  branch?: "Branch 1" | "Branch 2" | null;
+  branch?: string | null;
+  /** All branches a non-admin may work in (first = primary). */
+  branchAccess?: string[];
   active: boolean;
   /** Authoritative admin flag — grants access to the `/admin` area. */
   isAdmin: boolean;
@@ -155,8 +161,6 @@ export interface Vendor {
   email: string;
   address?: string;
   createdAt?: string;
-  outstanding: number;
-  totalPurchases: number;
 }
 
 export interface UserAddress {

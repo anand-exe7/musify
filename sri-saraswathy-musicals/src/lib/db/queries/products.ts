@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
-import { variantStock, variantStockAt } from "@/lib/stock";
+import { selectProduct, selectProducts, insertVariants } from "./variants";
+import { BRANCH_KEYS, variantStock, variantStockAt } from "@/lib/stock";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { HttpError } from "@/lib/api/errors";
 import { isForeignKeyViolation } from "./_util";
@@ -11,23 +12,22 @@ import type { BranchStock, Category, Origin, Product, ProductVariant } from "@/t
  *  storefront-facing shape: a single summed `stock` count across every branch. */
 function toStorefrontVariants(vs: ProductRow["variants"]): ProductVariant[] {
   return (vs ?? []).map((v) => ({
+    id: v.id,
     attr: v.attr,
     finish: v.finish,
     price: v.price,
     weight: v.weight,
     stock: variantStock(v),
-    stockByBranch: { "Branch 1": variantStockAt(v, "Branch 1"), "Branch 2": variantStockAt(v, "Branch 2") },
+    stockByBranch: Object.fromEntries(BRANCH_KEYS.map((b) => [b, variantStockAt(v, b)])),
     disabled: v.disabled,
+    photo: v.photo ?? undefined,
   }));
 }
 
 /** Enabled variants' stock, split by store. */
 function availableByBranch(variants: ProductRow["variants"]): BranchStock {
   const live = (variants ?? []).filter((v) => !v.disabled);
-  return {
-    "Branch 1": live.reduce((n, v) => n + variantStockAt(v, "Branch 1"), 0),
-    "Branch 2": live.reduce((n, v) => n + variantStockAt(v, "Branch 2"), 0),
-  };
+  return Object.fromEntries(BRANCH_KEYS.map((b) => [b, live.reduce((n, v) => n + variantStockAt(v, b), 0)]));
 }
 
 /** On-hand available to the storefront = sum of enabled variants' stock. */
@@ -92,15 +92,11 @@ function toInsertRow(p: Product): typeof products.$inferInsert {
     specs: p.specs,
     features: p.features,
     images: p.images,
-    photo: p.photo ?? null,
-    photos: p.photos ?? null,
+    photo: p.photo || null,
+    photos: p.photos && p.photos.length > 0 ? p.photos : null,
     featured: p.featured ?? false,
     bestSeller: p.bestSeller ?? false,
     isNew: p.new ?? false,
-    variants:
-      p.variants && p.variants.length > 0
-        ? p.variants
-        : [{ attr: "Standard", finish: "", price: p.price, weight: 0, stock: p.stock ?? 0, disabled: false }],
   };
 }
 
@@ -109,8 +105,7 @@ function toInsertRow(p: Product): typeof products.$inferInsert {
 /** Every product, active or not — for server-side pricing/lookups (orders,
  *  invoices, email) that must resolve a product even after it's been hidden. */
 export async function getAllProducts(): Promise<Product[]> {
-  const rows = await db.select().from(products);
-  return rows.map(toProduct);
+  return (await selectProducts()).map(toProduct);
 }
 
 /** What server-side pricing needs per product: money, tax flags and the RAW
@@ -128,7 +123,7 @@ export interface PricingProduct {
 }
 
 export async function getPricingCatalog(): Promise<PricingProduct[]> {
-  const rows = await db.select().from(products);
+  const rows = await selectProducts();
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -143,49 +138,42 @@ export async function getPricingCatalog(): Promise<PricingProduct[]> {
 
 /** Only products the storefront should show (the `active` kill switch). */
 export async function getStorefrontProducts(): Promise<Product[]> {
-  const rows = await db.select().from(products).where(eq(products.active, true));
-  return rows.map(toProduct);
+  return (await selectProducts(eq(products.active, true))).map(toProduct);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | undefined> {
-  const [row] = await db.select().from(products).where(eq(products.slug, slug)).limit(1);
+  const [row] = await selectProducts(eq(products.slug, slug));
   return row ? toProduct(row) : undefined;
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {
-  const [row] = await db.select().from(products).where(eq(products.id, id)).limit(1);
+  const row = await selectProduct(id);
   return row ? toProduct(row) : undefined;
 }
 
 export async function getProductsByCategory(category: string): Promise<Product[]> {
-  const rows = await db
-    .select()
-    .from(products)
-    .where(and(eq(products.category, category), eq(products.active, true)));
-  return rows.map(toProduct);
+  return (await selectProducts(and(eq(products.category, category), eq(products.active, true)))).map(toProduct);
 }
 
 export async function getFeaturedProducts(): Promise<Product[]> {
-  const rows = await db
-    .select()
-    .from(products)
-    .where(and(eq(products.featured, true), eq(products.active, true)));
-  return rows.map(toProduct);
+  return (await selectProducts(and(eq(products.featured, true), eq(products.active, true)))).map(toProduct);
 }
 
 export async function getBestSellers(): Promise<Product[]> {
-  const rows = await db
-    .select()
-    .from(products)
-    .where(and(eq(products.bestSeller, true), eq(products.active, true)));
-  return rows.map(toProduct);
+  return (await selectProducts(and(eq(products.bestSeller, true), eq(products.active, true)))).map(toProduct);
 }
 
 /* ─────────────────────────────  Writes  ────────────────────────────── */
 
 export async function createProduct(p: Product): Promise<Product> {
-  const [row] = await db.insert(products).values(toInsertRow(p)).returning();
-  return toProduct(row);
+  await db.insert(products).values(toInsertRow(p));
+  await insertVariants(
+    p.id,
+    p.variants && p.variants.length > 0
+      ? p.variants
+      : [{ attr: "Standard", finish: "", price: p.price, weight: 0, stock: p.stock ?? 0, disabled: false }],
+  );
+  return (await getProductById(p.id)) as Product;
 }
 
 export async function updateProduct(
@@ -220,16 +208,16 @@ export async function updateProduct(
   if (p.specs !== undefined) values.specs = p.specs;
   if (p.features !== undefined) values.features = p.features;
   if (p.images !== undefined) values.images = p.images;
-  if (p.photo !== undefined) values.photo = p.photo ?? null;
-  if (p.photos !== undefined) values.photos = p.photos ?? null;
+  if (p.photo !== undefined) values.photo = p.photo || null;
+  if (p.photos !== undefined) values.photos = p.photos && p.photos.length > 0 ? p.photos : null;
   if (p.featured !== undefined) values.featured = p.featured;
   if (p.bestSeller !== undefined) values.bestSeller = p.bestSeller;
   if (p.new !== undefined) values.isNew = p.new;
 
   if (Object.keys(values).length === 0) return getProductById(id);
 
-  const [row] = await db.update(products).set(values).where(eq(products.id, id)).returning();
-  return row ? toProduct(row) : undefined;
+  const updated = await db.update(products).set(values).where(eq(products.id, id)).returning({ id: products.id });
+  return updated.length > 0 ? getProductById(id) : undefined;
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {

@@ -400,6 +400,7 @@ async function main() {
     deliveryZones,
     counters,
   } = await import("./index");
+  const { insertVariants } = await import("./queries/variants");
 
   console.log("Clearing existing rows…");
   await Promise.all([
@@ -422,7 +423,9 @@ async function main() {
   ]);
 
   console.log("Inserting unified catalog…");
-  await db.insert(products).values(unifiedProducts());
+  const unified = unifiedProducts();
+  await db.insert(products).values(unified.map(({ variants: _v, ...row }) => row));
+  for (const p of unified) await insertVariants(p.id, p.variants);
 
   await db.insert(categories).values(categoryData.map((c) => ({ ...c })));
 
@@ -456,7 +459,7 @@ async function main() {
   );
 
   await db.insert(vendors).values(
-    vendorData.map((v) => ({ ...v, outstanding: P(v.outstanding), totalPurchases: P(v.totalPurchases) })),
+    vendorData,
   );
 
   console.log("Inserting POS…");

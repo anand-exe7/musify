@@ -1,22 +1,18 @@
 /**
- * Safe stock writes. The Neon HTTP driver can't run multi-statement
- * transactions, so a plain read → compute → write loses updates when two sales
- * race. Instead each write is a compare-and-swap on the whole `variants` value:
- *
- *   UPDATE products SET variants = <next> WHERE id = ? AND variants = <what we read>
- *
- * If another writer got in first the WHERE matches nothing, and we re-read and
- * retry. Nothing is ever silently floored: a shortfall throws a 409.
+ * Safe stock writes. Stock lives one row per (variant, branch) in `variant_stock`
+ * and every change is a single atomic `UPDATE … qty = qty + n` (see `bumpStock`),
+ * guarded so a balance can never go below zero — the CHECK constraint backs that
+ * up in the database. Concurrent sales therefore can't overwrite each other, and
+ * nothing is ever silently floored: a shortfall throws a 409.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { products } from "@/lib/db/schema";
+import { products, type ProductRow } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
-import { applyStockDeltas, StockShortfallError, variantStockAt, type StockDelta, type Variant } from "@/lib/stock";
+import { isBranch, type StockDelta, branchLabel } from "@/lib/stock";
+import { bumpStock, selectProduct, setVariantPrice as setPrice } from "./variants";
 
-const MAX_ATTEMPTS = 6;
-
-type ProductRow = typeof products.$inferSelect;
+export { setPrice as setVariantPrice };
 
 export interface StockWriteOptions {
   /** Clamp at zero instead of throwing — for goods that are already paid for. */
@@ -26,58 +22,59 @@ export interface StockWriteOptions {
 }
 
 /**
- * Apply deltas to one product atomically. Returns the product as it was before
- * the change (for names/labels). Throws HttpError(404) for an unknown product
- * and HttpError(409) for a shortfall or sustained contention.
+ * Apply deltas to one product. Returns the product as it was before the change
+ * (for names/labels). Throws HttpError(404) for an unknown product and
+ * HttpError(409) for a shortfall.
+ *
+ * Deltas to the same bucket are netted first, take-outs run before put-ins, and
+ * if a later step fails the earlier ones are reversed, so a transfer is judged on
+ * its net effect and never half-applies.
  */
 export async function adjustProductStock(
   productId: string,
   deltas: StockDelta[],
   opts: StockWriteOptions = {},
 ): Promise<ProductRow> {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const [prod] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-    if (!prod) throw new HttpError(404, `Unknown product: ${productId}`);
-    const prev = (prod.variants ?? []) as Variant[];
+  const prod = await selectProduct(productId);
+  if (!prod) throw new HttpError(404, `Unknown product: ${productId}`);
 
-    let next: Variant[];
-    try {
-      next = applyStockDeltas(prev, deltas, { allowShort: opts.allowShort, label: prod.name });
-    } catch (e) {
-      if (e instanceof StockShortfallError) throw new HttpError(409, e.message);
-      throw new HttpError(400, e instanceof Error ? e.message : "Invalid stock change");
+  const net = new Map<string, StockDelta>();
+  for (const d of deltas) {
+    if (!isBranch(d.branch)) throw new HttpError(400, `Unknown branch: ${String(d.branch)}`);
+    if (!Number.isInteger(d.delta)) throw new HttpError(400, "Stock quantity must be a whole number");
+    const k = `${d.variantIndex}|${d.branch}`;
+    net.set(k, { ...d, delta: (net.get(k)?.delta ?? 0) + d.delta });
+  }
+  const steps = [...net.values()].filter((d) => d.delta !== 0).sort((a, b) => a.delta - b.delta);
+
+  const applied: StockDelta[] = [];
+  const reverse = async () => {
+    for (const d of applied.splice(0).reverse()) {
+      try {
+        await bumpStock(productId, d.variantIndex, d.branch, -d.delta, true);
+      } catch (err) {
+        console.error("[stock] failed to reverse", d, err);
+      }
     }
+  };
 
-    const set: Partial<typeof products.$inferInsert> = { variants: next as ProductRow["variants"] };
-    if (opts.cost !== undefined) set.cost = opts.cost;
-
-    const updated = await db
-      .update(products)
-      .set(set)
-      .where(and(eq(products.id, productId), sql`${products.variants} = ${JSON.stringify(prev)}::jsonb`))
-      .returning({ id: products.id });
-    if (updated.length > 0) return prod;
-    // Someone else changed this product's stock between our read and write — retry.
+  try {
+    for (const d of steps) {
+      const r = await bumpStock(productId, d.variantIndex, d.branch, d.delta, !!opts.allowShort);
+      if (r === undefined) throw new HttpError(400, "Unknown variant on this product");
+      if (r === null) {
+        const v = prod.variants[d.variantIndex];
+        const onHand = v?.stockByBranch[d.branch] ?? 0;
+        throw new HttpError(409, `${prod.name} — only ${onHand} in stock at ${branchLabel(d.branch)}, ${-d.delta} needed`);
+      }
+      applied.push(d);
+    }
+    if (opts.cost !== undefined) await db.update(products).set({ cost: opts.cost }).where(eq(products.id, productId));
+  } catch (err) {
+    await reverse();
+    throw err;
   }
-  throw new HttpError(409, "Stock is being updated by someone else — please try again.");
-}
-
-/** Set one variant's selling price (paise). Same compare-and-swap as stock writes. */
-export async function setVariantPrice(productId: string, variantIndex: number, price: number): Promise<void> {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const [prod] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-    if (!prod) throw new HttpError(404, `Unknown product: ${productId}`);
-    const prev = (prod.variants ?? []) as Variant[];
-    if (!prev[variantIndex]) throw new HttpError(400, "Unknown variant on this product");
-    const next = prev.map((v, i) => (i === variantIndex ? { ...v, price } : v));
-    const updated = await db
-      .update(products)
-      .set({ variants: next as ProductRow["variants"] })
-      .where(and(eq(products.id, productId), sql`${products.variants} = ${JSON.stringify(prev)}::jsonb`))
-      .returning({ id: products.id });
-    if (updated.length > 0) return;
-  }
-  throw new HttpError(409, "Product is being updated by someone else — please try again.");
+  return prod;
 }
 
 /** One catalogue line to take out of (or put back into) stock. */
@@ -109,7 +106,7 @@ export async function takeStock(
   const undo = async () => {
     for (const l of done.splice(0)) {
       try {
-        await adjustProductStock(l.productId, [{ variantIndex: l.variantIndex, branch, delta: l.quantity }]);
+        await bumpStock(l.productId, l.variantIndex, branch, l.quantity, true);
       } catch (err) {
         console.error("[stock] failed to restore stock for", l, err);
       }
@@ -118,18 +115,21 @@ export async function takeStock(
   try {
     for (const l of lines) {
       if (l.quantity <= 0) continue;
-      const before = await adjustProductStock(
-        l.productId,
-        [{ variantIndex: l.variantIndex, branch, delta: -l.quantity }],
-        opts,
-      );
-      const v = (before.variants ?? [])[l.variantIndex] as Variant | undefined;
-      const onHand = v ? variantStockAt(v, branch) : 0;
-      // `before` is the row this write was computed from, so a clamped line took
-      // only what was there.
-      const taken = Math.min(l.quantity, onHand);
+      const r = await bumpStock(l.productId, l.variantIndex, branch, -l.quantity, !!opts.allowShort);
+      if (r === undefined) {
+        const exists = await selectProduct(l.productId);
+        throw new HttpError(exists ? 400 : 404, exists ? "Unknown variant on this product" : `Unknown product: ${l.productId}`);
+      }
+      if (r === null) {
+        const prod = await selectProduct(l.productId);
+        const onHand = prod?.variants[l.variantIndex]?.stockByBranch[branch] ?? 0;
+        throw new HttpError(409, `${prod?.name ?? l.productId} — only ${onHand} in stock at ${branchLabel(branch)}, ${l.quantity} needed`);
+      }
+      // `before` is the balance this very write started from, so a clamped line
+      // took only what was there.
+      const taken = Math.min(l.quantity, r.before);
       if (taken > 0) done.push({ ...l, quantity: taken });
-      if (onHand < l.quantity) shortfalls.push({ ...l, onHand });
+      if (r.before < l.quantity) shortfalls.push({ ...l, onHand: r.before });
     }
   } catch (err) {
     await undo();

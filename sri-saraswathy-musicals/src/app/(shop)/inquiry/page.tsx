@@ -17,7 +17,7 @@ export default function InquiryPage() {
     topic: INQUIRY_TOPICS[0],
     productInterest: "",
     message: "",
-    branch: "Any" as "Branch 1" | "Branch 2" | "Any",
+    branch: "Any" as string,
   });
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));

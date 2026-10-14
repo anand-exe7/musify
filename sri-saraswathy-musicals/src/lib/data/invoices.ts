@@ -118,11 +118,11 @@ export const invoices: Invoice[] = [
 ];
 
 export const vendors: Vendor[] = [
-  { id: "v001", name: "Kanailal & Bros (Calcutta)", gst: "19AAACK1234M1Z5", phone: "+91 98301 12345", email: "orders@kanailal.in", outstanding: 122000, totalPurchases: 1840000 },
-  { id: "v002", name: "Bina Musicals Delhi", gst: "07AAACB4567N1Z8", phone: "+91 98110 23456", email: "sales@binamusicals.com", outstanding: 0, totalPurchases: 780000 },
-  { id: "v003", name: "Miraj Tanpura Workshop", gst: "27AACCM5678L1Z2", phone: "+91 98220 34567", email: "workshop@miraj.in", outstanding: 45000, totalPurchases: 620000 },
-  { id: "v004", name: "Yamaha India", gst: "27AAACY7890K1Z9", phone: "+91 22 4123 4567", email: "b2b@yamaha.in", outstanding: 240000, totalPurchases: 4820000 },
-  { id: "v005", name: "Selmer Paris (Distributor)", gst: "07AAACS1234P1Z3", phone: "+91 11 4567 8901", email: "india@selmer.fr", outstanding: 0, totalPurchases: 1240000 },
+  { id: "v001", name: "Kanailal & Bros (Calcutta)", gst: "19AAACK1234M1Z5", phone: "+91 98301 12345", email: "orders@kanailal.in" },
+  { id: "v002", name: "Bina Musicals Delhi", gst: "07AAACB4567N1Z8", phone: "+91 98110 23456", email: "sales@binamusicals.com" },
+  { id: "v003", name: "Miraj Tanpura Workshop", gst: "27AACCM5678L1Z2", phone: "+91 98220 34567", email: "workshop@miraj.in" },
+  { id: "v004", name: "Yamaha India", gst: "27AAACY7890K1Z9", phone: "+91 22 4123 4567", email: "b2b@yamaha.in" },
+  { id: "v005", name: "Selmer Paris (Distributor)", gst: "07AAACS1234P1Z3", phone: "+91 11 4567 8901", email: "india@selmer.fr" },
 ];
 
 export const customerOrders: Order[] = [

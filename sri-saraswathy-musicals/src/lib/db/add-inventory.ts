@@ -26,6 +26,7 @@ loadEnv(); // .env fallback
 
 import { slugify } from "../utils";
 import type { Category, Origin } from "@/types";
+import type { Variant } from "@/lib/stock";
 
 /** Rupees → integer paise (the app's money unit). */
 const P = (rupees: number) => Math.round((Number(rupees) || 0) * 100);
@@ -88,11 +89,12 @@ const items: SeedItem[] = [
 async function main() {
   const { db } = await import("./index");
   const { products } = await import("./schema");
+  const { insertVariants } = await import("./queries/variants");
 
   // Skip anything already present (idempotent re-runs); collect existing slugs.
   const existing = new Set((await db.select({ slug: products.slug }).from(products)).map((r) => r.slug));
 
-  const rows: (typeof products.$inferInsert)[] = [];
+  const rows: ((typeof products.$inferInsert) & { variants: Variant[] })[] = [];
   const skipped: string[] = [];
   let n = 0;
 
@@ -136,7 +138,8 @@ async function main() {
   }
 
   if (rows.length > 0) {
-    await db.insert(products).values(rows);
+    await db.insert(products).values(rows.map(({ variants: _v, ...row }) => row));
+    for (const r of rows) await insertVariants(r.id, r.variants);
   }
 
   console.log(`✓ Inserted ${rows.length} product(s).`);

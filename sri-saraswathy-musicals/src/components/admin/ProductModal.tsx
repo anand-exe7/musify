@@ -2,6 +2,10 @@
 import { useRef, useState } from "react";
 import { X, Plus, Trash2, ImagePlus } from "lucide-react";
 import { usePOS, variantStockAt, setVariantStockAt, type InvProduct, type Variant, type Branch } from "@/lib/store/pos";
+import { BRANCH_KEYS, emptyStockByBranch, branchLabel } from "@/lib/stock";
+import { compressImage } from "@/lib/client/image";
+
+const MAX_PHOTOS = 4;
 import { useAuth } from "@/lib/store/auth";
 import { cn, slugify } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
@@ -36,7 +40,7 @@ function blankProduct(name = ""): InvProduct {
     gstRate: 18,
     hsn: "",
     isGstApplicable: true,
-    variants: [{ attr: "Standard", finish: "Natural", price: 0, weight: 500, stockByBranch: { "Branch 1": 0, "Branch 2": 0 } }],
+    variants: [{ attr: "Standard", finish: "Natural", price: 0, weight: 500, stockByBranch: emptyStockByBranch() }],
   };
 }
 
@@ -78,19 +82,26 @@ export function ProductModal({
   const setVariant = (i: number, patch: Partial<Variant>) =>
     setDraft((d) => ({ ...d, variants: d.variants.map((v, idx) => (idx === i ? { ...v, ...patch } : v)) }));
   const addRow = () =>
-    setDraft((d) => ({ ...d, variants: [...d.variants, { attr: "", finish: "", price: d.basePrice, weight: d.baseWeight, stockByBranch: { "Branch 1": 0, "Branch 2": 0 } }] }));
+    setDraft((d) => ({ ...d, variants: [...d.variants, { attr: "", finish: "", price: d.basePrice, weight: d.baseWeight, stockByBranch: emptyStockByBranch() }] }));
   // Stock lives in per-branch buckets; the legacy flat `stock` field is ignored
   // whenever those exist, so edits must go through `setVariantStockAt`.
   const setStockAt = (i: number, branch: Branch, qty: number) =>
     setDraft((d) => ({ ...d, variants: d.variants.map((v, idx) => (idx === i ? setVariantStockAt(v, branch, qty) : v)) }));
   const removeRow = (i: number) => setDraft((d) => ({ ...d, variants: d.variants.filter((_, idx) => idx !== i) }));
 
-  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => set({ photo: reader.result as string });
-    reader.readAsDataURL(file);
+  const photos = draft.photos && draft.photos.length > 0 ? draft.photos : draft.photo ? [draft.photo] : [];
+  const setPhotos = (next: string[]) => set({ photos: next, photo: next[0] ?? "" });
+  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_PHOTOS - photos.length);
+    e.target.value = ""; // allow picking the same file again
+    if (files.length === 0) return;
+    setError("");
+    try {
+      const added = await Promise.all(files.map((f) => compressImage(f)));
+      setPhotos([...photos, ...added]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not process that image.");
+    }
   };
 
   const save = () => {
@@ -100,7 +111,6 @@ export function ProductModal({
       return;
     }
     const name = draft.name.trim() || "Untitled product";
-    const photos = draft.photos && draft.photos.length > 0 ? draft.photos : draft.photo ? [draft.photo] : [];
     const clean: InvProduct = {
       ...draft,
       name,
@@ -109,7 +119,7 @@ export function ProductModal({
       hsn: (draft.hsn ?? "").trim(),
       // New products start at 0 — stock comes in through Stock Inward so the vendor is recorded.
       variants: isNew
-        ? draft.variants.map((v) => ({ ...v, stock: 0, stockByBranch: { "Branch 1": 0, "Branch 2": 0 } }))
+        ? draft.variants.map((v) => ({ ...v, stock: 0, stockByBranch: emptyStockByBranch() }))
         : draft.variants,
       isGstApplicable: draft.gstRate != null,
       photos,
@@ -126,13 +136,17 @@ export function ProductModal({
       // showed → what was typed), not the whole stock picture.
       const stockChanges: { variantIndex: number; branch: Branch; from: number; to: number }[] = [];
       const orig = product?.variants ?? [];
-      for (let i = 0; i < Math.min(orig.length, clean.variants.length); i++) {
-        for (const branch of ["Branch 1", "Branch 2"] as const) {
+      // Match edited variants to the originals by id (not by row number) so
+      // adding, removing or re-ordering a row can't misattribute a stock edit.
+      clean.variants.forEach((v) => {
+        const i = v.id ? orig.findIndex((o) => o.id === v.id) : -1;
+        if (i < 0) return; // a brand-new variant carries its own opening stock
+        for (const branch of BRANCH_KEYS) {
           const from = variantStockAt(orig[i], branch);
-          const to = variantStockAt(clean.variants[i], branch);
+          const to = variantStockAt(v, branch);
           if (from !== to) stockChanges.push({ variantIndex: i, branch, from, to });
         }
-      }
+      });
       updateProduct(clean.id, clean, stockChanges);
     }
     onClose();
@@ -166,16 +180,29 @@ export function ProductModal({
               <label className={cn(label, "mt-4")}>Description</label>
               <textarea value={draft.description} onChange={(e) => set({ description: e.target.value })} rows={4} className={cn(field, "resize-none")} />
               <p className="mb-2 mt-4 text-sm font-bold text-ink-900">Media Gallery</p>
-              <div className="flex items-center gap-3">
-                <div className="relative h-20 w-20 overflow-hidden rounded-lg border border-ink-200 bg-ink-100">
-                  {draft.photo && <img src={draft.photo} alt="" className="h-full w-full object-cover" />}
-                  {draft.photo && <span className="absolute left-1 top-1 rounded bg-ink-900/80 px-1 py-0.5 text-[7px] font-bold uppercase text-ivory-50">Primary</span>}
-                </div>
-                <button onClick={() => fileRef.current?.click()} className="grid h-20 w-20 place-items-center rounded-lg border border-dashed border-ink-300 text-ink-400 hover:border-gold-500 hover:text-gold-600">
-                  <ImagePlus className="h-6 w-6" />
-                </button>
-                <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
+              <div className="flex flex-wrap items-center gap-3">
+                {photos.map((src, i) => (
+                  <div key={i} className="group relative h-20 w-20 overflow-hidden rounded-lg border border-ink-200 bg-ink-100">
+                    <img src={src} alt="" className="h-full w-full object-cover" />
+                    {i === 0 && <span className="absolute left-1 top-1 rounded bg-ink-900/80 px-1 py-0.5 text-[7px] font-bold uppercase text-ivory-50">Primary</span>}
+                    <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute right-1 top-1 hidden h-5 w-5 place-items-center rounded-full bg-ink-900/80 text-ivory-50 group-hover:grid">
+                      <X className="h-3 w-3" />
+                    </button>
+                    {i > 0 && (
+                      <button type="button" aria-label="Make primary" onClick={() => setPhotos([src, ...photos.filter((_, j) => j !== i)])} className="absolute inset-x-0 bottom-0 hidden bg-ink-900/80 py-0.5 text-[8px] font-bold uppercase text-ivory-50 group-hover:block">
+                        Make primary
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {photos.length < MAX_PHOTOS && (
+                  <button type="button" onClick={() => fileRef.current?.click()} className="grid h-20 w-20 place-items-center rounded-lg border border-dashed border-ink-300 text-ink-400 hover:border-gold-500 hover:text-gold-600">
+                    <ImagePlus className="h-6 w-6" />
+                  </button>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" multiple onChange={onUpload} className="hidden" />
               </div>
+              <p className="mt-1.5 text-[11px] text-ink-400">Up to {MAX_PHOTOS} photos. Each is automatically converted to WebP and shrunk to a few KB.</p>
             </div>
 
             {/* Org & pricing */}
@@ -338,7 +365,7 @@ export function ProductModal({
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[620px] text-sm">
-                <thead><tr className="text-left text-[9px] font-bold uppercase tracking-wider text-ink-400"><th className="pb-2">Variant</th><th>Finish</th><th>Price (₹)</th><th>Weight (g)</th><th>Stock <span className="font-semibold normal-case tracking-normal text-ink-300">B1 · B2</span></th><th className="text-right">Actions</th></tr></thead>
+                <thead><tr className="text-left text-[9px] font-bold uppercase tracking-wider text-ink-400"><th className="pb-2">Variant</th><th>Finish</th><th>Price (₹)</th><th>Weight (g)</th><th>Stock <span className="font-semibold normal-case tracking-normal text-ink-300">{BRANCH_KEYS.map(branchLabel).join(" · ")}</span></th><th className="text-right">Actions</th></tr></thead>
                 <tbody>
                   {draft.variants.map((v, i) => (
                     <tr key={i} className={cn(v.disabled && "opacity-50")}>
@@ -346,7 +373,7 @@ export function ProductModal({
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><div className="flex gap-1">{(["Branch 1", "Branch 2"] as const).map((b) => (<input key={b} type="number" min={0} disabled={isNew} aria-label={`Stock at ${b}`} title={isNew ? "Receive opening stock via Stock Inward (records the vendor)" : b} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
+                      <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} disabled={isNew} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? "Receive opening stock via Stock Inward (records the vendor)" : branchLabel(b)} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
                     </tr>
                   ))}

@@ -7,6 +7,7 @@ import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repai
 import { useInquiry } from "@/lib/store/inquiry";
 import { useBranchScope, BRANCHES, type BranchScope } from "@/lib/store/branch";
 import { cn } from "@/lib/utils";
+import { branchLabel } from "@/lib/stock";
 
 export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
   const router = useRouter();
@@ -179,6 +180,7 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
 /** Branch selector — a live dropdown for full admins, a locked chip otherwise. */
 function BranchSwitcher() {
   const access = useBranchScope((s) => s.access);
+  const allowed = useBranchScope((s) => s.allowed);
   const canSwitch = useBranchScope((s) => s.canSwitch);
   const selected = useBranchScope((s) => s.selected);
   const setSelected = useBranchScope((s) => s.setSelected);
@@ -189,7 +191,7 @@ function BranchSwitcher() {
     return (
       <span className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ivory-50 px-2.5 py-1.5 text-xs font-semibold text-ink-700">
         <Lock className="h-3 w-3 text-ink-400" />
-        {access}
+        {allowed.map(branchLabel).join(" · ")}
       </span>
     );
   }
@@ -205,7 +207,7 @@ function BranchSwitcher() {
       >
         <option value="all">All Branches</option>
         {BRANCHES.map((b) => (
-          <option key={b} value={b}>{b}</option>
+          <option key={b} value={b}>{branchLabel(b)}</option>
         ))}
       </select>
     </label>

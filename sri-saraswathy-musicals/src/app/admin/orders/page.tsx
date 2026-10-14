@@ -8,6 +8,7 @@ import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
 import { ShoppingCart, Trash2, Download, ExternalLink, Eye } from "lucide-react";
+import { branchLabel } from "@/lib/stock";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -67,7 +68,7 @@ export default function OrdersPage() {
     // Money columns are exported in rupees (paise ÷ 100) at 2 decimals.
     const r2 = (paise: number) => (paise / 100).toFixed(2);
     const head = ["Invoice", "Customer", "Phone", "Type", "Branch", "Coupon", "Discount", "Delivery", "Total", "Date", "Status"];
-    const body = rows.map((b) => [b.id, b.customerName, b.phone, b.source, b.branch, b.coupon ?? "", r2(b.discount), r2(b.delivery), r2(b.total), fmtDate(b.createdAt), b.status]);
+    const body = rows.map((b) => [b.id, b.customerName, b.phone, b.source, branchLabel(b.branch), b.coupon ?? "", r2(b.discount), r2(b.delivery), r2(b.total), fmtDate(b.createdAt), b.status]);
     downloadCsv(`orders-${Date.now()}.csv`, [head, ...body]);
   };
 

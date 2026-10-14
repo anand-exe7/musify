@@ -11,6 +11,7 @@ import { useBranchScope, effectiveBranch, type BranchScope } from "@/lib/store/b
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { cn } from "@/lib/utils";
 import { downloadCsv, stamp } from "@/lib/csv";
+import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -43,8 +44,8 @@ export default function InquiriesPage() {
   const deleteInquiry = useInquiry((s) => s.deleteInquiry);
 
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
-  const scopeAccess = useBranchScope((s) => s.access);
-  const lockedBranch = !canSwitchBranch && (scopeAccess === "Branch 1" || scopeAccess === "Branch 2") ? scopeAccess : null;
+  const allowedBranches = useBranchScope((s) => s.allowed);
+  const lockedBranch = !canSwitchBranch && allowedBranches.length === 1 ? allowedBranches[0] : null;
 
   const [branch, setBranch] = useState<BranchScope>(lockedBranch ?? "all");
 
@@ -214,7 +215,7 @@ export default function InquiriesPage() {
             {lockedBranch ? (
               <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
             ) : (
-              ([["all", "All"], ["Branch 1", "Branch 1"], ["Branch 2", "Branch 2"]] as const).map(([k, label]) => (
+              ([["all", "All"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
                   {label}
                 </button>
@@ -245,7 +246,7 @@ export default function InquiriesPage() {
                     <p className="text-base font-bold text-ink-900">{i.name}</p>
                     <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", meta.tone)}>{meta.label}</span>
                     <span className="rounded bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase text-ink-600">{i.topic}</span>
-                    {i.branch && i.branch !== "Any" && <span className="text-[11px] text-ink-400">{i.branch}</span>}
+                    {i.branch && i.branch !== "Any" && <span className="text-[11px] text-ink-400">{branchLabel(i.branch)}</span>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-600">
                     <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-ink-400" />{i.phone}</span>

@@ -5,6 +5,7 @@
  */
 import { productStock, stockState, variantStock, variantStockAt, inPeriod, type Bill, type InvProduct } from "@/lib/store/pos";
 import { rupees } from "@/lib/csv";
+import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
 type Cell = string | number;
 export interface DateRange { from?: string; to?: string }
@@ -32,7 +33,7 @@ const variantLabel = (p: InvProduct, i?: number) => {
 
 /** One row per variant with per-branch on-hand and stock value at cost. */
 export function stockRows(products: InvProduct[]): Cell[][] {
-  const head = ["Product", "Category", "Department", "Brand", "Variant", "Selling Price", "Cost", "Branch 1", "Branch 2", "Total", "Stock Value (Cost)", "Low Stock At", "Status", "Visible"];
+  const head = ["Product", "Category", "Department", "Brand", "Variant", "Selling Price", "Cost", ...BRANCH_KEYS.map(branchLabel), "Total", "Stock Value (Cost)", "Low Stock At", "Status", "Visible"];
   const body: Cell[][] = [];
   for (const p of products) {
     p.variants.forEach((v, i) => {
@@ -40,11 +41,11 @@ export function stockRows(products: InvProduct[]): Cell[][] {
       const total = variantStock(v);
       body.push([
         p.name, p.category, p.department, p.brand ?? "", variantLabel(p, i), rupees(v.price || p.basePrice), rupees(p.cost ?? 0),
-        variantStockAt(v, "Branch 1"), variantStockAt(v, "Branch 2"), total, rupees(total * (p.cost ?? 0)),
+        ...BRANCH_KEYS.map((b) => variantStockAt(v, b)), total, rupees(total * (p.cost ?? 0)),
         p.lowStockAt, STATE_LABEL[total <= 0 ? "out" : total <= p.lowStockAt ? "low" : "in"], p.active ? "Yes" : "Hidden",
       ]);
     });
-    if (p.variants.every((v) => v.disabled)) body.push([p.name, p.category, p.department, p.brand ?? "", "", rupees(p.basePrice), rupees(p.cost ?? 0), 0, 0, 0, "0.00", p.lowStockAt, STATE_LABEL[stockState(p)], p.active ? "Yes" : "Hidden"]);
+    if (p.variants.every((v) => v.disabled)) body.push([p.name, p.category, p.department, p.brand ?? "", "", rupees(p.basePrice), rupees(p.cost ?? 0), ...BRANCH_KEYS.map(() => 0), 0, "0.00", p.lowStockAt, STATE_LABEL[stockState(p)], p.active ? "Yes" : "Hidden"]);
   }
   return [head, ...body];
 }
@@ -103,7 +104,7 @@ export function itemHistoryRows(
     .filter((m) => !productIds || (m.productId && productIds.has(m.productId)))
     .sort((a, b) => a.product.localeCompare(b.product) || a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
   const head = ["Item", "Category", "Variant", "Date", "Type", "Qty", "Rate", "Amount", "Branch", "Reference", "Vendor / Customer"];
-  return [head, ...moves.map((m) => [m.product, m.category, m.variant, m.date, m.type, m.qty, rupees(m.rate), rupees(m.amount), m.branch, m.ref, m.party])];
+  return [head, ...moves.map((m) => [m.product, m.category, m.variant, m.date, m.type, m.qty, rupees(m.rate), rupees(m.amount), branchLabel(m.branch), m.ref, m.party])];
 }
 
 /** Purchase vs sales totals per category (all items, incl. unmatched sales). */

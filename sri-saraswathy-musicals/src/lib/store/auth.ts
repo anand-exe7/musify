@@ -1,8 +1,8 @@
 "use client";
 import { create } from "zustand";
 
-export type BranchKey = "Branch 1" | "Branch 2";
-export type AdminAccess = "all" | BranchKey | null;
+export type BranchKey = string;
+export type AdminAccess = "all" | BranchKey[] | null;
 
 export interface SessionUser {
   id: string;
@@ -10,14 +10,16 @@ export interface SessionUser {
   name: string;
   isAdmin: boolean;
   branch?: BranchKey | null;
+  branches?: BranchKey[];
   avatar?: string | null;
 }
 
-/** Full admins reach every branch; a user with a branch is scoped to it. */
+/** Full admins reach every branch; other staff are scoped to their assigned branches. */
 export function adminAccessOf(u: SessionUser | null): AdminAccess {
   if (!u) return null;
   if (u.isAdmin) return "all";
-  return u.branch ?? null;
+  const list = u.branches && u.branches.length > 0 ? u.branches : u.branch ? [u.branch] : [];
+  return list.length > 0 ? list : null;
 }
 
 interface AuthStore {
@@ -25,7 +27,7 @@ interface AuthStore {
   /** Convenience booleans derived from `user`. */
   loggedIn: boolean;
   isAdmin: boolean;
-  /** Admin-area reach: "all", a branch key, or null (no admin access). */
+  /** Admin-area reach: "all", a list of branch keys, or null (no admin access). */
   adminAccess: AdminAccess;
   /** True once the first session fetch has resolved (so the UI can avoid
    *  flashing signed-out state before we know). */

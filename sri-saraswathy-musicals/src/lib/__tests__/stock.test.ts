@@ -15,7 +15,7 @@ describe("applyStockDeltas (H6)", () => {
     expect(() => applyStockDeltas([v(2, 0)], [{ variantIndex: 0, branch: "Branch 1", delta: -5 }], { label: "Flute" }))
       .toThrow(StockShortfallError);
     expect(() => applyStockDeltas([v(2, 0)], [{ variantIndex: 0, branch: "Branch 1", delta: -5 }], { label: "Flute" }))
-      .toThrow(/Flute — only 2 in stock at Branch 1, 5 needed/);
+      .toThrow(/Flute — only 2 in stock at Vadapalani, 5 needed/);
   });
   it("clamps at zero only when explicitly allowed (goods already paid for)", () => {
     const out = applyStockDeltas([v(2, 0)], [{ variantIndex: 0, branch: "Branch 1", delta: -5 }], { allowShort: true });
@@ -36,7 +36,7 @@ describe("applyStockDeltas (H6)", () => {
     expect(out[0].stock).toBeUndefined();
   });
   it("rejects unknown branches and non-integer quantities (a typo can't mint a ghost bucket)", () => {
-    expect(() => applyStockDeltas([v(1, 1)], [{ variantIndex: 0, branch: "Branch 3" as never, delta: 1 }])).toThrow(/Unknown branch/);
+    expect(() => applyStockDeltas([v(1, 1)], [{ variantIndex: 0, branch: "Branch 9" as never, delta: 1 }])).toThrow(/Unknown branch/);
     expect(() => applyStockDeltas([v(1, 1)], [{ variantIndex: 0, branch: "Branch 1", delta: 1.5 }])).toThrow(/whole number/);
   });
   it("rejects an unknown variant index", () => {

@@ -2,6 +2,8 @@ import type { NextRequest } from "next/server";
 import { handle, created, badRequest, readJson } from "@/lib/api/http";
 import { createVendorPayment, getPurchase, purchaseVisibleTo, PurchaseValidationError, type VendorPaymentInput } from "@/lib/db/queries/purchases";
 import type { Branch } from "@/lib/stock";
+import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
+import { DEFAULT_BRANCH } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +13,11 @@ export function POST(request: NextRequest, { params }: { params: Promise<{ id: s
   return handle("staff", async ({ user, access }) => {
     const { id } = await params;
     const header = await getPurchase(id);
-    if (!header || !(await purchaseVisibleTo(id, access as Branch | "all"))) return badRequest("Purchase not found");
+    if (!header || !(await purchaseVisibleTo(id, access === "all" ? null : access))) return badRequest("Purchase not found");
 
     type Body = Omit<VendorPaymentInput, "vendorId" | "purchaseId">;
     const body = await readJson<Body>(request);
-    const branch: Branch = access === "all" ? body.branch : (access as Branch);
+    const branch: Branch = access === "all" || branchAllowed(access, body.branch) ? body.branch : primaryBranchOf(access, DEFAULT_BRANCH);
 
     try {
       const rec = await createVendorPayment(

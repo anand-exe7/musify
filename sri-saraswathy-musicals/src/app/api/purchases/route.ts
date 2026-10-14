@@ -1,3 +1,4 @@
+import { InwardValidationError } from "@/lib/db/queries/stock";
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
 import { createPurchase, getPurchases, PurchaseValidationError, type PurchaseInput } from "@/lib/db/queries/purchases";
@@ -12,8 +13,8 @@ export function GET() {
   return handle("staff", async ({ access }) => {
     const list = await getPurchases();
     if (access === "all") return ok(list);
-    const scope = await purchaseIdsInBranch(access as Branch);
-    return ok(list.filter((p) => scope.has(p.id)).map((p) => scopePurchaseLines(p, access as Branch)));
+    const visible = await purchaseIdsInBranch(access);
+    return ok(list.filter((p) => visible.has(p.id)).map((p) => scopePurchaseLines(p, access)));
   });
 }
 
@@ -21,10 +22,10 @@ export function POST(request: NextRequest) {
   return handle("staff", async ({ user, access }) => {
     const body = await readJson<PurchaseInput>(request);
     try {
-      const rec = await createPurchase(body, user.id, access === "all" ? null : (access as Branch));
+      const rec = await createPurchase(body, user.id, access === "all" ? null : access);
       return created(rec);
     } catch (e) {
-      if (e instanceof PurchaseValidationError) return badRequest(e.message);
+      if (e instanceof PurchaseValidationError || e instanceof InwardValidationError) return badRequest(e.message);
       throw e;
     }
   });

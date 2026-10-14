@@ -15,6 +15,8 @@ import type { Branch } from "@/lib/store/pos";
 import { waLink } from "@/lib/data/business";
 import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/RepairTicketModal";
 import { formatINR, cn } from "@/lib/utils";
+import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
+import { BranchOptions } from "@/components/admin/BranchOptions";
 
 type Tab = "tickets" | "report";
 type BranchFilter = Branch | "all";
@@ -233,8 +235,7 @@ export default function ServicePage() {
               </select>
               <select value={branchF} onChange={(e) => setBranchF(e.target.value as BranchFilter)} className={selCls}>
                 <option value="all">All branches</option>
-                <option value="Branch 1">Branch 1</option>
-                <option value="Branch 2">Branch 2</option>
+                <BranchOptions />
               </select>
               <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className={selCls}>
                 <option value="deadline">Sort · Deadline</option>
@@ -274,7 +275,7 @@ export default function ServicePage() {
                     <tr key={t.id} onClick={() => router.push(`/admin/service/${t.id}`)} className={cn("cursor-pointer border-l-4 text-ink-800 transition-colors", bar, tier, !open && "opacity-60")}>
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center gap-1 font-semibold text-ink-900">{t.id}<ExternalLink className="h-3 w-3 text-ink-300" /></span>
-                        <p className="text-[11px] text-ink-400">{t.branch} · {fmtDate(t.createdAt)}</p>
+                        <p className="text-[11px] text-ink-400">{branchLabel(t.branch)} · {fmtDate(t.createdAt)}</p>
                       </td>
                       <td>
                         <p className="font-medium text-ink-900">{t.customerName}</p>
@@ -343,7 +344,7 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
     });
     const byCategory = [...catMap.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.n - a.n);
 
-    const branchAgg = (["Branch 1", "Branch 2"] as Branch[]).map((b) => {
+    const branchAgg = BRANCH_KEYS.map((b) => {
       const list = tickets.filter((t) => t.branch === b);
       return {
         b,
@@ -448,7 +449,7 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
           <div className="grid grid-cols-2 gap-3">
             {m.branchAgg.map((b) => (
               <div key={b.b} className="rounded-xl border border-ink-100 bg-[#FAF7EF] p-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-ink-500">{b.b}</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-ink-500">{branchLabel(b.b)}</p>
                 <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900">{b.total}</p>
                 <p className="text-[11px] text-ink-400">{b.active} open</p>
                 <p className="mt-2 text-sm font-semibold tabular-nums text-success">{formatINR(b.rev)}</p>

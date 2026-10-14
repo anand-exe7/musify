@@ -8,7 +8,7 @@ export interface QuoteInput {
   items: { productId: string; variantKey: string; quantity: number }[];
   delivery: DeliveryMethod;
   shipState: string;
-  branch?: "Branch 1" | "Branch 2";
+  branch?: string;
   couponCode?: string | null;
 }
 
