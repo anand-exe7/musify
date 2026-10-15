@@ -21,7 +21,7 @@ export async function getInvoiceByRefId(refId: string): Promise<Invoice | undefi
   return r ? row<Invoice>(r) : undefined;
 }
 
-/** The letters used in a branch's references ("V", "1MH"…): its stored invoice code, else its initial. */
+/** The letters used in a branch's references ("V", "P"…): its stored invoice code, else its initial. */
 export async function branchCode(branch: string): Promise<string> {
   const [b] = await db.select({ code: branches.code, name: branches.name }).from(branches).where(eq(branches.id, branch)).limit(1);
   const code = (b?.code ?? "").trim().toUpperCase();
@@ -29,7 +29,7 @@ export async function branchCode(branch: string): Promise<string> {
 }
 
 /**
- * Next customer-facing reference for a branch, e.g. `INV-2026-1MH001`. Each
+ * Next customer-facing reference for a branch, e.g. `INV-2026-P0001`. Each
  * (branch code, year) has its own counter, bumped atomically in one upsert so
  * concurrent sales never share a number. This is separate from the GST tax-invoice
  * number (`SSM/2026-27/0021`), which runs across all branches.
@@ -43,7 +43,7 @@ export async function nextBranchReference(branch: string, dateIso: string): Prom
     .values({ key: `invref:${code}:${year}`, value: 1 })
     .onConflictDoUpdate({ target: counters.key, set: { value: sql`${counters.value} + 1` } })
     .returning({ value: counters.value });
-  return `INV-${year}-${code}${String(r?.value ?? 1).padStart(3, "0")}`;
+  return `INV-${year}-${code}${String(r?.value ?? 1).padStart(4, "0")}`;
 }
 
 export async function createInvoice(inv: Invoice): Promise<Invoice> {

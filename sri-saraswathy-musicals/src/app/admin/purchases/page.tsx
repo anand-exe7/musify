@@ -10,7 +10,7 @@ import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { ProductModal } from "@/components/admin/ProductModal";
 import { useAuth } from "@/lib/store/auth";
-import { BRANCH_KEYS, DEFAULT_BRANCH, emptyStockByBranch, branchLabel } from "@/lib/stock";
+import { BRANCH_KEYS, DEFAULT_BRANCH, emptyStockByBranch, branchLabel, variantStockAt } from "@/lib/stock";
 import { computePurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { PAY_MODES } from "@/components/purchases/types";
 import { PaymentSplit } from "@/components/purchases/PaymentSplit";
@@ -414,7 +414,7 @@ export default function PurchasesPage() {
                       <td className="pr-2">
                         <select value={l.variantIndex} onChange={(e) => patch(l.key, { variantIndex: Number(e.target.value) })} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-xs focus:outline-none">
                           {l.product.variants.map((v, vi) => (
-                            <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""}</option>
+                            <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""} — {BRANCH_KEYS.map((b) => `${branchLabel(b)} ${variantStockAt(v, b)}`).join(" · ")}</option>
                           ))}
                         </select>
                       </td>

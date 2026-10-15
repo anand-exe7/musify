@@ -1,5 +1,5 @@
 /**
- * Branch-wise invoice references (INV-2026-1MH001, 002…) run per branch and year,
+ * Branch-wise invoice references (INV-2026-P0001, 0002…) run per branch and year,
  * independently of the GST tax-invoice number (SSM/2026-27/0021), which stays one
  * sequence across all branches.
  */
@@ -38,20 +38,20 @@ beforeAll(async () => {
 
 describe("branch-wise invoice reference", () => {
   it("counts up per branch, using the branch's own code", async () => {
-    // Branch 2 (Porur) carries the code 1MH, as in the client's example.
-    expect(await nextBranchReference("Branch 2", "2026-10-01T10:00:00.000Z")).toBe("INV-2026-1MH001");
-    expect(await nextBranchReference("Branch 2", "2026-10-02T10:00:00.000Z")).toBe("INV-2026-1MH002");
+    // Branch 2 (Porur) carries the code P.
+    expect(await nextBranchReference("Branch 2", "2026-10-01T10:00:00.000Z")).toBe("INV-2026-P0001");
+    expect(await nextBranchReference("Branch 2", "2026-10-02T10:00:00.000Z")).toBe("INV-2026-P0002");
     // Another branch has its own sequence.
-    expect(await nextBranchReference("Branch 1", "2026-10-01T10:00:00.000Z")).toBe("INV-2026-V001");
+    expect(await nextBranchReference("Branch 1", "2026-10-01T10:00:00.000Z")).toBe("INV-2026-V0001");
   });
 
   it("starts again at 001 in a new year", async () => {
-    expect(await nextBranchReference("Branch 2", "2027-01-05T10:00:00.000Z")).toBe("INV-2027-1MH001");
+    expect(await nextBranchReference("Branch 2", "2027-01-05T10:00:00.000Z")).toBe("INV-2027-P0001");
   });
 
   it("follows an edited branch code", async () => {
     await db.update(branches).set({ code: "ZZ" }).where(eq(branches.id, "Branch 3"));
-    expect(await nextBranchReference("Branch 3", "2026-10-01T10:00:00.000Z")).toBe("INV-2026-ZZ001");
+    expect(await nextBranchReference("Branch 3", "2026-10-01T10:00:00.000Z")).toBe("INV-2026-ZZ0001");
   });
 
   it("two invoices created at once never share a reference", async () => {
@@ -64,7 +64,7 @@ describe("branch-wise invoice reference", () => {
     const b = await createInvoice(inv("ind-b", "Branch 2", "SSM/2026-27/9102"));
     expect(a.number).toBe("SSM/2026-27/9101");
     expect(b.number).toBe("SSM/2026-27/9102");
-    expect(a.reference).toMatch(/^INV-2026-V\d{3}$/);
-    expect(b.reference).toMatch(/^INV-2026-1MH\d{3}$/);
+    expect(a.reference).toMatch(/^INV-2026-V\d{4}$/);
+    expect(b.reference).toMatch(/^INV-2026-P\d{4}$/);
   });
 });

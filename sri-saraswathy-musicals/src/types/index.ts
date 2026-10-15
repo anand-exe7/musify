@@ -101,7 +101,7 @@ export interface Invoice {
   id: string;
   /** GST tax-invoice number (SSM/2026-27/0021), sequenced across all branches. */
   number: string;
-  /** Customer-facing reference, numbered per branch and year (INV-2026-1MH001). */
+  /** Customer-facing reference, numbered per branch and year (INV-2026-P0001). */
   reference?: string;
   date: string;
   customer: string;
@@ -145,7 +145,7 @@ export interface QuotationLine {
 export interface Quotation {
   /** Random id, used in the customer share link. */
   id: string;
-  /** Per branch and year, e.g. QT-2026-V001. */
+  /** Per branch and year, e.g. QT-2026-V0001. */
   number: string;
   date: string;
   validUntil: string;

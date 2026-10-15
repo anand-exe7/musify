@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, noContent, readJson } from "@/lib/api/http";
-import { getTicket, updateTicket, deleteTicket } from "@/lib/db/queries/repair";
+import { getTicket, updateTicket, deleteTicket, cleanParts, applyPartsStock } from "@/lib/db/queries/repair";
 import { recordServiceInvoice } from "@/lib/billing/ledger";
 import { scopeByBranch } from "@/lib/auth/server";
 import type { RepairTicket } from "@/lib/store/repair";
@@ -30,7 +30,19 @@ export function PATCH(request: NextRequest, ctx: Ctx) {
     // Accept either a bare patch or `{ patch, eventLabel }`.
     const patch = "patch" in body && body.patch ? body.patch : (body as Partial<RepairTicket>);
     const eventLabel = "eventLabel" in body ? body.eventLabel : undefined;
-    const t = await updateTicket(id, patch, eventLabel);
+    // Products sold during the service leave this branch's stock (and come back if removed).
+    let undoStock: (() => Promise<void>) | undefined;
+    if (patch.parts !== undefined) {
+      patch.parts = cleanParts(patch.parts);
+      undoStock = await applyPartsStock(existing.branch, existing.parts ?? [], patch.parts);
+    }
+    let t;
+    try {
+      t = await updateTicket(id, patch, eventLabel);
+    } catch (e) {
+      await undoStock?.();
+      throw e;
+    }
     // Once a repair is billable, mirror it into the sequential GST tax ledger
     // (best-effort & idempotent — never blocks the update).
     if (t) await recordServiceInvoice(t);

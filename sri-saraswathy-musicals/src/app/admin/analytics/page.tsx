@@ -104,6 +104,7 @@ export default function AnalyticsPage() {
     // Revenue = product sale value net of GST (excludes delivery & tax).
     const totalRevenue = scoped.reduce((n, b) => n + billNet(b), 0);
     const gstCollected = scoped.reduce((n, b) => n + billGst(b), 0);
+    const deliveryTotal = scoped.reduce((n, b) => n + Math.max(0, b.delivery || 0), 0);
     // Gross sales = total actually billed to customers (post-discount, incl. GST + delivery).
     const grossSales = scoped.reduce((n, b) => n + Math.max(0, b.total), 0);
     const offline = scoped.filter((b) => b.source === "offline");
@@ -120,6 +121,7 @@ export default function AnalyticsPage() {
     return {
       totalRevenue,
       gstCollected,
+      deliveryTotal,
       grossSales,
       count: scoped.length,
       offlineRev: offline.reduce((n, b) => n + billNet(b), 0),
@@ -322,23 +324,26 @@ export default function AnalyticsPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Gross Sales" value={formatINR(m.grossSales)} hint="Billed total · incl. GST + delivery" accent="gold" />
-            <Stat label="Net Revenue" value={formatINR(m.totalRevenue)} hint="Ex-GST · sale − tax" accent="green" />
+            <Stat label="Net Sales" value={formatINR(m.totalRevenue)} hint="After discounts · ex-GST · ex-delivery" accent="green" />
             <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint="Actual output tax" accent="gold" />
             <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="In-store Net Rev" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
-            <Stat label="Online Net Rev" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
-            <Stat label="Service Net Rev" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"}`} />
+            <Stat label="In-store Net Sales" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
+            <Stat label="Online Net Sales" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
+            <Stat label="Service Net Sales" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"} · advances count when received`} />
             <Stat label="Completed Bills" value={String(m.count)} hint={`${m.items} items in view`} />
           </div>
+          <p className="-mt-2 mb-5 rounded-xl border border-ink-100 bg-ivory-50 px-4 py-2.5 text-xs text-ink-500">
+            <b className="text-ink-700">How Net Sales is worked out:</b> billed total <b className="tabular-nums text-ink-900">{formatINR(m.grossSales)}</b> − delivery <b className="tabular-nums text-ink-900">{formatINR(m.deliveryTotal)}</b> − GST <b className="tabular-nums text-ink-900">{formatINR(m.gstCollected)}</b> = <b className="tabular-nums text-success">{formatINR(m.totalRevenue)}</b>. Discounts are already taken off, and an advance paid on a repair counts on the day it is received.
+          </p>
 
           <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
             {/* trend */}
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-ink-900">Net Revenue Trend · {trendYear} <span className="font-normal text-ink-400">(ex-GST)</span></p>
+                  <p className="text-sm font-bold text-ink-900">Net Sales Trend · {trendYear} <span className="font-normal text-ink-400">(ex-GST)</span></p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -452,7 +457,7 @@ function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: Re
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Today's Net Revenue" value={formatINR(rev)} hint="Ex-GST · today" accent="green" />
+        <Stat label="Today's Net Sales" value={formatINR(rev)} hint="Ex-GST · today" accent="green" />
         <Stat label="Today's GST" value={formatINR(gstColl)} hint={`Output tax @ ${rate}%`} accent="gold" />
         <Stat label="Today's Bills" value={String(today.length)} hint="Completed today" />
         <Stat label="Today's Items Sold" value={`${items} pcs`} hint="Quantity sold today" />

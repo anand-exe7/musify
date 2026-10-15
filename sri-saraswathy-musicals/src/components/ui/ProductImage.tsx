@@ -23,8 +23,11 @@ export function ProductImage({
   className,
   imageClassName,
 }: Props) {
-  const initial = product.photos?.[photoIndex] ?? product.photo ?? FALLBACK;
-  const [src, setSrc] = useState<string>(initial);
+  const wanted = product.photos?.[photoIndex] ?? product.photo ?? FALLBACK;
+  // Remember which photo failed to load (not the photo shown), so a different photo —
+  // e.g. the one for another variant — is tried afresh instead of being stuck on the first.
+  const [failed, setFailed] = useState<string | null>(null);
+  const src = failed === wanted ? FALLBACK : wanted;
 
   return (
     <div className={className ?? "relative h-full w-full overflow-hidden bg-ink-100"}>
@@ -34,7 +37,7 @@ export function ProductImage({
         fill
         sizes={sizes}
         priority={priority}
-        onError={() => src !== FALLBACK && setSrc(FALLBACK)}
+        onError={() => wanted !== FALLBACK && setFailed(wanted)}
         className={`object-cover ${imageClassName ?? ""}`}
       />
     </div>

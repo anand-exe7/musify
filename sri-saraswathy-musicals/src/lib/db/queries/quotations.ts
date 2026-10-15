@@ -20,7 +20,7 @@ export async function getQuotation(id: string): Promise<Quotation | undefined> {
   return r ? row<Quotation>(r) : undefined;
 }
 
-/** Next number for a branch, e.g. `QT-2026-1MH001` — its own counter per (branch code, year). */
+/** Next number for a branch, e.g. `QT-2026-P0001` — its own counter per (branch code, year). */
 export async function nextQuoteNumber(branch: string, dateIso: string): Promise<string> {
   const code = await branchCode(branch);
   const d = new Date(dateIso);
@@ -30,7 +30,7 @@ export async function nextQuoteNumber(branch: string, dateIso: string): Promise<
     .values({ key: `quote:${code}:${year}`, value: 1 })
     .onConflictDoUpdate({ target: counters.key, set: { value: sql`${counters.value} + 1` } })
     .returning({ value: counters.value });
-  return `QT-${year}-${code}${String(r?.value ?? 1).padStart(3, "0")}`;
+  return `QT-${year}-${code}${String(r?.value ?? 1).padStart(4, "0")}`;
 }
 
 export interface QuotationInput {

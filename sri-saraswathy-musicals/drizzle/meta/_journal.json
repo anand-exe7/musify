@@ -211,6 +211,20 @@
       "when": 1791998220695,
       "tag": "0029_purchase_opening_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792047853459,
+      "tag": "0030_porur_code_p",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792048202441,
+      "tag": "0031_repair_parts",
+      "breakpoints": true
     }
   ]
 }

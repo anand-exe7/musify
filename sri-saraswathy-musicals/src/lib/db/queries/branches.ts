@@ -12,7 +12,7 @@ export interface BranchProfile {
   address: string;
   gstin: string;
   phone: string;
-  /** Letters used in this branch's invoice references (e.g. "V", "1MH"). */
+  /** Letters used in this branch's invoice references (e.g. "V", "P"). */
   code: string;
   active: boolean;
 }

@@ -82,6 +82,33 @@ export function ticketToBill(t: RepairTicket): UnifiedBill {
 }
 
 /**
+ * Money already taken on a repair that isn't billable yet (the advance paid at
+ * intake). It counts as revenue on the day it was received, as its own "Advance"
+ * row; once the repair is ready/completed the ticket's full charge replaces it, so
+ * nothing is counted twice. Cancelled tickets don't count.
+ */
+export function ticketAdvanceBill(t: RepairTicket): UnifiedBill | null {
+  if (t.status === "cancelled" || isServiceRevenue(t)) return null;
+  const advance = Math.max(0, t.advance || 0);
+  if (advance <= 0) return null;
+  return {
+    id: `${t.id}-ADV`,
+    createdAt: t.createdAt,
+    customerName: t.customerName || "Service customer",
+    phone: t.phone || "",
+    source: "service",
+    branch: t.branch,
+    items: [{ name: `Advance — ${t.productName}`, price: advance, qty: 1 }],
+    subtotal: advance,
+    discount: 0,
+    delivery: 0,
+    total: advance,
+    status: "completed",
+    payment: "Advance",
+  };
+}
+
+/**
  * The admin combined sales feed: web orders + in-store POS bills + repair
  * tickets, merged newest-first.
  *
@@ -128,7 +155,10 @@ export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: 
   const sales = useMemo(() => {
     const byId = new Map(products.map((p) => [p.id, p]));
     const webBills: UnifiedBill[] = orders.map((o) => orderToBill(o, byId));
-    const serviceBills: UnifiedBill[] = tickets.filter(isServiceRevenue).map(ticketToBill);
+    const serviceBills: UnifiedBill[] = [
+      ...tickets.filter(isServiceRevenue).map(ticketToBill),
+      ...tickets.map(ticketAdvanceBill).filter((b): b is UnifiedBill => b !== null),
+    ];
     return [...webBills, ...posBills, ...serviceBills].sort(
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     );

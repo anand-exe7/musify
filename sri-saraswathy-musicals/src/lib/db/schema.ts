@@ -271,7 +271,7 @@ export const invoices = pgTable("invoices", {
   id: text("id").primaryKey(),
   /** GST tax-invoice number (SSM/2026-27/0021) — one sequence across all branches. */
   number: text("number").notNull(),
-  /** Customer-facing reference, numbered per branch and year (INV-2026-1MH001). */
+  /** Customer-facing reference, numbered per branch and year (INV-2026-P0001). */
   reference: text("reference").notNull().default(""),
   date: text("date").notNull(),
   customer: text("customer").notNull(),
@@ -309,7 +309,7 @@ export const invoices = pgTable("invoices", {
   uniqueIndex("invoices_reference_unique").on(t.reference).where(sql`${t.reference} <> ''`),
 ]);
 
-/** Quotations (price offers). Prices are GST-inclusive, like invoices; `number` runs per branch and year (QT-2026-V001). */
+/** Quotations (price offers). Prices are GST-inclusive, like invoices; `number` runs per branch and year (QT-2026-V0001). */
 export const quotations = pgTable("quotations", {
   /** Random id used in the customer share link. */
   id: text("id").primaryKey(),
@@ -572,6 +572,8 @@ export const repairTickets = pgTable("repair_tickets", {
   advance: integer("advance").notNull().default(0),
   gstRate: integer("gst_rate").notNull().default(18),
   events: jsonb("events").$type<{ at: string; label: string }[]>().notNull().default([]),
+  /** Products sold to the customer during the service (billed on the same invoice, on top of the service charge). */
+  parts: jsonb("parts").$type<{ id: string; productId?: string; variantIndex?: number; name: string; hsn?: string; qty: number; price: number; gst: number }[]>().notNull().default([]),
   whatsappSentAt: text("whatsapp_sent_at"),
   completedAt: text("completed_at"),
   invoiceNo: text("invoice_no"),

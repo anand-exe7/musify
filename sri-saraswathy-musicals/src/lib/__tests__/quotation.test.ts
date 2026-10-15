@@ -1,5 +1,5 @@
 /**
- * Quotations: GST-inclusive maths, per-branch numbering (QT-2026-1MH001), the
+ * Quotations: GST-inclusive maths, per-branch numbering (QT-2026-P0001), the
  * 30-day validity window, and server-side validation (totals are never trusted
  * from the client).
  */
@@ -56,8 +56,8 @@ describe("quotation records", () => {
     const a = await createQuotation({ customer: "A", branch: "Branch 2", items: [line()], date: "2026-10-01T10:00:00.000Z" });
     const b = await createQuotation({ customer: "B", branch: "Branch 2", items: [line()], date: "2026-10-02T10:00:00.000Z" });
     const c = await createQuotation({ customer: "C", branch: "Branch 1", items: [line()], date: "2026-10-02T10:00:00.000Z" });
-    expect([a.number, b.number]).toEqual(["QT-2026-1MH001", "QT-2026-1MH002"]);
-    expect(c.number).toBe("QT-2026-V001");
+    expect([a.number, b.number]).toEqual(["QT-2026-P0001", "QT-2026-P0002"]);
+    expect(c.number).toBe("QT-2026-V0001");
     expect(a.id).toMatch(/^QUO-\d{4}-[A-Z0-9]{5}$/);
     expect(a.id).not.toContain(a.number);
   });

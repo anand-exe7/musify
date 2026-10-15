@@ -3,6 +3,9 @@ import { create } from "zustand";
 import type { Branch } from "@/lib/store/pos";
 import { genDocId } from "@/lib/ids";
 import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
+import { partsTotal, type ServicePart } from "@/lib/billing/serviceInvoice";
+
+export type { ServicePart as RepairPart };
 
 /* ─────────────────────────────  Types  ───────────────────────────── */
 
@@ -49,6 +52,8 @@ export interface RepairTicket {
   finalCost: number;
   advance: number;
   gstRate: number; // %
+  /** Products sold to the customer during the service; billed on the same invoice. */
+  parts?: ServicePart[];
   // Audit
   events: RepairEvent[];
   whatsappSentAt?: string;
@@ -132,12 +137,17 @@ export function balanceDue(t: RepairTicket): number {
 
 /** Service charge the customer pays. Prices are **GST-inclusive**, so the entered
  *  finalCost/estimate already contains the tax — the gross is the charge itself. */
-export function grossTotal(t: RepairTicket): number {
+export function serviceCharge(t: RepairTicket): number {
   return t.finalCost > 0 ? t.finalCost : t.estimate;
 }
 
+/** Everything the customer pays on this ticket: the service charge plus any products sold with it. */
+export function grossTotal(t: RepairTicket): number {
+  return serviceCharge(t) + partsTotal(t.parts);
+}
+
 export function chargeBase(t: RepairTicket): number {
-  return t.finalCost > 0 ? t.finalCost : t.estimate;
+  return grossTotal(t);
 }
 
 export function turnaroundDays(t: RepairTicket): number | null {

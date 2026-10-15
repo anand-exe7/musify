@@ -15,6 +15,7 @@ import { getAllProducts } from "@/lib/db/queries/products";
 import { getGstSettings } from "@/lib/db/queries/settings";
 import { taxLines } from "@/lib/gst/inclusive";
 import { isIntraSupply } from "@/lib/gst/place-of-supply";
+import { serviceInvoiceBreakup, partsTotal } from "@/lib/billing/serviceInvoice";
 import type { Order, Invoice } from "@/types";
 import type { Bill } from "@/lib/store/pos";
 import type { RepairTicket } from "@/lib/store/repair";
@@ -193,7 +194,8 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
 export async function recordServiceInvoice(t: RepairTicket, opts: { force?: boolean } = {}): Promise<void> {
   try {
     if (t.status === "cancelled") return;
-    const base = t.finalCost > 0 ? t.finalCost : t.estimate;
+    const charge = t.finalCost > 0 ? t.finalCost : t.estimate;
+    const base = charge + partsTotal(t.parts); // service charge + products sold with it
     if (base <= 0) return;
     // `force`: an admin explicitly opened the invoice, so mint it regardless of status.
     const billable = opts.force || t.status === "ready" || t.status === "completed" || Boolean(t.invoiceNo);
@@ -203,20 +205,18 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
     // `base` already includes GST. Extract the taxable value and the tax it
     // contains, so subtotal + CGST + SGST == the charge the customer pays.
     const rate = t.gstRate || 0;
-    const total = base;
-    const taxable = rate > 0 ? Math.round(base / (1 + rate / 100)) : base;
-    const gst = total - taxable;
-    const cgst = Math.round(gst / 2);
-    const sgst = gst - cgst;
+    const bk = serviceInvoiceBreakup(t.productName, charge, rate, t.parts);
+    const { total, cgst, sgst } = bk;
+    const taxable = bk.subtotal;
     const paid = total - (t.advance || 0) <= 0;
 
     if (existing) {
       // The invoice is minted once (at ready/completed, often off the intake
       // estimate). If the final cost changes afterwards, keep the number and
       // bring the amounts + paid status in line with the ticket.
-      if (existing.total !== total || existing.items[0]?.gst !== rate) {
+      if (existing.total !== total || existing.items.length !== bk.items.length || existing.items[0]?.gst !== bk.items[0]?.gst) {
         await updateInvoice(t.id, {
-          items: [{ name: `Repair & service — ${t.productName}`, hsn: "9954", qty: 1, rate: base, gst: rate, amount: base }],
+          items: bk.items,
           subtotal: taxable, cgst, sgst, igst: 0, total,
           status: paid ? "paid" : "pending",
         });
@@ -236,7 +236,7 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
       branch: t.branch,
       // Line rate/amount show the gross (GST-inclusive) charge, like POS lines;
       // the taxable value surfaces in `subtotal`.
-      items: [{ name: `Repair & service — ${t.productName}`, hsn: "9954", qty: 1, rate: base, gst: rate, amount: base }],
+      items: bk.items,
       subtotal: taxable,
       cgst,
       sgst,

@@ -106,7 +106,7 @@ export default function BranchesPage() {
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
                 <label className={label}>Invoice code</label>
-                <input value={b.code} maxLength={6} onChange={(e) => setField(b.id, { code: e.target.value.toUpperCase() })} className={cn(field, "font-mono tracking-wide")} placeholder="e.g. 1MH" />
+                <input value={b.code} maxLength={6} onChange={(e) => setField(b.id, { code: e.target.value.toUpperCase() })} className={cn(field, "font-mono tracking-wide")} placeholder="e.g. P" />
                 <p className="mt-1 text-[11px] text-ink-400">Invoices from this branch are numbered INV-{new Date().getFullYear()}-{b.code || "…"}001, 002…</p>
               </div>
             </div>

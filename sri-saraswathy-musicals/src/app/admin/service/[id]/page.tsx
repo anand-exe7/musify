@@ -13,6 +13,7 @@ import {
   type RepairStatus, type RepairPriority, type RepairTicket,
 } from "@/lib/store/repair";
 import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/RepairTicketModal";
+import { TicketParts } from "@/components/admin/TicketParts";
 import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, rupeeInput, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
@@ -306,6 +307,8 @@ export default function TicketDetailPage() {
               <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Balance Due</p><p className={cn("mt-1 text-lg font-bold tabular-nums", balanceDue(t) > 0 ? "text-danger" : "text-success")}>{formatINR(balanceDue(t))}</p></div>
             </div>
           </section>
+
+          <TicketParts key={`${t.id}-${(t.parts ?? []).length}`} ticket={t} />
 
           {/* Timeline */}
           <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">

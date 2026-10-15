@@ -255,7 +255,7 @@ export default function StockTransfersPage() {
                       <td className="pr-2">
                         <select value={l.variantIndex} onChange={(e) => patch(l.key, { variantIndex: Number(e.target.value) })} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-xs focus:outline-none">
                           {(p?.variants ?? []).map((v, vi) => (
-                            <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""}</option>
+                            <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""} — {variantStockAt(v, fromBranch)} at {branchLabel(fromBranch)}</option>
                           ))}
                         </select>
                       </td>

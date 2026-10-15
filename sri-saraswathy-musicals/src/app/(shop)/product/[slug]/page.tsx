@@ -43,7 +43,14 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const unitPrice = activeVariant?.price ?? product?.price ?? 0;
   const variantStock = activeVariant?.stock ?? 0;
   const hasMultipleVariants = selectableVariants.length > 1;
-  const gallery = (product?.photos && product.photos.length > 0 ? product.photos : [product?.photo].filter(Boolean) as string[]).slice(0, 4);
+  // The chosen variant's own photo, when it has one, leads the gallery.
+  const shown = useMemo(() => {
+    const vp = activeVariant?.photo;
+    if (!product || !vp) return product;
+    const rest = (product.photos && product.photos.length > 0 ? product.photos : [product.photo]).filter((p): p is string => !!p && p !== vp);
+    return { ...product, photo: vp, photos: [vp, ...rest] };
+  }, [product, activeVariant]);
+  const gallery = (shown?.photos && shown.photos.length > 0 ? shown.photos : [shown?.photo].filter(Boolean) as string[]).slice(0, 4);
 
   const related = product
     ? products.filter((p) => p.category === product.category && p.id !== product.id).slice(0, 4)
@@ -114,7 +121,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 className="absolute inset-0"
               >
                 <ProductImage
-                  product={product}
+                  product={shown ?? product}
                   photoIndex={activePhoto}
                   priority
                   sizes="(max-width: 768px) 100vw, 50vw"
@@ -147,7 +154,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                   aria-label={`View photo ${i + 1}`}
                 >
                   <ProductImage
-                    product={product}
+                    product={shown ?? product}
                     photoIndex={i}
                     sizes="120px"
                     imageClassName={activePhoto === i ? "" : "opacity-70"}
@@ -197,35 +204,27 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink-500">
                 Option{activeVariant ? ` · ${variantLabel(activeVariant)}` : ""}
               </p>
-              <div className="flex flex-wrap gap-2">
+              <select
+                value={activeVariant ? keyOf(activeVariant) : ""}
+                onChange={(e) => {
+                  setSelectedVariantKey(e.target.value);
+                  setActivePhoto(0);
+                  setQty(1);
+                }}
+                className="w-full max-w-md border border-ink-200 bg-white px-3 py-3 text-sm text-ink-900 focus:border-gold-500 focus:outline-none"
+                aria-label="Choose an option"
+              >
                 {selectableVariants.map((v) => {
-                  const k = keyOf(v);
-                  const isActive = activeVariant && keyOf(activeVariant) === k;
-                  const soldOut = (v.stock ?? 0) <= 0;
+                  const left = v.stock ?? 0;
                   return (
-                    <button
-                      key={k}
-                      onClick={() => {
-                        setSelectedVariantKey(k);
-                        setQty(1);
-                      }}
-                      disabled={soldOut}
-                      className={cn(
-                        "border px-3 py-2 text-xs transition-all",
-                        isActive
-                          ? "border-gold-500 bg-gold-50/50 text-ink-900"
-                          : "border-ink-200 text-ink-700 hover:border-gold-400",
-                        soldOut && "line-through opacity-50",
-                      )}
-                    >
-                      <span className="font-medium">{variantLabel(v)}</span>
-                      {v.price !== product.price && (
-                        <span className="tabular ml-2 text-ink-500">{formatINR(v.price)}</span>
-                      )}
-                    </button>
+                    <option key={keyOf(v)} value={keyOf(v)} disabled={left <= 0}>
+                      {variantLabel(v)}
+                      {v.price !== product.price ? ` — ${formatINR(v.price)}` : ""}
+                      {left <= 0 ? " — Sold out" : left <= 3 ? ` — Only ${left} left` : ` — ${left} in stock`}
+                    </option>
                   );
                 })}
-              </div>
+              </select>
             </div>
           )}
 
