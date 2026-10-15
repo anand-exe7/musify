@@ -11,10 +11,11 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { ProductModal } from "@/components/admin/ProductModal";
 import { useAuth } from "@/lib/store/auth";
 import { BRANCH_KEYS, DEFAULT_BRANCH, emptyStockByBranch, branchLabel, variantStockAt } from "@/lib/stock";
-import { computePurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
+import { computePurchaseTax, checkPurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { PAY_MODES } from "@/components/purchases/types";
-import { PaymentSplit } from "@/components/purchases/PaymentSplit";
-import { allocList, normalizeAlloc, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
+import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
+import { splitByWeights } from "@/lib/vendorPayPlan";
+import { BranchPayTable, clampedPay, type BranchPayRow } from "@/components/purchases/BranchPayTable";
 
 /** One line in the receive form. The branch quantities always sum to `qty`. */
 interface Line {
@@ -69,7 +70,6 @@ export default function PurchasesPage() {
   const [cgst, setCgst] = useState(0);
   const [sgst, setSgst] = useState(0);
   const [igst, setIgst] = useState(0);
-  const [amountPaid, setAmountPaid] = useState(0);
   const [payAlloc, setPayAlloc] = useState<PaymentAlloc>({});
   const [paymentMode, setPaymentMode] = useState<string>("");
   const [notes, setNotes] = useState("");
@@ -185,13 +185,20 @@ export default function PurchasesPage() {
   const taxNow = taxEdited ? { cgst, sgst, igst } : autoTax;
   const tax = taxNow.cgst + taxNow.sgst + taxNow.igst;
   const grandTotal = totals.cost + tax;
-  const balance = Math.max(0, grandTotal - amountPaid);
+  const taxProblem = lines.length > 0 ? checkPurchaseTax(lines.map((l) => ({ quantity: l.qty, unitCost: exCost(l), gst: l.gst })), taxNow) : null;
 
-  // The paid-now amount is split across the branches receiving stock, the way the stock itself is.
+  // Each branch pays its own part of the bill: its share of the goods it takes, with the GST on top.
   const receiving = BRANCH_KEYS.filter((b) => (totals.alloc[b] || 0) > 0);
-  const paidSplit = normalizeAlloc(payAlloc, amountPaid, receiving);
-  const splitOk = amountPaid <= 0 || (receiving.length > 0 && sumAlloc(paidSplit) === amountPaid);
-  const canSubmit = !!vendor && lines.length > 0 && lines.every((l) => !lineError(l)) && !saving && amountPaid <= grandTotal && splitOk;
+  const goodsBy = Object.fromEntries(receiving.map((b) => [b, lines.reduce((n, l) => n + (l.alloc[b] || 0) * exCost(l), 0)]));
+  const branchShare = splitByWeights(
+    grandTotal,
+    Object.values(goodsBy).some((g) => g > 0) ? goodsBy : Object.fromEntries(receiving.map((b) => [b, totals.alloc[b] || 0])),
+  );
+  const payRows: BranchPayRow[] = receiving.map((b) => ({ branch: b, qty: totals.alloc[b] || 0, value: branchShare[b] || 0, max: branchShare[b] || 0 }));
+  const paidSplit = clampedPay(payRows, payAlloc);
+  const amountPaid = sumAlloc(paidSplit);
+  const balance = Math.max(0, grandTotal - amountPaid);
+  const canSubmit = !!vendor && lines.length > 0 && lines.every((l) => !lineError(l)) && !saving && !taxProblem;
 
   const resetForm = () => {
     setLines([]);
@@ -201,7 +208,6 @@ export default function PurchasesPage() {
     setInclusive(true);
     setTaxEdited(false);
     setCgst(0); setSgst(0); setIgst(0);
-    setAmountPaid(0);
     setPayAlloc({});
     setPaymentMode("");
     setNotes("");
@@ -220,8 +226,7 @@ export default function PurchasesPage() {
     if (!vendor) return notify("Pick a vendor first.");
     if (lines.length === 0) return notify("Add at least one product.");
     if (lines.some(lineError)) return notify("Fix the highlighted lines first.");
-    if (amountPaid > grandTotal) return notify("Amount paid can't exceed the total.");
-    if (!splitOk) return notify("Split the amount paid across the branches first.");
+    if (taxProblem) return notify(taxProblem);
     setSaving(true);
     try {
       const batchId = (batchRef.current ??= crypto.randomUUID());
@@ -472,6 +477,7 @@ export default function PurchasesPage() {
                 {inclusive ? "The GST is taken out of each cost you type, using the line's rate." : "The GST is added on top of each cost, using the line's rate."}{" "}
                 {taxEdited && <button onClick={() => setTaxEdited(false)} className="font-semibold text-gold-600 hover:underline">Reset to calculated</button>}
               </p>
+              {taxProblem && <p className="text-xs font-semibold text-danger">{taxProblem}</p>}
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               <div>
@@ -489,16 +495,10 @@ export default function PurchasesPage() {
             </div>
           </div>
 
-          {/* Paid now, split across branches */}
-          <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_1fr]">
-            <div>
-              <label className={label}>Amount Paid Now (₹)</label>
-              <MoneyInput value={amountPaid} onChange={setAmountPaid} className={field + " text-right tabular-nums"} />
-            </div>
-            <div>
-              <label className={label}>Which branch pays it</label>
-              <PaymentSplit branches={receiving} total={amountPaid} value={payAlloc} onChange={setPayAlloc} disabled={!!lockedBranch} />
-            </div>
+          {/* Paid now — each branch pays its own part */}
+          <div>
+            <label className={label}>Paid now — each branch pays its own part</label>
+            <BranchPayTable rows={payRows} value={paidSplit} onChange={setPayAlloc} valueLabel="Its bill" payLabel="Paid now" />
           </div>
 
           <div>

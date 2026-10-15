@@ -2,10 +2,11 @@
 import { useState } from "react";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { computePurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
+import { computePurchaseTax, checkPurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { branchLabel } from "@/lib/stock";
-import { PaymentSplit } from "./PaymentSplit";
-import { allocList, normalizeAlloc, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
+import { BranchPayTable, clampedPay, type BranchPayRow } from "./BranchPayTable";
+import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
+import { splitByWeights } from "@/lib/vendorPayPlan";
 import { PAY_MODES, receivingBranches, type PurchaseRow } from "./types";
 
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -31,9 +32,14 @@ export function PurchaseEditDialog({
   const [cgst, setCgst] = useState(purchase.cgst);
   const [sgst, setSgst] = useState(purchase.sgst);
   const [igst, setIgst] = useState(purchase.igst);
-  const [amountPaid, setAmountPaid] = useState(purchase.amountPaid);
   const receiving = receivingBranches(purchase);
-  const [payAlloc, setPayAlloc] = useState<PaymentAlloc>(purchase.paidAllocations ?? {});
+  const [payAlloc, setPayAlloc] = useState<PaymentAlloc>(() => {
+    if (purchase.paidAllocations) return purchase.paidAllocations;
+    if (purchase.amountPaid <= 0) return {};
+    // An older purchase with no split on record: show what the system had been assuming (by goods taken).
+    const goods = Object.fromEntries(receiving.map((b) => [b, purchase.lines.filter((l) => l.branch === b).reduce((n, l) => n + l.quantity * l.unitCost, 0)]));
+    return splitByWeights(purchase.amountPaid, goods);
+  });
   const [notes, setNotes] = useState(purchase.notes);
   const [paymentMode, setPaymentMode] = useState(purchase.paymentMode);
   const [saving, setSaving] = useState(false);
@@ -43,8 +49,18 @@ export function PurchaseEditDialog({
   const subtotal = hasLines ? lines.reduce((n, l) => n + l.quantity * l.unitCost, 0) : purchase.subtotal;
   const tax = cgst + sgst + igst;
   const total = subtotal + tax;
+  const taxProblem = hasLines ? checkPurchaseTax(lines.map((l) => ({ quantity: l.quantity, unitCost: l.unitCost, gst: l.gst })), { cgst, sgst, igst }) : null;
   const later = purchase.paymentsTotal;
-  const paidSplit = normalizeAlloc(payAlloc, amountPaid, receiving);
+  // Each branch's part of the (edited) total, by the goods it took; it can't have paid more than that.
+  const goodsBy = Object.fromEntries(receiving.map((b) => [b, lines.filter((l) => l.branch === b).reduce((n, l) => n + l.quantity * l.unitCost, 0)]));
+  const qtyBy = Object.fromEntries(receiving.map((b) => [b, lines.filter((l) => l.branch === b).reduce((n, l) => n + l.quantity, 0) || 1]));
+  const shares = splitByWeights(total, Object.values(goodsBy).some((g) => g > 0) ? goodsBy : qtyBy);
+  const payRows: BranchPayRow[] = receiving.map((b) => {
+    const laterB = purchase.paidLater?.[b] ?? 0;
+    return { branch: b, value: shares[b] || 0, paid: laterB, max: Math.max(0, (shares[b] || 0) - laterB) };
+  });
+  const paidSplit = clampedPay(payRows, payAlloc);
+  const amountPaid = sumAlloc(paidSplit);
 
   /** Recompute the GST amounts from the lines (and set them; they can still be typed over for rounding). */
   const retax = (next: typeof lines, inter: boolean) => {
@@ -60,8 +76,8 @@ export function PurchaseEditDialog({
   };
 
   const submit = async () => {
+    if (taxProblem) { setError(taxProblem); return; }
     if (amountPaid + later > total) { setError("Amount paid can't exceed the total."); return; }
-    if (amountPaid > 0 && sumAlloc(paidSplit) !== amountPaid) { setError("Split the amount paid across the branches."); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/purchases/${purchase.id}`, {
@@ -146,21 +162,19 @@ export function PurchaseEditDialog({
             <div><label className={label}>SGST (₹)</label><MoneyInput value={sgst} onChange={setSgst} className={field + " text-right tabular-nums"} /></div>
             <div><label className={label}>IGST (₹)</label><MoneyInput value={igst} onChange={setIgst} className={field + " text-right tabular-nums"} /></div>
           </div>
+          {taxProblem && <p className="text-xs font-semibold text-danger">{taxProblem}</p>}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div><label className={label}>Paid at purchase (₹)</label><MoneyInput value={amountPaid} onChange={setAmountPaid} className={field + " text-right tabular-nums"} /></div>
             <div><label className={label}>Payment Mode</label>
               <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className={field}>
                 {PAY_MODES.map((m) => <option key={m || "none"} value={m}>{m || "—"}</option>)}
               </select>
             </div>
           </div>
-          {amountPaid > 0 && (
-            <div>
-              <label className={label}>Which branch paid it</label>
-              <PaymentSplit branches={receiving} total={amountPaid} value={payAlloc} onChange={setPayAlloc} />
-            </div>
-          )}
+          <div>
+            <label className={label}>Paid at purchase — each branch pays its own part</label>
+            <BranchPayTable rows={payRows} value={paidSplit} onChange={setPayAlloc} valueLabel="Its bill" payLabel="Paid at purchase" />
+          </div>
           <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} /></div>
           <div className="rounded-lg bg-ink-900/5 px-3 py-2 text-xs">
             <span className="text-ink-500">Goods:</span> <span className="font-bold tabular-nums text-ink-900">{formatINR(subtotal)}</span>
@@ -174,7 +188,7 @@ export function PurchaseEditDialog({
           {error && <p className="text-xs font-semibold text-danger">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button onClick={onClose} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-            <button onClick={submit} disabled={saving} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
+            <button onClick={submit} disabled={saving || !!taxProblem} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
               {saving ? "Saving…" : "Save Changes"}
             </button>
           </div>

@@ -2,10 +2,9 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { formatINR, cn } from "@/lib/utils";
-import { MoneyInput } from "@/components/ui/MoneyInput";
 import { useBranchScope } from "@/lib/store/branch";
-import { PaymentSplit } from "./PaymentSplit";
-import { allocList, normalizeAlloc, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
+import { BranchPayTable, clampedPay, type BranchPayRow } from "./BranchPayTable";
+import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
 import { splitByWeights } from "@/lib/vendorPayPlan";
 import { receivingBranches, type PurchaseRow } from "./types";
 
@@ -23,24 +22,29 @@ export function PaymentDialog({
   // Only a branch the stock went into can pay for it (and only one the user may act for).
   const receiving = receivingBranches(purchase);
   const options = receiving.filter((b) => allowed.includes(b));
-  const [amount, setAmount] = useState<number>(bal);
   const [mode, setMode] = useState<"CASH" | "UPI" | "CARD" | "BANK" | "OTHER">("CASH");
-  const [alloc, setAlloc] = useState<PaymentAlloc>({});
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Until the person types a split, each branch is charged what it still owes on this bill
-  // (not everything to the first branch), so a branch that already paid its part pays nothing.
-  const owedWeights = Object.fromEntries(options.map((b) => [b, purchase.branchOwed?.[b] ?? 0]));
-  const touched = Object.keys(alloc).length > 0;
-  const split = touched ? normalizeAlloc(alloc, amount, options) : (options.length > 0 ? splitByWeights(amount, owedWeights) : {});
+  // Each branch can pay up to what it still owes on this bill (never more than the bill's balance).
+  // It starts at the full amount owed; lower any branch to pay less.
+  const rows: BranchPayRow[] = options.map((b) => {
+    const owed = purchase.branchOwed?.[b] ?? (options.length === 1 ? bal : 0);
+    return { branch: b, value: owed, max: Math.min(owed, bal) };
+  });
+  const [alloc, setAlloc] = useState<PaymentAlloc | null>(null);
+  // If a branch paid over its share earlier, the others' shares add up to more than the bill has left:
+  // start at the balance (spread by what each owes) rather than at a figure that can't be saved.
+  const maxTotal = rows.reduce((n, r) => n + r.max, 0);
+  const start = maxTotal <= bal ? Object.fromEntries(rows.map((r) => [r.branch, r.max])) : splitByWeights(bal, Object.fromEntries(rows.map((r) => [r.branch, r.max])));
+  const split = clampedPay(rows, alloc ?? start);
+  const amount = sumAlloc(split);
 
   const submit = async () => {
-    if (amount <= 0) { setError("Amount must be greater than 0."); return; }
+    if (amount <= 0) { setError("Enter what at least one branch pays."); return; }
     if (amount > bal) { setError(`Only ${formatINR(bal)} outstanding.`); return; }
-    if (options.length === 0 || sumAlloc(split) !== amount) { setError("Split the payment across the branches."); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/purchases/${purchase.id}/payments`, {
@@ -69,7 +73,6 @@ export function PaymentDialog({
         <p className="mt-1 text-xs text-ink-500">{purchase.invoiceNo ? `${purchase.invoiceNo} · ` : ""}{purchase.id} · {vendorName}</p>
         <p className="mt-3 rounded-lg bg-ink-900/5 px-3 py-2 text-xs"><span className="text-ink-500">Outstanding on this invoice:</span> <span className="font-bold tabular-nums text-ink-900">{formatINR(bal)}</span></p>
         <div className="mt-4 space-y-4">
-          <div><label className={label}>Amount (₹)</label><MoneyInput value={amount} onChange={setAmount} className={field + " text-right tabular-nums"} /></div>
           <div>
             <label className={label}>Mode</label>
             <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className={field}>
@@ -77,8 +80,12 @@ export function PaymentDialog({
             </select>
           </div>
           <div>
-            <label className={label}>Which branch pays it</label>
-            <PaymentSplit branches={options} total={amount} value={split} onChange={setAlloc} />
+            <label className={label}>Each branch pays its own part</label>
+            <BranchPayTable rows={rows} value={split} onChange={setAlloc} valueLabel="Owes" payLabel="Paying" />
+            {maxTotal > bal && (
+              <p className="mt-1.5 text-[11px] text-ink-500">A branch paid more than its share earlier, so the bill has only {formatINR(bal)} left — {formatINR(maxTotal - bal)} less than the branches&apos; shares add up to. You can pay at most {formatINR(bal)}.</p>
+            )}
+            {amount > bal && <p className="mt-1.5 text-[11px] font-semibold text-danger">That is more than the {formatINR(bal)} left on this bill.</p>}
           </div>
           <div><label className={label}>Reference (cheque / txn id)</label><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} /></div>
           <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} /></div>

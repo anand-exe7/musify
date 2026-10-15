@@ -23,6 +23,8 @@ export interface PurchaseRow {
   paymentsTotal: number;
   /** What each branch still owes on this bill (branches that received stock, even at 0). */
   branchOwed?: Record<string, number>;
+  /** What each branch has paid since the purchase (part-payments). */
+  paidLater?: Record<string, number>;
   lines: { id: string; productName: string; variant: string; quantity: number; unitCost: number; gst: number; branch: string }[];
 }
 

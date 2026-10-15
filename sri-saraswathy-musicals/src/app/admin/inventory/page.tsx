@@ -216,6 +216,16 @@ export default function InventoryPage() {
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-ink-900">{p.name}</p>
                         {!p.active && <span className="rounded bg-ink-900/85 px-1.5 py-0.5 text-[9px] font-bold uppercase text-ivory-50">Hidden</span>}
+                        {p.variants.some((v) => v.photo) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1" title="Variant photos">
+                            {p.variants.filter((v) => v.photo).map((v, i) => (
+                              <span key={v.id ?? i} className="flex items-center gap-1 rounded-full border border-ink-100 bg-white py-0.5 pl-0.5 pr-2 text-[10px] text-ink-600">
+                                <img src={v.photo ?? undefined} alt="" className="h-5 w-5 rounded-full object-cover" />
+                                {v.attr}{v.finish ? ` · ${v.finish}` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>

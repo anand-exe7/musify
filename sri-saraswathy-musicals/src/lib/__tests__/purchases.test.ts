@@ -29,13 +29,15 @@ import {
   createVendorPayment,
   createVendorPaymentSplit,
   getPurchase,
+  getPurchases,
+  shareByBranch,
   updatePurchase,
   vendorOutstandings,
   vendorStatement,
   PurchaseValidationError,
   type PurchaseInput,
 } from "@/lib/db/queries/purchases";
-import { computePurchaseTax } from "@/lib/gst/purchaseTax";
+import { computePurchaseTax, checkPurchaseTax } from "@/lib/gst/purchaseTax";
 import type { Variant } from "@/lib/stock";
 
 const variant: Variant = { attr: "Std", finish: "", price: 100000, weight: 0, stockByBranch: {} };
@@ -186,6 +188,25 @@ describe("part-payments against a saved bill", () => {
     expect((await getPurchase(p.id))?.paymentsTotal).toBe(0);
   });
 
+  it("refuses a branch paying more than it owes on the bill, even when the total fits", async () => {
+    const p = await createPurchase(purchase(), "u1", null);
+    const owed = (await getPurchases()).find((x) => x.id === p.id)!.branchOwed;
+    const [a, b] = Object.keys(owed);
+    await expect(
+      createVendorPaymentSplit(
+        { vendorId: "v1", purchaseId: p.id, mode: "CASH", allocations: [{ branch: a, amount: owed[a] + 1 }] },
+        "u1", null,
+      ),
+    ).rejects.toThrow(/only owes/);
+    expect((await getPurchase(p.id))?.paymentsTotal).toBe(0);
+    // Paying exactly what each owes is fine.
+    await createVendorPaymentSplit(
+      { vendorId: "v1", purchaseId: p.id, mode: "CASH", allocations: [{ branch: a, amount: owed[a] }, { branch: b, amount: owed[b] }] },
+      "u1", null,
+    );
+    expect((await getPurchase(p.id))?.paymentsTotal).toBe(owed[a] + owed[b]);
+  });
+
   it("refuses a branch that didn't receive stock, and staff outside their branches", async () => {
     const p = await createPurchase(purchase(), "u1", null);
     await expect(
@@ -195,6 +216,65 @@ describe("part-payments against a saved bill", () => {
     await expect(
       createVendorPaymentSplit({ vendorId: "v1", purchaseId: p.id, mode: "CASH", allocations: [{ branch: "Branch 2", amount: 100 }] }, "u1", ["Branch 1"]),
     ).rejects.toThrow();
+  });
+});
+
+describe("a branch can't pay more than its part of the bill", () => {
+  // purchase(): 6 into Vadapalani, 4 into Porur → total ₹11,800 → shares ₹7,080 / ₹4,720.
+  it("splits the total by the goods each branch took", () => {
+    expect(shareByBranch(1_180_000, [
+      { branch: "Branch 1", quantity: 6, unitCost: 100000 }, { branch: "Branch 2", quantity: 4, unitCost: 100000 },
+    ])).toEqual({ "Branch 1": 708000, "Branch 2": 472000 });
+    // free goods split by units; a branch with nothing gets nothing, not the rounding
+    expect(shareByBranch(100, [{ branch: "Branch 1", quantity: 1, unitCost: 0 }, { branch: "Branch 2", quantity: 2, unitCost: 0 }])).toEqual({ "Branch 1": 33, "Branch 2": 67 });
+  });
+
+  it("refuses a purchase where a branch pays above its share, but accepts exactly its share", async () => {
+    await expect(createPurchase(purchase({ amountPaid: 500000, paidAllocations: [{ branch: "Branch 2", amount: 500000 }] }), "u1", null)).rejects.toThrow(/only owes/);
+    const ok = await createPurchase(purchase({ amountPaid: 472000, paidAllocations: [{ branch: "Branch 2", amount: 472000 }] }), "u1", null);
+    expect(ok.amountPaid).toBe(472000);
+  });
+
+  it("counts later payments too when an edit raises what was paid at purchase", async () => {
+    const p = await createPurchase(purchase(), "u1", null);
+    await createVendorPayment({ vendorId: "v1", purchaseId: p.id, branch: "Branch 1", amount: 700000, mode: "CASH" }, "u1");
+    // Vadapalani has paid ₹7,000 of its ₹7,080; ₹200 more at purchase would be ₹7,200.
+    await expect(updatePurchase(p.id, { amountPaid: 20000, paidAllocations: [{ branch: "Branch 1", amount: 20000 }] })).rejects.toThrow(/only owes/);
+    await updatePurchase(p.id, { amountPaid: 8000, paidAllocations: [{ branch: "Branch 1", amount: 8000 }] });
+    expect((await getPurchases()).find((x) => x.id === p.id)!.branchOwed["Branch 1"]).toBe(0);
+  });
+
+  it("refuses a cost cut that would leave a branch over-paid", async () => {
+    const p = await createPurchase(purchase({ amountPaid: 700000, paidAllocations: [{ branch: "Branch 1", amount: 700000 }] }), "u1", null);
+    // Lines are per branch; cut Vadapalani's line cost so its share drops under ₹7,000.
+    const line = p.lines.find((l) => l.branch === "Branch 1")!;
+    await expect(updatePurchase(p.id, { lines: [{ id: line.id, unitCost: 50000 }], cgst: 63000, sgst: 63000 })).rejects.toThrow(/only owes|can't exceed/);
+  });
+});
+
+describe("the GST typed on a purchase has to make sense", () => {
+  const lines = [{ quantity: 10, unitCost: 100000, gst: 18 }]; // GST ₹1,800
+  it("accepts the calculated figure, a few rupees of rounding, and inter-state IGST", () => {
+    expect(checkPurchaseTax(lines, { cgst: 90000, sgst: 90000, igst: 0 })).toBeNull();
+    expect(checkPurchaseTax(lines, { cgst: 90500, sgst: 90500, igst: 0 })).toBeNull(); // ₹10 over, split evenly
+    expect(checkPurchaseTax(lines, { cgst: 0, sgst: 0, igst: 180000 })).toBeNull();
+  });
+  it("refuses a GST figure far from the items' rates", () => {
+    expect(checkPurchaseTax(lines, { cgst: 5000000, sgst: 5000000, igst: 0 })).toMatch(/should come to about ₹1,800\.00/);
+    expect(checkPurchaseTax(lines, { cgst: 0, sgst: 0, igst: 0 })).toMatch(/should come to/);
+  });
+  it("refuses CGST/SGST together with IGST, and unequal CGST and SGST", () => {
+    expect(checkPurchaseTax(lines, { cgst: 90000, sgst: 90000, igst: 50000 })).toMatch(/not both/);
+    expect(checkPurchaseTax(lines, { cgst: 150000, sgst: 30000, igst: 0 })).toMatch(/must be equal/);
+    expect(checkPurchaseTax(lines, { cgst: 90001, sgst: 90000, igst: 0 })).toBeNull(); // an odd paisa is fine
+  });
+  it("is enforced when a purchase is saved and when it is edited", async () => {
+    await expect(createPurchase(purchase({ cgst: 5000000, sgst: 5000000, tax: 10000000, totalAmount: 1000000 + 10000000 }), "u1", null)).rejects.toThrow(/should come to/);
+    await expect(createPurchase(purchase({ igst: 50000, tax: 230000, totalAmount: 1230000 }), "u1", null)).rejects.toThrow(/not both/);
+    const p = await createPurchase(purchase(), "u1", null);
+    await expect(updatePurchase(p.id, { cgst: 5000000, sgst: 5000000 })).rejects.toThrow(/should come to/);
+    // changing a cost without the matching GST is refused too
+    await expect(updatePurchase(p.id, { lines: [{ id: p.lines[0].id, unitCost: 10 }] })).rejects.toThrow(/should come to/);
   });
 });
 
@@ -221,7 +301,7 @@ describe("editing a saved purchase", () => {
   });
 
   it("refuses a total that would leave the bill overpaid", async () => {
-    const p = await createPurchase(purchase({ amountPaid: 1_000_000, paidAllocations: [{ branch: "Branch 1", amount: 1_000_000 }] }), "u1", null);
+    const p = await createPurchase(purchase({ amountPaid: 1_000_000, paidAllocations: [{ branch: "Branch 1", amount: 700000 }, { branch: "Branch 2", amount: 300000 }] }), "u1", null);
     await expect(updatePurchase(p.id, { lines: p.lines.map((l) => ({ id: l.id, unitCost: 10000 })), cgst: 0, sgst: 0 })).rejects.toThrow(PurchaseValidationError);
     expect((await getPurchase(p.id))?.lines[0].unitCost).toBe(100000); // nothing was written
   });
@@ -255,7 +335,7 @@ describe("editing a saved purchase", () => {
 
   it("leaves stock quantities alone (only cost and GST change)", async () => {
     const p = await createPurchase(purchase(), "u1", null);
-    await updatePurchase(p.id, { lines: p.lines.map((l) => ({ id: l.id, unitCost: 1 })) });
+    await updatePurchase(p.id, { lines: p.lines.map((l) => ({ id: l.id, unitCost: 1 })), cgst: 1, sgst: 1 });
     const after = await getPurchase(p.id);
     expect(after?.lines.map((l) => l.quantity).sort()).toEqual([4, 6]);
   });

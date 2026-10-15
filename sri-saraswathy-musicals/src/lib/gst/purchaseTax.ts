@@ -56,3 +56,31 @@ export function computeInclusiveTax(lines: PurchaseTaxLine[], interState: boolea
   const cgst = Math.round(tax / 2);
   return { cgst, sgst: tax - cgst, igst: 0, tax };
 }
+
+/** Rounding the vendor's own bill may differ by (₹10, plus a paisa a unit for prices typed with GST). */
+export function taxTolerance(lines: PurchaseTaxLine[]): number {
+  return 1000 + lines.reduce((n, l) => n + l.quantity, 0);
+}
+
+/**
+ * Is the GST typed on a purchase believable? `lines` carry costs BEFORE GST. A bill is either
+ * CGST + SGST (equal halves) or IGST — never both — and the total must be what the lines' rates
+ * give, give or take rounding. Returns the problem in plain words, or null when it is fine.
+ * Shared by the purchase form, the edit dialog and the server.
+ */
+export function checkPurchaseTax(lines: PurchaseTaxLine[], t: { cgst: number; sgst: number; igst: number }): string | null {
+  if (t.igst > 0 && (t.cgst > 0 || t.sgst > 0)) {
+    return "A bill has either CGST + SGST (same state) or IGST (other state), not both. Clear one of them.";
+  }
+  if (t.igst === 0 && Math.abs(t.cgst - t.sgst) > 1) {
+    return "CGST and SGST must be equal — the tax is split half and half.";
+  }
+  const entered = t.cgst + t.sgst + t.igst;
+  const expected = lines.reduce((n, l) => n + linePurchaseTax(l), 0);
+  if (Math.abs(entered - expected) > taxTolerance(lines)) {
+    return `GST should come to about ${rupees(expected)} from the items' rates, but ${rupees(entered)} was entered. Fix the amount (rounding up to ₹10 is fine) or the item's GST %.`;
+  }
+  return null;
+}
+
+const rupees = (paise: number): string => `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

@@ -21,6 +21,8 @@ import { db } from "@/lib/db";
 import { purchases, stockInward, vendorPayments, vendors } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { genDocId } from "@/lib/ids";
+import { formatINR } from "@/lib/utils";
+import { checkPurchaseTax } from "@/lib/gst/purchaseTax";
 import { BRANCH_KEYS, isBranch, type Branch, branchLabel } from "@/lib/stock";
 import { setVariantPrice } from "./stockOps";
 import { createInward, validateInwardBatch, type InwardBatchLine } from "./stock";
@@ -142,7 +144,7 @@ function purchasedAt(p: { purchaseDate: string; createdAt: string }): string {
 
 /** `amountPaid` is what was paid at purchase time; later part-payments live in
  *  vendor_payments and are surfaced here as `paymentsTotal`. Paid = both. */
-export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal: number; lines: PurchaseLineRecord[]; branchOwed: Record<string, number> })[]> {
+export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal: number; lines: PurchaseLineRecord[]; branchOwed: Record<string, number>; paidLater: Record<string, number> })[]> {
   const list = rows<PurchaseRecord>(await db.select().from(purchases).orderBy(desc(purchases.createdAt)));
   const sums = await db
     .select({ purchaseId: vendorPayments.purchaseId, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
@@ -172,7 +174,7 @@ export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal:
   }
   return list.map((p) => {
     const lines = linesById.get(p.id) ?? [];
-    return { ...p, paymentsTotal: byId.get(p.id) ?? 0, lines, branchOwed: branchOwedOn(p, lines, laterByBill.get(p.id) ?? {}) };
+    return { ...p, paymentsTotal: byId.get(p.id) ?? 0, lines, branchOwed: branchOwedOn(p, lines, laterByBill.get(p.id) ?? {}), paidLater: laterByBill.get(p.id) ?? {} };
   });
 }
 
@@ -187,28 +189,54 @@ export function branchOwedOn(
   later: Record<string, number>,
 ): Record<string, number> {
   if (p.openingBranch) return { [p.openingBranch]: Math.max(0, p.totalAmount - p.amountPaid - Object.values(later).reduce((n, v) => n + v, 0)) };
-  const goods: Record<string, number> = {};
-  for (const l of lines) goods[l.branch] = (goods[l.branch] ?? 0) + l.quantity * l.unitCost;
-  const branches = Object.keys(goods);
+  const branches = [...new Set(lines.map((l) => l.branch))];
   if (branches.length === 0) return {};
-  const sum = branches.reduce((n, b) => n + goods[b], 0);
-  const share = splitByWeightsPlain(p.totalAmount, goods, sum);
-  const atPurchase = p.paidAllocations ?? (p.amountPaid > 0 ? splitByWeightsPlain(p.amountPaid, goods, sum) : {});
+  const share = shareByBranch(p.totalAmount, lines);
+  const atPurchase = p.paidAllocations ?? (p.amountPaid > 0 ? shareByBranch(p.amountPaid, lines) : {});
   const out: Record<string, number> = {};
   for (const b of branches) out[b] = Math.max(0, (share[b] ?? 0) - (atPurchase[b] ?? 0) - (later[b] ?? 0));
   return out;
 }
 
-function splitByWeightsPlain(amount: number, w: Record<string, number>, sum: number): Record<string, number> {
-  const bs = Object.keys(w);
-  const out: Record<string, number> = {};
+/**
+ * How `amount` (the bill total) divides between the branches on a bill: by the goods
+ * each took, or by units when the goods are free. A branch with nothing gets 0 and the
+ * rounding leftover goes to the last branch that took something. This is the one rule
+ * the screens, the outstandings and the payment checks all share.
+ */
+export function shareByBranch(amount: number, lines: { branch: string; quantity: number; unitCost: number }[]): Record<string, number> {
+  const goods: Record<string, number> = {};
+  const qty: Record<string, number> = {};
+  for (const l of lines) {
+    goods[l.branch] = (goods[l.branch] ?? 0) + l.quantity * l.unitCost;
+    qty[l.branch] = (qty[l.branch] ?? 0) + l.quantity;
+  }
+  const weights = Object.values(goods).some((g) => g > 0) ? goods : qty;
+  const used = Object.keys(weights).filter((b) => weights[b] > 0);
+  const sum = used.reduce((n, b) => n + weights[b], 0);
+  const out: Record<string, number> = Object.fromEntries(Object.keys(weights).map((b) => [b, 0]));
   let left = amount;
-  bs.forEach((b, i) => {
-    const part = i === bs.length - 1 ? left : sum > 0 ? Math.round((amount * w[b]) / sum) : Math.round(amount / bs.length);
+  used.forEach((b, i) => {
+    const part = i === used.length - 1 ? left : Math.round((amount * weights[b]) / sum);
     out[b] = part;
     left -= part;
   });
   return out;
+}
+
+/**
+ * A branch can't have paid (at purchase plus later) more than its part of the bill.
+ * `paidNow` is what each branch paid at purchase after this change.
+ */
+function assertWithinShares(total: number, lines: { branch: string; quantity: number; unitCost: number }[], paidNow: Record<string, number>, later: Record<string, number>): void {
+  const share = shareByBranch(total, lines);
+  for (const b of Object.keys(paidNow)) {
+    if (share[b] === undefined) continue; // not a receiving branch: reported by the split check
+    const have = (paidNow[b] || 0) + (later[b] || 0);
+    if (have > share[b]) {
+      throw new PurchaseValidationError(`${branchLabel(b)} would have paid ${formatINR(have)} but only owes ${formatINR(share[b])} on this bill.`);
+    }
+  }
 }
 
 export async function getPurchase(id: string): Promise<PurchaseWithLines | undefined> {
@@ -288,6 +316,8 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
   const sgst = paise("SGST", input.sgst);
   const igst = paise("IGST", input.igst);
   const tax = cgst + sgst + igst;
+  const taxProblem = checkPurchaseTax(input.lines.map((l) => ({ quantity: l.quantity, unitCost: l.unitCost, gst: l.gst })), { cgst, sgst, igst });
+  if (taxProblem) throw new PurchaseValidationError(taxProblem);
   if (input.tax !== undefined && input.tax !== tax) {
     throw new PurchaseValidationError(`Tax (${input.tax}) doesn't match CGST + SGST + IGST (${tax}).`);
   }
@@ -301,6 +331,10 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
   }
   const receivingNow = [...new Set(input.lines.flatMap((l) => l.allocations.filter((a) => a.quantity > 0).map((a) => a.branch)))];
   const paidAllocations = resolvePaidAllocations(amountPaid, input.paidAllocations, receivingNow, allowed);
+  if (paidAllocations) {
+    const asLines = input.lines.flatMap((l) => l.allocations.filter((a) => a.quantity > 0).map((a) => ({ branch: a.branch, quantity: a.quantity, unitCost: l.unitCost })));
+    assertWithinShares(totalAmount, asLines, paidAllocations, {});
+  }
 
   // Derived from the whole batch id (no year, no truncation) so a retry always
   // lands on the same header and two different batches never share one.
@@ -426,6 +460,13 @@ export async function updatePurchase(id: string, patch: PurchasePatch): Promise<
   const sgst = patch.sgst === undefined ? existing.sgst : paise("SGST", patch.sgst);
   const igst = patch.igst === undefined ? existing.igst : paise("IGST", patch.igst);
   const tax = cgst + sgst + igst;
+  if (hasLines) {
+    const taxProblem = checkPurchaseTax(
+      existing.lines.map((l) => ({ quantity: l.quantity, unitCost: lineEdits.get(l.id)?.unitCost ?? l.unitCost, gst: lineEdits.get(l.id)?.gst ?? l.gst })),
+      { cgst, sgst, igst },
+    );
+    if (taxProblem) throw new PurchaseValidationError(taxProblem);
+  }
   const totalAmount = subtotal + tax;
   const amountPaid = patch.amountPaid === undefined ? existing.amountPaid : paise("Amount paid", patch.amountPaid);
   if (amountPaid + existing.paymentsTotal > totalAmount) {
@@ -448,6 +489,20 @@ export async function updatePurchase(id: string, patch: PurchasePatch): Promise<
   } else if (amountPaid !== existing.amountPaid) {
     // An older purchase (no split on record) whose paid amount changed needs one now.
     paidAllocations = resolvePaidAllocations(amountPaid, undefined, receiving, null);
+  }
+
+  // After the edit no branch may have paid more than its part of the new total.
+  const effective = amountPaid > 0 ? (paidAllocations ?? existing.paidAllocations ?? null) : null;
+  if (effective && hasLines) {
+    const laterRows = await db
+      .select({ branch: vendorPayments.branch, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
+      .from(vendorPayments).where(eq(vendorPayments.purchaseId, id)).groupBy(vendorPayments.branch);
+    assertWithinShares(
+      totalAmount,
+      existing.lines.map((l) => ({ branch: l.branch, quantity: l.quantity, unitCost: lineEdits.get(l.id)?.unitCost ?? l.unitCost })),
+      effective,
+      Object.fromEntries(laterRows.map((r) => [r.branch, Number(r.sum)])),
+    );
   }
 
   for (const [lineId, e] of lineEdits) {
@@ -885,6 +940,17 @@ export async function createVendorPaymentSplit(
   if (!p || p.vendorId !== input.vendorId) throw new PurchaseValidationError("Purchase not found.");
   const total = list.reduce((n, a) => n + a.amount, 0);
   if (total > p.totalAmount - p.amountPaid - p.paymentsTotal) throw new PurchaseValidationError("Payment exceeds the purchase's balance.");
+
+  // A branch can't pay more than it still owes on this bill.
+  const laterRows = await db
+    .select({ branch: vendorPayments.branch, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
+    .from(vendorPayments).where(eq(vendorPayments.purchaseId, p.id)).groupBy(vendorPayments.branch);
+  const owed = branchOwedOn(p, p.lines, Object.fromEntries(laterRows.map((r) => [r.branch, Number(r.sum)])));
+  for (const a of list) {
+    if (owed[a.branch] !== undefined && a.amount > owed[a.branch]) {
+      throw new PurchaseValidationError(`${branchLabel(a.branch)} only owes ${formatINR(owed[a.branch] ?? 0)} on this bill.`);
+    }
+  }
 
   const saved: Array<typeof vendorPayments.$inferSelect> = [];
   try {

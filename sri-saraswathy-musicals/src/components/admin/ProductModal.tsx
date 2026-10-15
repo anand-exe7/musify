@@ -9,6 +9,7 @@ const MAX_PHOTOS = 4;
 import { useAuth } from "@/lib/store/auth";
 import { cn, slugify } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { VariantPhoto } from "./VariantPhoto";
 
 const DEPTS = ["Indian", "Western", "Unisex"];
 
@@ -189,11 +190,11 @@ export function ProductModal({
                   <div key={i} className="group relative h-20 w-20 overflow-hidden rounded-lg border border-ink-200 bg-ink-100">
                     <img src={src} alt="" className="h-full w-full object-cover" />
                     {i === 0 && <span className="absolute left-1 top-1 rounded bg-ink-900/80 px-1 py-0.5 text-[7px] font-bold uppercase text-ivory-50">Primary</span>}
-                    <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute right-1 top-1 hidden h-5 w-5 place-items-center rounded-full bg-ink-900/80 text-ivory-50 group-hover:grid">
-                      <X className="h-3 w-3" />
+                    <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-danger text-white shadow">
+                      <X className="h-3.5 w-3.5" />
                     </button>
                     {i > 0 && (
-                      <button type="button" aria-label="Make primary" onClick={() => setPhotos([src, ...photos.filter((_, j) => j !== i)])} className="absolute inset-x-0 bottom-0 hidden bg-ink-900/80 py-0.5 text-[8px] font-bold uppercase text-ivory-50 group-hover:block">
+                      <button type="button" aria-label="Make primary" onClick={() => setPhotos([src, ...photos.filter((_, j) => j !== i)])} className="absolute inset-x-0 bottom-0 bg-ink-900/80 py-0.5 text-[8px] font-bold uppercase text-ivory-50">
                         Make primary
                       </button>
                     )}
@@ -377,19 +378,13 @@ export function ProductModal({
                       <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
                       <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
                       <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2">
-                        <div className="flex items-center gap-1">
-                          <label className="grid h-10 w-10 cursor-pointer place-items-center overflow-hidden rounded-lg border border-dashed border-ink-200 bg-ivory-50 text-ink-400 hover:border-gold-500" title="Photo for this variant">
-                            {v.photo ? <img src={v.photo} alt="" className="h-full w-full object-cover" /> : <Plus className="h-4 w-4" />}
-                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                              const f = e.target.files?.[0];
-                              e.target.value = "";
-                              if (!f) return;
-                              try { setVariant(i, { photo: await compressImage(f) }); } catch (err) { setError(err instanceof Error ? err.message : "Could not process that image."); }
-                            }} />
-                          </label>
-                          {v.photo && <button type="button" aria-label="Remove variant photo" onClick={() => setVariant(i, { photo: null })} className="text-ink-400 hover:text-danger"><X className="h-3.5 w-3.5" /></button>}
-                        </div>
+                      <td className="pr-2 py-1.5">
+                        <VariantPhoto
+                          value={v.photo}
+                          original={v.id ? product?.variants.find((o) => o.id === v.id)?.photo : undefined}
+                          onChange={(photo) => setVariant(i, { photo })}
+                          onError={setError}
+                        />
                       </td>
                       <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? `Opening stock at ${branchLabel(b)}` : branchLabel(b)} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
