@@ -11,7 +11,7 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { ProductModal } from "@/components/admin/ProductModal";
 import { useAuth } from "@/lib/store/auth";
 import { BRANCH_KEYS, DEFAULT_BRANCH, emptyStockByBranch, branchLabel } from "@/lib/stock";
-import { computePurchaseTax } from "@/lib/gst/purchaseTax";
+import { computePurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { PAY_MODES } from "@/components/purchases/types";
 import { PaymentSplit } from "@/components/purchases/PaymentSplit";
 import { allocList, normalizeAlloc, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
@@ -24,7 +24,8 @@ interface Line {
   qty: number;
   /** Units received into each branch; always sums to `qty`. */
   alloc: Record<string, number>;
-  unitCost: number; // paise, excluding GST
+  /** What was typed (paise): with GST included when "Prices include GST" is ticked, else before GST. */
+  unitCost: number;
   /** GST rate (%) the vendor charges on this line. */
   gst: number;
   /** Opt-in: also change this variant's selling price (paise) on save. */
@@ -61,6 +62,8 @@ export default function PurchasesPage() {
   const [invoiceNo, setInvoiceNo] = useState("");
   const [purchaseDate, setPurchaseDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [interState, setInterState] = useState(false);
+  /** The vendor's prices include GST (the default): the tax is taken out of each cost. */
+  const [inclusive, setInclusive] = useState(true);
   // GST is worked out from the lines; these only hold a figure typed over it (e.g. the vendor rounded the bill).
   const [taxEdited, setTaxEdited] = useState(false);
   const [cgst, setCgst] = useState(0);
@@ -98,13 +101,22 @@ export default function PurchasesPage() {
         variantIndex: 0,
         qty: 1,
         alloc: { ...emptyStockByBranch(), [lockedBranch ?? DEFAULT_BRANCH]: 1 },
-        unitCost: p.cost && p.cost > 0 ? p.cost : 0,
+        unitCost: p.cost && p.cost > 0 ? (inclusive ? inclusiveCost(p.cost, p.gstRate ?? 0) : p.cost) : 0,
         gst: p.gstRate ?? 0, // the product's own rate, changeable per line
         updatePrice: false,
         newPrice: 0,
       },
     ]);
     setProductTerm("");
+  };
+
+  /** A line's cost before GST — what stock is valued at, whichever way it was typed. */
+  const exCost = (l: Line) => (inclusive ? exclusiveCost(l.unitCost, l.gst) : l.unitCost);
+
+  /** Flip between "prices include GST" and "before GST", keeping every line's real cost the same. */
+  const toggleInclusive = (on: boolean) => {
+    setLines((ls) => ls.map((l) => ({ ...l, unitCost: on ? inclusiveCost(l.unitCost, l.gst) : exclusiveCost(l.unitCost, l.gst) })));
+    setInclusive(on);
   };
 
   const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
@@ -148,26 +160,28 @@ export default function PurchasesPage() {
     if (l.unitCost <= 0) return null;
     const oldCost = l.product.cost ?? 0;
     const price = l.updatePrice && l.newPrice > 0 ? l.newPrice : sellingPrice(l);
-    const margin = price > 0 ? ((price - l.unitCost) / price) * 100 : 0;
-    const costUp = oldCost > 0 && l.unitCost > oldCost;
+    const cost = exCost(l);
+    const margin = price > 0 ? ((price - cost) / price) * 100 : 0;
+    const costUp = oldCost > 0 && cost > oldCost;
     const low = price > 0 && margin < LOW_MARGIN_PCT;
     if (!costUp && !low) return null;
-    const head = costUp ? `Cost up from ${formatINR(oldCost)} to ${formatINR(l.unitCost)}` : `Low margin at cost ${formatINR(l.unitCost)}`;
+    const head = costUp ? `Cost up from ${formatINR(oldCost)} to ${formatINR(cost)}` : `Low margin at cost ${formatINR(cost)}`;
     const tail = price > 0 ? `selling price ${formatINR(price)} (${margin.toFixed(0)}% margin)` : "no selling price set";
-    return { text: `${head} — ${tail}`, bad: price > 0 && (margin < LOW_MARGIN_PCT || price <= l.unitCost) };
+    return { text: `${head} — ${tail}`, bad: price > 0 && (margin < LOW_MARGIN_PCT || price <= cost) };
   };
 
   const totals = lines.reduce(
     (t, l) => ({
       qty: t.qty + l.qty,
       alloc: Object.fromEntries(BRANCH_KEYS.map((b) => [b, (t.alloc[b] || 0) + (l.alloc[b] || 0)])) as Record<string, number>,
-      cost: t.cost + l.qty * l.unitCost,
+      cost: t.cost + l.qty * exCost(l),
     }),
     { qty: 0, alloc: emptyStockByBranch(), cost: 0 },
   );
 
   // GST from each line's rate; a figure typed over it wins.
-  const autoTax = computePurchaseTax(lines.map((l) => ({ quantity: l.qty, unitCost: l.unitCost, gst: l.gst })), interState);
+  const taxLines = lines.map((l) => ({ quantity: l.qty, unitCost: l.unitCost, gst: l.gst }));
+  const autoTax = inclusive ? computeInclusiveTax(taxLines, interState) : computePurchaseTax(taxLines, interState);
   const taxNow = taxEdited ? { cgst, sgst, igst } : autoTax;
   const tax = taxNow.cgst + taxNow.sgst + taxNow.igst;
   const grandTotal = totals.cost + tax;
@@ -184,6 +198,7 @@ export default function PurchasesPage() {
     setInvoiceNo("");
     setPurchaseDate(new Date().toISOString().slice(0, 10));
     setInterState(false);
+    setInclusive(true);
     setTaxEdited(false);
     setCgst(0); setSgst(0); setIgst(0);
     setAmountPaid(0);
@@ -231,7 +246,7 @@ export default function PurchasesPage() {
           lines: lines.map((l) => ({
             productId: l.product.id,
             variantIndex: l.variantIndex,
-            unitCost: l.unitCost,
+            unitCost: exCost(l), // stored before GST
             gst: l.gst,
             quantity: l.qty,
             ...(isAdmin && l.updatePrice && l.newPrice > 0 ? { newPrice: l.newPrice } : {}),
@@ -365,7 +380,7 @@ export default function PurchasesPage() {
                   <th className="px-3 py-3">#</th>
                   <th>Product</th>
                   <th>Variant</th>
-                  <th className="w-28">Unit cost (₹)</th>
+                  <th className="w-28">{inclusive ? "Cost incl. GST (₹)" : "Cost excl. GST (₹)"}</th>
                   <th className="w-20">GST %</th>
                   <th className="w-20 text-right pr-2">Total qty</th>
                   {BRANCH_KEYS.map((b) => <th key={b} className="w-20 text-right pr-2">{branchLabel(b)}</th>)}
@@ -432,7 +447,7 @@ export default function PurchasesPage() {
                     <td colSpan={5} className="px-3 py-3 text-right uppercase tracking-wider text-ink-500">Totals</td>
                     <td className="pr-2 text-right tabular-nums">{totals.qty}</td>
                     {BRANCH_KEYS.map((b) => <td key={b} className="pr-2 text-right tabular-nums">{totals.alloc[b]}</td>)}
-                    <td className="pr-2 text-right tabular-nums">{formatINR(totals.cost)}</td>
+                    <td className="pr-2 text-right tabular-nums">{formatINR(lines.reduce((n, l) => n + l.qty * l.unitCost, 0))}</td>
                     <td />
                   </tr>
                 </tfoot>
@@ -443,12 +458,18 @@ export default function PurchasesPage() {
           {/* GST */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-2 text-xs text-ink-600">
-                <input type="checkbox" checked={interState} onChange={(e) => setInterState(e.target.checked)} />
-                Inter-state purchase (IGST instead of CGST + SGST)
-              </label>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 text-xs text-ink-600">
+                  <input type="checkbox" checked={inclusive} onChange={(e) => toggleInclusive(e.target.checked)} />
+                  Prices include GST
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-600">
+                  <input type="checkbox" checked={interState} onChange={(e) => setInterState(e.target.checked)} />
+                  Inter-state purchase (IGST instead of CGST + SGST)
+                </label>
+              </div>
               <p className="text-[11px] text-ink-400">
-                GST is worked out from each line&apos;s rate.{" "}
+                {inclusive ? "The GST is taken out of each cost you type, using the line's rate." : "The GST is added on top of each cost, using the line's rate."}{" "}
                 {taxEdited && <button onClick={() => setTaxEdited(false)} className="font-semibold text-gold-600 hover:underline">Reset to calculated</button>}
               </p>
             </div>

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { computePurchaseTax } from "@/lib/gst/purchaseTax";
+import { computePurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { branchLabel } from "@/lib/stock";
 import { PaymentSplit } from "./PaymentSplit";
 import { allocList, normalizeAlloc, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
@@ -26,6 +26,8 @@ export function PurchaseEditDialog({
   const [purchaseDate, setPurchaseDate] = useState(purchase.purchaseDate);
   const [lines, setLines] = useState(() => purchase.lines.map((l) => ({ id: l.id, name: l.productName, variant: l.variant, branch: l.branch, quantity: l.quantity, unitCost: l.unitCost, gst: l.gst })));
   const [interState, setInterState] = useState(purchase.igst > 0);
+  /** Show and type each cost with GST included (the stored cost is always before GST). */
+  const [inclusive, setInclusive] = useState(true);
   const [cgst, setCgst] = useState(purchase.cgst);
   const [sgst, setSgst] = useState(purchase.sgst);
   const [igst, setIgst] = useState(purchase.igst);
@@ -46,7 +48,9 @@ export function PurchaseEditDialog({
 
   /** Recompute the GST amounts from the lines (and set them; they can still be typed over for rounding). */
   const retax = (next: typeof lines, inter: boolean) => {
-    const t = computePurchaseTax(next.map((l) => ({ quantity: l.quantity, unitCost: l.unitCost, gst: l.gst })), inter);
+    const t = inclusive
+      ? computeInclusiveTax(next.map((l) => ({ quantity: l.quantity, unitCost: inclusiveCost(l.unitCost, l.gst), gst: l.gst })), inter)
+      : computePurchaseTax(next.map((l) => ({ quantity: l.quantity, unitCost: l.unitCost, gst: l.gst })), inter);
     setCgst(t.cgst); setSgst(t.sgst); setIgst(t.igst);
   };
   const editLine = (id: string, patch: Partial<(typeof lines)[number]>) => {
@@ -103,7 +107,7 @@ export function PurchaseEditDialog({
                     <th className="px-3 py-2">Item</th>
                     <th>Branch</th>
                     <th className="text-right">Qty</th>
-                    <th className="w-32 px-2">Unit cost ₹</th>
+                    <th className="w-32 px-2">{inclusive ? "Cost incl. GST ₹" : "Cost excl. GST ₹"}</th>
                     <th className="w-24 px-2">GST %</th>
                     <th className="pr-3 text-right">Line total</th>
                   </tr>
@@ -114,13 +118,13 @@ export function PurchaseEditDialog({
                       <td className="px-3 py-2"><p className="font-medium text-ink-900">{l.name}</p>{l.variant && <p className="text-[11px] text-ink-400">{l.variant}</p>}</td>
                       <td className="text-xs text-ink-600">{branchLabel(l.branch)}</td>
                       <td className="text-right tabular-nums text-ink-600">{l.quantity}</td>
-                      <td className="px-2"><MoneyInput value={l.unitCost} onChange={(unitCost) => editLine(l.id, { unitCost })} className={cell} /></td>
+                      <td className="px-2"><MoneyInput value={inclusive ? inclusiveCost(l.unitCost, l.gst) : l.unitCost} onChange={(v) => editLine(l.id, { unitCost: inclusive ? exclusiveCost(v, l.gst) : v })} className={cell} /></td>
                       <td className="px-2">
                         <select value={l.gst} onChange={(e) => editLine(l.id, { gst: Number(e.target.value) })} className={cell}>
                           {[...new Set([...GST_RATES, l.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                         </select>
                       </td>
-                      <td className="pr-3 text-right tabular-nums text-ink-700">{formatINR(l.quantity * l.unitCost)}</td>
+                      <td className="pr-3 text-right tabular-nums text-ink-700">{formatINR(l.quantity * (inclusive ? inclusiveCost(l.unitCost, l.gst) : l.unitCost))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -129,6 +133,10 @@ export function PurchaseEditDialog({
             </div>
           )}
 
+          <label className="flex items-center gap-2 text-xs text-ink-600">
+            <input type="checkbox" checked={inclusive} onChange={(e) => setInclusive(e.target.checked)} />
+            Prices include GST
+          </label>
           <label className="flex items-center gap-2 text-xs text-ink-600">
             <input type="checkbox" checked={interState} onChange={(e) => { setInterState(e.target.checked); retax(lines, e.target.checked); }} />
             Inter-state purchase (IGST instead of CGST + SGST)

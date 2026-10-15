@@ -260,3 +260,25 @@ describe("editing a saved purchase", () => {
     expect(after?.lines.map((l) => l.quantity).sort()).toEqual([4, 6]);
   });
 });
+
+describe("prices that include GST", () => {
+  it("takes the tax out of the price and gets back to the typed total", async () => {
+    const { exclusiveCost, inclusiveCost, computeInclusiveTax } = await import("@/lib/gst/purchaseTax");
+    expect(exclusiveCost(118000, 18)).toBe(100000);
+    expect(inclusiveCost(100000, 18)).toBe(118000);
+    expect(exclusiveCost(5000, 0)).toBe(5000);
+    // 10 × ₹1,180 incl. 18% → goods ₹10,000 + GST ₹1,800 = ₹11,800
+    expect(computeInclusiveTax([{ quantity: 10, unitCost: 118000, gst: 18 }], false)).toEqual({ cgst: 90000, sgst: 90000, igst: 0, tax: 180000 });
+    expect(computeInclusiveTax([{ quantity: 10, unitCost: 118000, gst: 18 }], true)).toEqual({ cgst: 0, sgst: 0, igst: 180000, tax: 180000 });
+  });
+
+  it("keeps goods + tax equal to the typed total even when the cost doesn't divide evenly", async () => {
+    const { exclusiveCost, computeInclusiveTax } = await import("@/lib/gst/purchaseTax");
+    const lines = [{ quantity: 7, unitCost: 100000, gst: 18 }, { quantity: 3, unitCost: 99999, gst: 5 }];
+    const typedTotal = lines.reduce((n, l) => n + l.quantity * l.unitCost, 0);
+    const goods = lines.reduce((n, l) => n + l.quantity * exclusiveCost(l.unitCost, l.gst), 0);
+    const t = computeInclusiveTax(lines, false);
+    expect(goods + t.tax).toBe(typedTotal);
+    expect(t.cgst + t.sgst).toBe(t.tax);
+  });
+});

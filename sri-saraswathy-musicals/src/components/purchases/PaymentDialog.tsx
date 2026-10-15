@@ -6,9 +6,10 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { useBranchScope } from "@/lib/store/branch";
 import { PaymentSplit } from "./PaymentSplit";
 import { allocList, normalizeAlloc, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
+import { splitByWeights } from "@/lib/vendorPayPlan";
 import { receivingBranches, type PurchaseRow } from "./types";
 
-/** Record a part-payment against ONE purchase invoice; the branch you pick is charged the whole amount. */
+/** Record a part-payment against ONE purchase invoice, split across the branches that owe it. */
 export function PaymentDialog({
   purchase, vendorName, onClose, onDone,
 }: {
@@ -30,7 +31,11 @@ export function PaymentDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const split = normalizeAlloc(alloc, amount, options);
+  // Until the person types a split, each branch is charged what it still owes on this bill
+  // (not everything to the first branch), so a branch that already paid its part pays nothing.
+  const owedWeights = Object.fromEntries(options.map((b) => [b, purchase.branchOwed?.[b] ?? 0]));
+  const touched = Object.keys(alloc).length > 0;
+  const split = touched ? normalizeAlloc(alloc, amount, options) : (options.length > 0 ? splitByWeights(amount, owedWeights) : {});
 
   const submit = async () => {
     if (amount <= 0) { setError("Amount must be greater than 0."); return; }
@@ -73,7 +78,7 @@ export function PaymentDialog({
           </div>
           <div>
             <label className={label}>Which branch pays it</label>
-            <PaymentSplit branches={options} total={amount} value={alloc} onChange={setAlloc} />
+            <PaymentSplit branches={options} total={amount} value={split} onChange={setAlloc} />
           </div>
           <div><label className={label}>Reference (cheque / txn id)</label><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} /></div>
           <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} /></div>
