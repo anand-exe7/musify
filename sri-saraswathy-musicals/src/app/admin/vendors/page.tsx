@@ -1,11 +1,13 @@
 "use client";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Truck, Plus, Phone, MapPin, Hash, FileText } from "lucide-react";
 import { useVendors, vendorMatches } from "@/lib/store/vendors";
 import { genDocId } from "@/lib/ids";
 import type { Vendor } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, formatINR } from "@/lib/utils";
 
 const blankForm = { code: "", name: "", phone: "", address: "", gst: "" };
 
@@ -22,6 +24,15 @@ export default function VendorsPage() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  // What you owe each vendor (one light request for all of them).
+  const [owed, setOwed] = useState<Record<string, number>>({});
+  useEffect(() => {
+    fetch("/api/vendor-bills?view=vendors&pageSize=1000", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { rows: { vendorId: string; left: number }[] } | null) => { if (d) setOwed(Object.fromEntries(d.rows.map((x) => [x.vendorId, x.left]))); })
+      .catch(() => {});
+  }, []);
 
   const notify = (m: string) => {
     setToast(m);
@@ -50,6 +61,7 @@ export default function VendorsPage() {
   };
 
   const rows = vendors.filter((v) => vendorMatches(v, query));
+  const pg = usePaged(rows, query, 24);
   const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
   const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
 
@@ -61,7 +73,7 @@ export default function VendorsPage() {
 
       <div className="mb-6 border-l-4 border-ink-900 pl-4">
         <h1 className="text-2xl font-bold text-ink-900">Vendors</h1>
-        <p className="mt-1 text-sm text-ink-500">Suppliers you receive stock from · shared across both branches</p>
+        <p className="mt-1 text-sm text-ink-500">Suppliers you receive stock from · shared across all branches</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
@@ -89,7 +101,7 @@ export default function VendorsPage() {
         <section>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, code or phone…" className="mb-3 w-full rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm focus:border-gold-500 focus:outline-none" />
           <div className="grid gap-3 sm:grid-cols-2">
-            {rows.map((v) => (
+            {pg.items.map((v) => (
               <div key={v.id} className="rounded-xl border border-ink-100 bg-ivory-50 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -103,13 +115,19 @@ export default function VendorsPage() {
                   {v.address && <p className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3 w-3 shrink-0" />{v.address}</p>}
                   {v.gst && <p className="font-mono text-[11px] text-ink-400">{v.gst}</p>}
                 </div>
-                <Link href={`/admin/vendors/outstandings?vendor=${encodeURIComponent(v.id)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold-600 hover:text-ink-900">
-                  <FileText className="h-3.5 w-3.5" /> Purchases &amp; statement
+                {owed[v.id] !== undefined && (
+                  <p className={cn("mt-2 text-sm font-bold tabular-nums", owed[v.id] > 0 ? "text-danger" : "text-ink-500")}>
+                    {owed[v.id] > 0 ? `You owe ${formatINR(owed[v.id])}` : owed[v.id] < 0 ? `Credit ${formatINR(-owed[v.id])}` : "Nothing owed"}
+                  </p>
+                )}
+                <Link href={`/admin/purchases/invoices?vendor=${encodeURIComponent(v.id)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold-600 hover:text-ink-900">
+                  <FileText className="h-3.5 w-3.5" /> View bills
                 </Link>
               </div>
             ))}
             {rows.length === 0 && <p className="col-span-full py-12 text-center text-sm text-ink-400">No vendors yet. Add your first supplier.</p>}
           </div>
+          <Pager className="mt-4" {...pg.pager} />
         </section>
       </div>
     </div>

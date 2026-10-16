@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { useProducts } from "@/lib/client/catalog";
+import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { useAuth } from "@/lib/store/auth";
@@ -182,14 +182,14 @@ export default function ProfilePage() {
   const hydrated = useAuth((s) => s.hydrated);
   const logout = useAuth((s) => s.logout);
   const [tab, setTab] = useState<Tab>("orders");
-  const { products } = useProducts();
-  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const wishlistIds = useWishlist((s) => s.items);
   const removeFromWishlist = useWishlist((s) => s.remove);
   const addToCart = useCart((s) => s.addItem);
 
   const [me, setMe] = useState<UserType | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  // Only the products on the wishlist and in past orders are fetched, not the whole catalogue.
+  const { byId } = useProductsByIds([...wishlistIds, ...orders.flatMap((o) => o.items.map((i) => i.productId))]);
   const [addresses, setAddresses] = useState<UserAddress[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -355,7 +355,7 @@ export default function ProfilePage() {
   };
 
   /* ── Wishlist products ── */
-  const wishlistProducts = wishlistIds.map((id) => byId.get(id)).filter(Boolean) as (typeof products[0])[];
+  const wishlistProducts = wishlistIds.map((id) => byId.get(id)).filter((p): p is NonNullable<typeof p> => !!p);
 
   /* ─────────────────────────────────────────────────────────────────── */
   return (
@@ -385,6 +385,8 @@ export default function ProfilePage() {
               <img
                 src={user.avatar}
                 alt={displayName}
+                loading="lazy"
+                decoding="async"
                 className="h-16 w-16 rounded-full object-cover ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-20 md:w-20"
               />
             ) : (

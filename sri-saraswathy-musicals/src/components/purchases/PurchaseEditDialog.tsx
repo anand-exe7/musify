@@ -4,7 +4,7 @@ import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { computePurchaseTax, checkPurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { branchLabel } from "@/lib/stock";
-import { BranchPayTable, clampedPay, type BranchPayRow } from "./BranchPayTable";
+import { BranchPayTable, enteredPay, overBranches, overMessage, type BranchPayRow } from "./BranchPayTable";
 import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
 import { splitByWeights } from "@/lib/vendorPayPlan";
 import { PAY_MODES, receivingBranches, type PurchaseRow } from "./types";
@@ -59,7 +59,8 @@ export function PurchaseEditDialog({
     const laterB = purchase.paidLater?.[b] ?? 0;
     return { branch: b, value: shares[b] || 0, paid: laterB, max: Math.max(0, (shares[b] || 0) - laterB) };
   });
-  const paidSplit = clampedPay(payRows, payAlloc);
+  const paidSplit = enteredPay(payRows, payAlloc);
+  const payOver = overBranches(payRows, paidSplit);
   const amountPaid = sumAlloc(paidSplit);
 
   /** Recompute the GST amounts from the lines (and set them; they can still be typed over for rounding). */
@@ -77,6 +78,7 @@ export function PurchaseEditDialog({
 
   const submit = async () => {
     if (taxProblem) { setError(taxProblem); return; }
+    if (payOver.length > 0) { setError(overMessage(payOver)); return; }
     if (amountPaid + later > total) { setError("Amount paid can't exceed the total."); return; }
     setSaving(true);
     try {
@@ -174,6 +176,7 @@ export function PurchaseEditDialog({
           <div>
             <label className={label}>Paid at purchase — each branch pays its own part</label>
             <BranchPayTable rows={payRows} value={paidSplit} onChange={setPayAlloc} valueLabel="Its bill" payLabel="Paid at purchase" />
+            {payOver.length > 0 && <p className="mt-1.5 text-[11px] font-semibold text-danger">{overMessage(payOver)}</p>}
           </div>
           <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} /></div>
           <div className="rounded-lg bg-ink-900/5 px-3 py-2 text-xs">
@@ -188,7 +191,7 @@ export function PurchaseEditDialog({
           {error && <p className="text-xs font-semibold text-danger">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button onClick={onClose} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-            <button onClick={submit} disabled={saving || !!taxProblem} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
+            <button onClick={submit} disabled={saving || !!taxProblem || payOver.length > 0} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
               {saving ? "Saving…" : "Save Changes"}
             </button>
           </div>

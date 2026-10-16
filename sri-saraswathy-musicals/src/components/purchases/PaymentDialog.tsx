@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { formatINR, cn } from "@/lib/utils";
 import { useBranchScope } from "@/lib/store/branch";
-import { BranchPayTable, clampedPay, type BranchPayRow } from "./BranchPayTable";
+import { BranchPayTable, enteredPay, overBranches, overMessage, type BranchPayRow } from "./BranchPayTable";
 import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
 import { splitByWeights } from "@/lib/vendorPayPlan";
 import { receivingBranches, type PurchaseRow } from "./types";
@@ -39,11 +39,13 @@ export function PaymentDialog({
   // start at the balance (spread by what each owes) rather than at a figure that can't be saved.
   const maxTotal = rows.reduce((n, r) => n + r.max, 0);
   const start = maxTotal <= bal ? Object.fromEntries(rows.map((r) => [r.branch, r.max])) : splitByWeights(bal, Object.fromEntries(rows.map((r) => [r.branch, r.max])));
-  const split = clampedPay(rows, alloc ?? start);
+  const split = enteredPay(rows, alloc ?? start);
+  const over = overBranches(rows, split);
   const amount = sumAlloc(split);
 
   const submit = async () => {
     if (amount <= 0) { setError("Enter what at least one branch pays."); return; }
+    if (over.length > 0) { setError(overMessage(over)); return; }
     if (amount > bal) { setError(`Only ${formatINR(bal)} outstanding.`); return; }
     setSaving(true);
     try {
@@ -85,6 +87,7 @@ export function PaymentDialog({
             {maxTotal > bal && (
               <p className="mt-1.5 text-[11px] text-ink-500">A branch paid more than its share earlier, so the bill has only {formatINR(bal)} left — {formatINR(maxTotal - bal)} less than the branches&apos; shares add up to. You can pay at most {formatINR(bal)}.</p>
             )}
+            {over.length > 0 && <p className="mt-1.5 text-[11px] font-semibold text-danger">{overMessage(over)}</p>}
             {amount > bal && <p className="mt-1.5 text-[11px] font-semibold text-danger">That is more than the {formatINR(bal)} left on this bill.</p>}
           </div>
           <div><label className={label}>Reference (cheque / txn id)</label><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} /></div>
@@ -92,7 +95,7 @@ export function PaymentDialog({
           {error && <p className="text-xs font-semibold text-danger">{error}</p>}
           <div className="flex gap-2">
             <button onClick={onClose} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-            <button onClick={submit} disabled={saving} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
+            <button onClick={submit} disabled={saving || over.length > 0 || amount > bal} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-60">
               <Check className="mr-1 inline h-4 w-4" /> {saving ? "Saving…" : "Save Payment"}
             </button>
           </div>

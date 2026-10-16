@@ -1,48 +1,67 @@
 "use client";
-import { useState, useMemo, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ProductCard } from "@/components/shop/ProductCard";
-import { useProducts, useCategories } from "@/lib/client/catalog";
+import { useProductPage, useCategories } from "@/lib/client/catalog";
+import { Pager } from "@/components/ui/Pager";
 import { SlidersHorizontal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 
 type SortKey = "featured" | "price-asc" | "price-desc" | "name" | "rating";
 
+const PAGE_SIZE = 12;
+const MAX_PRICE = 200000000;
+
+/** A value that only follows `value` once it has stopped changing for `ms` (so dragging the price slider doesn't fire a request per step). */
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 function ShopContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const { products, loading, error: loadError, refresh } = useProducts();
   const { categories } = useCategories();
   const activeCategory = params.get("category") || "all";
+  const page = Math.max(1, Number(params.get("page")) || 1);
   const [sort, setSort] = useState<SortKey>("featured");
   // Price bounds are in paise (₹20,00,000 = 200000000 paise).
-  const [priceMax, setPriceMax] = useState<number>(200000000);
+  const [priceMax, setPriceMax] = useState<number>(MAX_PRICE);
   const [origin, setOrigin] = useState<"all" | "indian" | "western">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const gridTop = useRef<HTMLDivElement>(null);
 
-  const filtered = useMemo(() => {
-    let list = [...products];
-    if (activeCategory !== "all") list = list.filter((p) => p.category === activeCategory);
-    if (origin !== "all") list = list.filter((p) => p.origin === origin);
-    list = list.filter((p) => p.price <= priceMax);
+  const priceApplied = useDebounced(priceMax, 350);
+  const { data, loading, error: loadError, refresh } = useProductPage({
+    category: activeCategory, origin, maxPrice: priceApplied >= MAX_PRICE ? 0 : priceApplied, sort, page, pageSize: PAGE_SIZE,
+  });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
 
-    switch (sort) {
-      case "price-asc": list.sort((a, b) => a.price - b.price); break;
-      case "price-desc": list.sort((a, b) => b.price - a.price); break;
-      case "name": list.sort((a, b) => a.name.localeCompare(b.name)); break;
-      case "rating": list.sort((a, b) => b.rating - a.rating); break;
-      default: list.sort((a, b) => Number(b.featured || false) - Number(a.featured || false));
-    }
-    return list;
-  }, [products, activeCategory, sort, origin, priceMax]);
-
-  const setCategory = (id: string) => {
+  /** Change the address's query: `null` removes a key. Used for category and page. */
+  const go = (patch: Record<string, string | null>) => {
     const q = new URLSearchParams(params.toString());
-    if (id === "all") q.delete("category");
-    else q.set("category", id);
-    router.push(`/shop${q.toString() ? "?" + q.toString() : ""}`);
+    for (const [k, v] of Object.entries(patch)) (v === null ? q.delete(k) : q.set(k, v));
+    router.push(`/shop${q.toString() ? "?" + q.toString() : ""}`, { scroll: false });
   };
+  const setCategory = (id: string) => go({ category: id === "all" ? null : id, page: null });
+  const goToPage = (n: number) => {
+    go({ page: n <= 1 ? null : String(n) });
+    gridTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  // A filter changed: back to the first page.
+  const firstPage = () => { if (page !== 1) go({ page: null }); };
+
+  // If the page asked for is past the end (e.g. filters shrank the list), the server returns the last one — follow it.
+  useEffect(() => {
+    if (data && data.page !== page) go({ page: data.page <= 1 ? null : String(data.page) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.page]);
 
   return (
     <div className="container-page pb-10 pt-4 md:pb-16 md:pt-8">
@@ -55,7 +74,7 @@ function ShopContent() {
           )}
         </h1>
         <p className="mt-3 text-sm text-ink-500 md:text-base">
-          {filtered.length} pieces · in stock at {BUSINESS.branches.map((b) => b.area).join(" & ")}
+          {total} pieces · in stock at {BUSINESS.branches.map((b) => b.area).join(" & ")}
         </p>
       </div>
 
@@ -101,7 +120,7 @@ function ShopContent() {
         <div className="hidden items-center gap-6 md:flex">
           <select
             value={origin}
-            onChange={(e) => setOrigin(e.target.value as "all" | "indian" | "western")}
+            onChange={(e) => { setOrigin(e.target.value as "all" | "indian" | "western"); firstPage(); }}
             className="border-0 bg-transparent text-xs font-medium uppercase tracking-[0.18em] text-ink-700 focus:outline-none"
           >
             <option value="all">All origins</option>
@@ -116,7 +135,7 @@ function ShopContent() {
               max={200000000}
               step={500000}
               value={priceMax}
-              onChange={(e) => setPriceMax(Number(e.target.value))}
+              onChange={(e) => { setPriceMax(Number(e.target.value)); firstPage(); }}
               className="h-1 w-40 accent-gold-500"
             />
           </div>
@@ -124,7 +143,7 @@ function ShopContent() {
 
         <select
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortKey)}
+          onChange={(e) => { setSort(e.target.value as SortKey); firstPage(); }}
           className="border border-ink-200 bg-ivory-50 px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-ink-700 focus:border-gold-500 focus:outline-none"
         >
           <option value="featured">Featured</option>
@@ -136,17 +155,30 @@ function ShopContent() {
       </div>
 
       {/* Products grid */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6 lg:grid-cols-4">
-        {filtered.map((p, i) => (
-          <ProductCard key={p.id} product={p} index={i} />
-        ))}
-      </div>
-
-      {loading && (
-        <div className="py-20 text-center text-ink-400">Loading instruments…</div>
+      <div ref={gridTop} className="scroll-mt-24" />
+      {loading && !data ? (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6 lg:grid-cols-4" aria-busy="true">
+          {Array.from({ length: PAGE_SIZE }, (_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="aspect-[4/5] bg-ink-100" />
+              <div className="mt-3 h-3 w-3/4 bg-ink-100" />
+              <div className="mt-2 h-3 w-1/3 bg-ink-100" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={cn("grid grid-cols-2 gap-4 transition-opacity md:grid-cols-3 md:gap-6 lg:grid-cols-4", loading && "opacity-50")} aria-busy={loading}>
+          {items.map((p, i) => (
+            <ProductCard key={p.id} product={p} index={i} />
+          ))}
+        </div>
       )}
 
-      {!loading && loadError && products.length === 0 && (
+      {data && (
+        <Pager className="mt-10" page={data.page} pages={data.pages} total={data.total} from={items.length ? (data.page - 1) * data.pageSize + 1 : 0} to={(data.page - 1) * data.pageSize + items.length} onPage={goToPage} />
+      )}
+
+      {!loading && loadError && !data && (
         <div className="border border-dashed border-danger/40 py-20 text-center">
           <p className="heading-serif text-xl text-ink-700">We couldn&apos;t load the instruments.</p>
           <p className="mt-2 text-sm text-ink-400">{loadError}</p>
@@ -154,10 +186,10 @@ function ShopContent() {
         </div>
       )}
 
-      {!loading && !loadError && filtered.length === 0 && (
+      {!loading && !loadError && data && total === 0 && (
         <div className="border border-dashed border-ink-200 py-20 text-center">
           <p className="heading-serif text-xl text-ink-500">No instruments match this filter.</p>
-          <button onClick={() => { setOrigin("all"); setPriceMax(2000000); setCategory("all"); }} className="mt-4 btn-ghost">
+          <button onClick={() => { setOrigin("all"); setPriceMax(MAX_PRICE); setCategory("all"); }} className="mt-4 btn-ghost">
             Clear filters
           </button>
         </div>
@@ -181,7 +213,7 @@ function ShopContent() {
                   {(["all", "indian", "western"] as const).map((o) => (
                     <button
                       key={o}
-                      onClick={() => setOrigin(o)}
+                      onClick={() => { setOrigin(o); firstPage(); }}
                       className={cn("border px-4 py-2 text-xs uppercase tracking-widest", origin === o ? "border-gold-500 bg-gold-500 text-ink-900" : "border-ink-200")}
                     >
                       {o}
@@ -191,10 +223,10 @@ function ShopContent() {
               </div>
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink-500">Max price · ₹{(priceMax/100000).toFixed(0)}k</p>
-                <input type="range" min={500000} max={200000000} step={500000} value={priceMax} onChange={(e) => setPriceMax(Number(e.target.value))} className="h-1 w-full accent-gold-500" />
+                <input type="range" min={500000} max={200000000} step={500000} value={priceMax} onChange={(e) => { setPriceMax(Number(e.target.value)); firstPage(); }} className="h-1 w-full accent-gold-500" />
               </div>
               <button onClick={() => setFiltersOpen(false)} className="btn-gold-solid w-full">
-                Show {filtered.length} results
+                Show {total} results
               </button>
             </div>
           </div>

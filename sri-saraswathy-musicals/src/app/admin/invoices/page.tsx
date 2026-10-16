@@ -1,4 +1,6 @@
 "use client";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileText, Search, Globe, Store, Wrench, ExternalLink } from "lucide-react";
@@ -89,6 +91,7 @@ export default function InvoicesLedgerPage() {
           v.id.toLowerCase().includes(q)),
     );
   }, [inScope, source, query]);
+  const pg = usePaged(rows, `${query}|${from}|${to}|${branch}`);
 
   const stats = useMemo(() => {
     const sum = (list: Invoice[]) => list.reduce((n, v) => n + v.total, 0);
@@ -206,7 +209,7 @@ export default function InvoicesLedgerPage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">No invoices yet.</td></tr>
             ) : (
-              rows.map((v) => (
+              pg.items.map((v) => (
                 <tr key={v.id} className="border-b border-ink-100 last:border-0 hover:bg-ivory-100/60">
                   <td className="px-4 py-3 font-semibold text-ink-900">{v.number}{v.reference && <span className="block text-[11px] font-normal text-ink-400">{v.reference}</span>}</td>
                   <td className="px-4 py-3 text-ink-600">{fmtDate(v.date)}</td>
@@ -237,6 +240,7 @@ export default function InvoicesLedgerPage() {
           </tbody>
         </table>
       </div>
+      <Pager className="mt-4" {...pg.pager} />
     </div>
   );
 }

@@ -188,7 +188,7 @@ export function ProductModal({
               <div className="flex flex-wrap items-center gap-3">
                 {photos.map((src, i) => (
                   <div key={i} className="group relative h-20 w-20 overflow-hidden rounded-lg border border-ink-200 bg-ink-100">
-                    <img src={src} alt="" className="h-full w-full object-cover" />
+                    <img src={src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     {i === 0 && <span className="absolute left-1 top-1 rounded bg-ink-900/80 px-1 py-0.5 text-[7px] font-bold uppercase text-ivory-50">Primary</span>}
                     <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-danger text-white shadow">
                       <X className="h-3.5 w-3.5" />

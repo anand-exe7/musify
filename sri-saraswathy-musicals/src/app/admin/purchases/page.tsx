@@ -8,22 +8,27 @@ import { useBranchScope } from "@/lib/store/branch";
 import type { Vendor } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { ProductModal } from "@/components/admin/ProductModal";
+import dynamic from "next/dynamic";
+
+// The product editor only opens on demand, so it loads when first needed.
+const ProductModal = dynamic(() => import("@/components/admin/ProductModal").then((m) => m.ProductModal), { ssr: false });
 import { useAuth } from "@/lib/store/auth";
 import { BRANCH_KEYS, DEFAULT_BRANCH, emptyStockByBranch, branchLabel, variantStockAt } from "@/lib/stock";
 import { computePurchaseTax, checkPurchaseTax, computeInclusiveTax, exclusiveCost, inclusiveCost } from "@/lib/gst/purchaseTax";
 import { PAY_MODES } from "@/components/purchases/types";
 import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
 import { splitByWeights } from "@/lib/vendorPayPlan";
-import { BranchPayTable, clampedPay, type BranchPayRow } from "@/components/purchases/BranchPayTable";
+import { BranchPayTable, enteredPay, overBranches, overMessage, type BranchPayRow } from "@/components/purchases/BranchPayTable";
+import { allocTotal, followTotal, moveAll, putRest, splitEvenly, splitStatus, takeFrom, zeroAlloc } from "@/lib/purchaseSplit";
 
-/** One line in the receive form. The branch quantities always sum to `qty`. */
+/** One line in the receive form. The branch boxes are the truth; `target` is only the total printed on the vendor's bill (if typed). */
 interface Line {
   key: string;
   product: InvProduct;
   variantIndex: number;
-  qty: number;
-  /** Units received into each branch; always sums to `qty`. */
+  /** The vendor bill's total quantity for this line, if the person typed it — only compared with the boxes, never forced onto them. */
+  target: number | null;
+  /** Units received into each branch. */
   alloc: Record<string, number>;
   /** What was typed (paise): with GST included when "Prices include GST" is ticked, else before GST. */
   unitCost: number;
@@ -71,6 +76,8 @@ export default function PurchasesPage() {
   const [sgst, setSgst] = useState(0);
   const [igst, setIgst] = useState(0);
   const [payAlloc, setPayAlloc] = useState<PaymentAlloc>({});
+  /** Branch that new lines start in. */
+  const [newLinesTo, setNewLinesTo] = useState<string>(DEFAULT_BRANCH);
   const [paymentMode, setPaymentMode] = useState<string>("");
   const [notes, setNotes] = useState("");
 
@@ -99,8 +106,8 @@ export default function PurchasesPage() {
         key: crypto.randomUUID(),
         product: p,
         variantIndex: 0,
-        qty: 1,
-        alloc: { ...emptyStockByBranch(), [lockedBranch ?? DEFAULT_BRANCH]: 1 },
+        target: null,
+        alloc: { ...zeroAlloc(), [lockedBranch ?? newLinesTo]: 1 },
         unitCost: p.cost && p.cost > 0 ? (inclusive ? inclusiveCost(p.cost, p.gstRate ?? 0) : p.cost) : 0,
         gst: p.gstRate ?? 0, // the product's own rate, changeable per line
         updatePrice: false,
@@ -120,36 +127,47 @@ export default function PurchasesPage() {
   };
 
   const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
-  /** Re-balance `alloc` so it sums to `qty`: every branch except `keep` stays
-   *  put (trimmed from the last branch back if over), and `keep` takes the rest. */
-  const fitAlloc = (alloc: Record<string, number>, qty: number, keep: string): Record<string, number> => {
-    const next = { ...alloc };
-    let others = BRANCH_KEYS.filter((b) => b !== keep).reduce((n, b) => n + (next[b] || 0), 0);
-    for (const b of [...BRANCH_KEYS].reverse()) {
-      if (others <= qty) break;
-      if (b === keep) continue;
-      const cut = Math.min(next[b] || 0, others - qty);
-      next[b] = (next[b] || 0) - cut;
-      others -= cut;
-    }
-    next[keep] = qty - others;
-    return next;
+  /** Units that will actually be added: whatever is in the branch boxes. */
+  const qtyOf = (l: Line) => allocTotal(l.alloc);
+
+  /** The total box: remembered as the bill's total and compared with the boxes. If all the stock sits in one branch it simply follows. */
+  const setTotal = (l: Line, v: number) => {
+    if (lockedBranch) return patch(l.key, { target: null, alloc: { ...zeroAlloc(), [lockedBranch]: v } });
+    patch(l.key, v > 0 ? { target: v, alloc: followTotal(l.alloc, v, newLinesTo) } : { target: null });
   };
-  const setQty = (l: Line, qty: number) => {
-    const keep = lockedBranch ?? BRANCH_KEYS.find((b) => (l.alloc[b] || 0) > 0) ?? DEFAULT_BRANCH;
-    patch(l.key, { qty, alloc: lockedBranch ? { ...emptyStockByBranch(), [lockedBranch]: qty } : fitAlloc(l.alloc, qty, keep) });
-  };
-  const setBranchQty = (l: Line, branch: string, v: number) => {
-    const value = Math.min(v, l.qty);
-    const keep = BRANCH_KEYS.find((b) => b !== branch) ?? branch;
-    patch(l.key, { alloc: fitAlloc({ ...l.alloc, [branch]: value }, l.qty, keep) });
-  };
+  /** A branch box changes only itself. */
+  const setBranchQty = (l: Line, branch: string, v: number) => patch(l.key, { alloc: { ...l.alloc, [branch]: v } });
 
   const lineError = (l: Line): string | null => {
-    if (l.qty < 1) return "Qty must be ≥ 1";
-    if (BRANCH_KEYS.reduce((n, b) => n + (l.alloc[b] || 0), 0) !== l.qty) return "Split doesn't match qty";
+    const st = splitStatus(l.alloc, l.target);
+    if (st.state === "empty") return "Enter how many each branch gets";
+    if (st.state === "under") return `${st.sum} of ${st.target} placed — ${st.diff} left to place`;
+    if (st.state === "over") return `${st.diff} too many — ${st.sum} placed, the bill says ${st.target}`;
     if (l.updatePrice && l.newPrice <= 0) return "Enter the new selling price";
     return null;
+  };
+
+  /** The red / amber note under a line, with one-click ways to fix the difference (nothing moves until you click). */
+  const splitNote = (l: Line, err: string) => {
+    const st = splitStatus(l.alloc, l.target);
+    const chip = "rounded border border-ink-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-ink-700 hover:border-gold-500";
+    return (
+      <div className={cn("mt-0.5 text-[11px]", st.state === "under" ? "text-amber-700" : "text-danger")}>
+        <p className="font-semibold">{err}</p>
+        {!lockedBranch && st.state === "under" && (
+          <p className="mt-1 flex flex-wrap items-center gap-1 text-ink-500">
+            Put {st.diff} in:
+            {BRANCH_KEYS.map((b) => <button key={b} type="button" onClick={() => patch(l.key, { alloc: putRest(l.alloc, b, st.diff) })} className={chip}>{branchLabel(b)}</button>)}
+          </p>
+        )}
+        {!lockedBranch && st.state === "over" && (
+          <p className="mt-1 flex flex-wrap items-center gap-1 text-ink-500">
+            Take {st.diff} from:
+            {BRANCH_KEYS.filter((b) => (l.alloc[b] || 0) > 0).map((b) => <button key={b} type="button" onClick={() => patch(l.key, { alloc: takeFrom(l.alloc, b, st.diff) })} className={chip}>{branchLabel(b)}</button>)}
+          </p>
+        )}
+      </div>
+    );
   };
 
   /** Current selling price of the chosen variant (paise). */
@@ -172,20 +190,20 @@ export default function PurchasesPage() {
 
   const totals = lines.reduce(
     (t, l) => ({
-      qty: t.qty + l.qty,
+      qty: t.qty + qtyOf(l),
       alloc: Object.fromEntries(BRANCH_KEYS.map((b) => [b, (t.alloc[b] || 0) + (l.alloc[b] || 0)])) as Record<string, number>,
-      cost: t.cost + l.qty * exCost(l),
+      cost: t.cost + qtyOf(l) * exCost(l),
     }),
     { qty: 0, alloc: emptyStockByBranch(), cost: 0 },
   );
 
   // GST from each line's rate; a figure typed over it wins.
-  const taxLines = lines.map((l) => ({ quantity: l.qty, unitCost: l.unitCost, gst: l.gst }));
+  const taxLines = lines.map((l) => ({ quantity: qtyOf(l), unitCost: l.unitCost, gst: l.gst }));
   const autoTax = inclusive ? computeInclusiveTax(taxLines, interState) : computePurchaseTax(taxLines, interState);
   const taxNow = taxEdited ? { cgst, sgst, igst } : autoTax;
   const tax = taxNow.cgst + taxNow.sgst + taxNow.igst;
   const grandTotal = totals.cost + tax;
-  const taxProblem = lines.length > 0 ? checkPurchaseTax(lines.map((l) => ({ quantity: l.qty, unitCost: exCost(l), gst: l.gst })), taxNow) : null;
+  const taxProblem = lines.length > 0 ? checkPurchaseTax(lines.map((l) => ({ quantity: qtyOf(l), unitCost: exCost(l), gst: l.gst })), taxNow) : null;
 
   // Each branch pays its own part of the bill: its share of the goods it takes, with the GST on top.
   const receiving = BRANCH_KEYS.filter((b) => (totals.alloc[b] || 0) > 0);
@@ -195,10 +213,11 @@ export default function PurchasesPage() {
     Object.values(goodsBy).some((g) => g > 0) ? goodsBy : Object.fromEntries(receiving.map((b) => [b, totals.alloc[b] || 0])),
   );
   const payRows: BranchPayRow[] = receiving.map((b) => ({ branch: b, qty: totals.alloc[b] || 0, value: branchShare[b] || 0, max: branchShare[b] || 0 }));
-  const paidSplit = clampedPay(payRows, payAlloc);
+  const paidSplit = enteredPay(payRows, payAlloc);
+  const payOver = overBranches(payRows, paidSplit);
   const amountPaid = sumAlloc(paidSplit);
   const balance = Math.max(0, grandTotal - amountPaid);
-  const canSubmit = !!vendor && lines.length > 0 && lines.every((l) => !lineError(l)) && !saving && !taxProblem;
+  const canSubmit = !!vendor && lines.length > 0 && lines.every((l) => !lineError(l)) && !saving && !taxProblem && payOver.length === 0;
 
   const resetForm = () => {
     setLines([]);
@@ -227,6 +246,7 @@ export default function PurchasesPage() {
     if (lines.length === 0) return notify("Add at least one product.");
     if (lines.some(lineError)) return notify("Fix the highlighted lines first.");
     if (taxProblem) return notify(taxProblem);
+    if (payOver.length > 0) return notify(overMessage(payOver) ?? "A branch is paying more than its share.");
     setSaving(true);
     try {
       const batchId = (batchRef.current ??= crypto.randomUUID());
@@ -253,7 +273,7 @@ export default function PurchasesPage() {
             variantIndex: l.variantIndex,
             unitCost: exCost(l), // stored before GST
             gst: l.gst,
-            quantity: l.qty,
+            quantity: qtyOf(l),
             ...(isAdmin && l.updatePrice && l.newPrice > 0 ? { newPrice: l.newPrice } : {}),
             allocations: BRANCH_KEYS.filter((b) => (l.alloc[b] || 0) > 0).map((b) => ({ branch: b, quantity: l.alloc[b] })),
           })),
@@ -378,6 +398,15 @@ export default function PurchasesPage() {
           </div>
 
           {/* Lines */}
+          {!lockedBranch && (
+            <label className="flex flex-wrap items-center gap-2 text-xs text-ink-600">
+              New products start in
+              <select value={newLinesTo} onChange={(e) => setNewLinesTo(e.target.value)} className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-xs focus:border-gold-500 focus:outline-none">
+                {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+              </select>
+              <span className="text-ink-400">— then type how many each branch gets. The boxes never move on their own.</span>
+            </label>
+          )}
           <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white">
             <table className="w-full min-w-[900px] text-sm">
               <thead>
@@ -387,7 +416,7 @@ export default function PurchasesPage() {
                   <th>Variant</th>
                   <th className="w-28">{inclusive ? "Cost incl. GST (₹)" : "Cost excl. GST (₹)"}</th>
                   <th className="w-20">GST %</th>
-                  <th className="w-20 text-right pr-2">Total qty</th>
+                  <th className="w-24 text-right pr-2">Bill total qty <span className="font-normal normal-case tracking-normal text-ink-300">(optional)</span></th>
                   {BRANCH_KEYS.map((b) => <th key={b} className="w-20 text-right pr-2">{branchLabel(b)}</th>)}
                   <th className="w-24 text-right pr-2">Line total</th>
                   <th className="w-10" />
@@ -397,11 +426,11 @@ export default function PurchasesPage() {
                 {lines.map((l, i) => {
                   const err = lineError(l);
                   return (
-                    <tr key={l.key} className={cn("align-middle", err && "bg-danger/5")}>
+                    <tr key={l.key} className={cn("align-middle", err && (splitStatus(l.alloc, l.target).state === "under" ? "bg-amber-50" : "bg-danger/5"))}>
                       <td className="px-3 py-2 text-xs text-ink-400">{i + 1}</td>
                       <td className="py-2 pr-2">
                         <p className="font-medium text-ink-900">{l.product.name}</p>
-                        {err && <p className="text-[11px] text-danger">{err}</p>}
+                        {err && splitNote(l, err)}
                         {(() => {
                           const m = marginNote(l);
                           return m && <p className={cn("text-[11px]", m.bad ? "text-danger" : "text-amber-600")}>{m.text}</p>;
@@ -429,11 +458,29 @@ export default function PurchasesPage() {
                           {[...new Set([...GST_RATES, l.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                         </select>
                       </td>
-                      <td className="pr-2"><input type="number" min={1} step={1} value={l.qty || ""} onChange={(e) => setQty(l, toInt(e.target.value))} className={num} /></td>
+                      <td className="pr-2">
+                        <input type="number" min={0} step={1} value={(l.target ?? qtyOf(l)) || ""} onChange={(e) => setTotal(l, toInt(e.target.value))} title="Total on the vendor's bill (optional) — the branch boxes are compared with it" className={cn(num, l.target !== null && "border-gold-400")} />
+                        {!lockedBranch && (
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const total = l.target ?? qtyOf(l);
+                              patch(l.key, { alloc: v === "even" ? splitEvenly(total) : moveAll(total, v) });
+                            }}
+                            aria-label="Quick split"
+                            className="mt-1 w-full rounded border border-ink-100 bg-transparent px-1 py-0.5 text-[10px] text-ink-500 focus:outline-none"
+                          >
+                            <option value="">Quick split…</option>
+                            {BRANCH_KEYS.map((b) => <option key={b} value={b}>All to {branchLabel(b)}</option>)}
+                            <option value="even">Split evenly</option>
+                          </select>
+                        )}
+                      </td>
                       {BRANCH_KEYS.map((b) => (
                         <td key={b} className="pr-2"><input type="number" min={0} step={1} value={l.alloc[b] || 0} disabled={!!lockedBranch} onChange={(e) => setBranchQty(l, b, toInt(e.target.value))} className={num} /></td>
                       ))}
-                      <td className="pr-2 text-right tabular-nums text-ink-700">{formatINR(l.qty * l.unitCost)}</td>
+                      <td className="pr-2 text-right tabular-nums text-ink-700">{formatINR(qtyOf(l) * l.unitCost)}</td>
                       <td className="pr-2">
                         <button onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} aria-label="Remove line" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
                           <Trash2 className="h-4 w-4" />
@@ -452,7 +499,7 @@ export default function PurchasesPage() {
                     <td colSpan={5} className="px-3 py-3 text-right uppercase tracking-wider text-ink-500">Totals</td>
                     <td className="pr-2 text-right tabular-nums">{totals.qty}</td>
                     {BRANCH_KEYS.map((b) => <td key={b} className="pr-2 text-right tabular-nums">{totals.alloc[b]}</td>)}
-                    <td className="pr-2 text-right tabular-nums">{formatINR(lines.reduce((n, l) => n + l.qty * l.unitCost, 0))}</td>
+                    <td className="pr-2 text-right tabular-nums">{formatINR(lines.reduce((n, l) => n + qtyOf(l) * l.unitCost, 0))}</td>
                     <td />
                   </tr>
                 </tfoot>
@@ -521,7 +568,9 @@ export default function PurchasesPage() {
 
           <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-4">
             <p className="text-xs text-ink-500">
-              {lockedBranch ? `Stock is received into ${branchLabel(lockedBranch)}.` : "The branch quantities must add up to the total qty."}
+              {payOver.length > 0
+                ? <span className="font-semibold text-danger">{overMessage(payOver)}</span>
+                : lockedBranch ? `Stock is received into ${branchLabel(lockedBranch)}.` : "Type how many each branch gets. If you also type the vendor bill's total, any difference is marked in red."}
             </p>
             <button onClick={submit} disabled={!canSubmit} className="flex items-center gap-2 rounded-xl bg-ink-900 px-5 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-50">
               <PackagePlus className="h-4 w-4" /> {saving ? "Saving…" : "Save Purchase"}

@@ -1,4 +1,6 @@
 "use client";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileSignature, Plus, Search } from "lucide-react";
@@ -36,6 +38,7 @@ export default function QuotationsPage() {
     if (!s) return list;
     return list.filter((q) => q.number.toLowerCase().includes(s) || q.customer.toLowerCase().includes(s) || (q.customerPhone ?? "").includes(s));
   }, [list, query]);
+  const pg = usePaged(rows, query);
 
   return (
     <div className="space-y-6 p-5 md:p-8">
@@ -73,7 +76,7 @@ export default function QuotationsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((q) => (
+            {pg.items.map((q) => (
               <tr key={q.id} className="border-t border-ink-100">
                 <td className="px-4 py-3 font-semibold text-ink-900">{q.number}</td>
                 <td className="px-4 py-3 text-ink-600">{fmtDate(q.date)}</td>
@@ -90,6 +93,7 @@ export default function QuotationsPage() {
           </tbody>
         </table>
       </div>
+      <Pager className="mt-4" {...pg.pager} />
     </div>
   );
 }

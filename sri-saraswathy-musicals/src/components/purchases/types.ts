@@ -1,3 +1,5 @@
+import { orderedBranches } from "@/lib/billShares";
+
 /** A purchase as returned by `/api/purchases` (header + its lines + later part-payments). */
 export interface PurchaseRow {
   id: string;
@@ -33,5 +35,6 @@ export const PAY_MODES = ["", "CASH", "UPI", "CARD", "BANK", "CREDIT", "OTHER"] 
 /** Branches a purchase put stock into (payments must come from one of them). */
 export function receivingBranches(p: Pick<PurchaseRow, "lines" | "openingBranch">): string[] {
   if (p.openingBranch) return [p.openingBranch];
-  return [...new Set(p.lines.map((l) => l.branch))];
+  const seen = new Set(p.lines.map((l) => l.branch));
+  return orderedBranches(seen); // always in the shop's fixed branch order, so shares round the same way everywhere
 }

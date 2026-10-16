@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/store/auth";
 import { useGst, IN_STATES } from "@/lib/store/gst";
 import { useQuote } from "@/lib/client/quote";
 import { useShallow } from "zustand/react/shallow";
-import { useProducts } from "@/lib/client/catalog";
+import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
@@ -59,8 +59,7 @@ export default function CheckoutPage() {
   const gstLabels = useGst(useShallow((s) => ({ cgst: s.cgstLabel, sgst: s.sgstLabel, igst: s.igstLabel })));
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const { products, loading: productsLoading } = useProducts();
-  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const { byId, loading: productsLoading } = useProductsByIds(items.map((i) => i.productId));
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
   const [branchPick, setBranch] = useState<string | null>(null);

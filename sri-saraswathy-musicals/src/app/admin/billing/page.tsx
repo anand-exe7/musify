@@ -707,7 +707,7 @@ export default function BillingPage() {
                       )}
                     >
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-100">
-                        {p.photo && <img src={p.photo} alt="" className="h-full w-full object-cover" />}
+                        {p.photo && <img src={p.photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
                         {inOrder > 0 && (
                           <span className="absolute -right-1 -top-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-ink-900 shadow">
                             {inOrder}

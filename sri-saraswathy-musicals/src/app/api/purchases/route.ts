@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 
 /** List purchase headers. Branch staff only see purchases whose lines touched
  *  their branch. */
-export function GET() {
+export function GET(request: NextRequest) {
   return handle("staff", async ({ access }) => {
-    const list = await getPurchases();
+    const list = await getPurchases({ vendorId: request.nextUrl.searchParams.get("vendor") || undefined });
     if (access === "all") return ok(list);
     const visible = await purchaseIdsInBranch(access);
     return ok(list.filter((p) => visible.has(p.id)).map((p) => scopePurchaseLines(p, access)));

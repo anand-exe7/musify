@@ -30,8 +30,9 @@ export function BranchPayTable({
   if (rows.length === 0) return <p className="text-xs text-ink-400">Add products first, so we know which branches are receiving stock.</p>;
   const showQty = rows.some((r) => r.qty !== undefined);
   const showPaid = rows.some((r) => (r.paid ?? 0) > 0);
-  const amt = (r: BranchPayRow) => Math.min(value[r.branch] || 0, r.max);
-  const set = (r: BranchPayRow, p: number) => onChange({ ...value, [r.branch]: Math.max(0, Math.min(p, r.max)) });
+  // What was typed is kept exactly as typed; a branch over its limit is marked red and blocks saving (see `overBranches`).
+  const amt = (r: BranchPayRow) => Math.max(0, value[r.branch] || 0);
+  const set = (r: BranchPayRow, p: number) => onChange({ ...value, [r.branch]: Math.max(0, p) });
   const input = "w-full min-w-[6rem] rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-right text-sm tabular-nums focus:border-gold-500 focus:outline-none disabled:opacity-60";
   const paying = rows.reduce((n, r) => n + amt(r), 0);
   const share = rows.reduce((n, r) => n + r.value, 0);
@@ -54,6 +55,7 @@ export function BranchPayTable({
           {rows.map((r) => {
             const mine = amt(r);
             const rest = Math.max(0, r.value - (r.paid ?? 0) - mine);
+            const extra = mine - r.max;
             return (
               <tr key={r.branch}>
                 <td className="px-3 py-2 font-medium text-ink-900">{branchLabel(r.branch)}</td>
@@ -61,10 +63,14 @@ export function BranchPayTable({
                 <td className="text-right tabular-nums text-ink-700">{formatINR(r.value)}</td>
                 {showPaid && <td className="text-right tabular-nums text-ink-500">{formatINR(r.paid ?? 0)}</td>}
                 <td className="px-2">
-                  <MoneyInput value={mine} onChange={(p) => set(r, p)} disabled={disabled || r.max <= 0} className={input} placeholder="0" />
-                  <button type="button" disabled={disabled || r.max <= 0} onClick={() => set(r, r.max)} className="mt-0.5 block w-full text-right text-[10px] font-semibold text-gold-600 hover:underline disabled:opacity-40">
-                    {r.max > 0 ? `Max ${formatINR(r.max)}` : "Nothing to pay"}
-                  </button>
+                  <MoneyInput value={mine} onChange={(p) => set(r, p)} disabled={disabled} className={cn(input, extra > 0 && "border-danger bg-danger/5 text-danger")} placeholder="0" />
+                  {extra > 0 ? (
+                    <p className="mt-0.5 text-right text-[10px] font-semibold text-danger">{formatINR(extra)} more than its share</p>
+                  ) : (
+                    <button type="button" disabled={disabled || r.max <= 0} onClick={() => set(r, r.max)} className="mt-0.5 block w-full text-right text-[10px] font-semibold text-gold-600 hover:underline disabled:opacity-40">
+                      {r.max > 0 ? `Pay full ${formatINR(r.max)}` : "Nothing to pay"}
+                    </button>
+                  )}
                 </td>
                 <td className={cn("pr-3 text-right tabular-nums", rest > 0 ? "text-danger" : "text-success")}>{formatINR(rest)}</td>
               </tr>
@@ -86,8 +92,20 @@ export function BranchPayTable({
   );
 }
 
-/** What the table has been told to pay, each branch held to its own limit. */
-export function clampedPay(rows: BranchPayRow[], value: PaymentAlloc): PaymentAlloc {
-  return Object.fromEntries(rows.map((r) => [r.branch, Math.min(Math.max(0, value[r.branch] || 0), r.max)]));
+/** What was entered, per branch (never below 0). */
+export function enteredPay(rows: BranchPayRow[], value: PaymentAlloc): PaymentAlloc {
+  return Object.fromEntries(rows.map((r) => [r.branch, Math.max(0, value[r.branch] || 0)]));
 }
-export const totalPay = (rows: BranchPayRow[], value: PaymentAlloc): number => sumAlloc(clampedPay(rows, value));
+export const totalPay = (rows: BranchPayRow[], value: PaymentAlloc): number => sumAlloc(enteredPay(rows, value));
+
+/** Branches paying more than their limit — saving must wait until these are fixed. */
+export function overBranches(rows: BranchPayRow[], value: PaymentAlloc): { branch: string; extra: number; max: number }[] {
+  return rows.flatMap((r) => {
+    const extra = Math.max(0, (value[r.branch] || 0)) - r.max;
+    return extra > 0 ? [{ branch: r.branch, extra, max: r.max }] : [];
+  });
+}
+
+/** The one-line reason shown next to a disabled Save. */
+export const overMessage = (o: { branch: string; extra: number; max: number }[]): string | null =>
+  o.length === 0 ? null : `${o.map((x) => `${branchLabel(x.branch)} is ${formatINR(x.extra)} over its share (${formatINR(x.max)})`).join("; ")}. Lower it to continue.`;

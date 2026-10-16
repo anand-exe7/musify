@@ -1,4 +1,6 @@
 "use client";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePOS } from "@/lib/store/pos";
@@ -63,6 +65,7 @@ export default function OrdersPage() {
     });
     return list;
   }, [sales, type, date, custom, query, sort]);
+  const pg = usePaged(rows, `${query}|${sort}`);
 
   const exportCSV = () => {
     // Money columns are exported in rupees (paise ÷ 100) at 2 decimals.
@@ -154,7 +157,7 @@ export default function OrdersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-50">
-            {rows.map((b) => (
+            {pg.items.map((b) => (
               <tr key={b.id} className="text-ink-800">
                 <td className="px-5 py-4"><span className="inline-flex items-center gap-1 font-semibold text-ink-900">{b.id.toUpperCase()}</span></td>
                 <td className="font-medium">{b.customerName}</td>
@@ -203,6 +206,7 @@ export default function OrdersPage() {
           </tbody>
         </table>
       </div>
+      <Pager className="mt-4" {...pg.pager} />
     </div>
   );
 }

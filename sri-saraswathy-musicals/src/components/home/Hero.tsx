@@ -11,14 +11,14 @@ import {
 } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { useRef } from "react";
-import { useProducts } from "@/lib/client/catalog";
+import { useFeatured } from "@/lib/client/catalog";
 import { formatINR } from "@/lib/utils";
 
 export function Hero() {
   const sectionRef = useRef<HTMLElement | null>(null);
   const prefersReduced = useReducedMotion();
-  const { products } = useProducts();
-  const featured = products.find((p) => p.featured) ?? products[0];
+  const { products } = useFeatured();
+  const featured = products[0];
 
   const { scrollYProgress } = useScroll({
     target: sectionRef,

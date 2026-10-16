@@ -1,4 +1,6 @@
 "use client";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import {
   MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox, Plus, Download
@@ -88,6 +90,7 @@ export default function InquiriesPage() {
       .filter((i) => !q || i.name.toLowerCase().includes(q) || i.phone.includes(query.trim()) || i.topic.toLowerCase().includes(q) || (i.productInterest || "").toLowerCase().includes(q) || i.message.toLowerCase().includes(q))
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   }, [scopedInquiries, statusF, query]);
+  const pg = usePaged(rows, `${query}|${statusF}|${branch}`);
 
   const contact = (i: Inquiry) => {
     if (i.status === "new") updateInquiry(i.id, { status: "contacted" });
@@ -236,7 +239,7 @@ export default function InquiriesPage() {
 
       {/* List */}
       <div className="space-y-3">
-        {rows.map((i) => {
+        {pg.items.map((i) => {
           const meta = INQUIRY_STATUS_META[i.status];
           return (
             <div key={i.id} className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
@@ -286,6 +289,7 @@ export default function InquiriesPage() {
           </div>
         )}
       </div>
+      <Pager className="mt-4" {...pg.pager} />
     </div>
   );
 }

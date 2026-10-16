@@ -16,13 +16,14 @@
  *      from the lines must match them). We store what the client sent so
  *      a non-GST or discounted purchase can still carry a tax figure.
  */
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { purchases, stockInward, vendorPayments, vendors } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { genDocId } from "@/lib/ids";
 import { formatINR } from "@/lib/utils";
 import { checkPurchaseTax } from "@/lib/gst/purchaseTax";
+import { aggregateLines, shareFromAggregates } from "@/lib/billShares";
 import { BRANCH_KEYS, isBranch, type Branch, branchLabel } from "@/lib/stock";
 import { setVariantPrice } from "./stockOps";
 import { createInward, validateInwardBatch, type InwardBatchLine } from "./stock";
@@ -144,16 +145,24 @@ function purchasedAt(p: { purchaseDate: string; createdAt: string }): string {
 
 /** `amountPaid` is what was paid at purchase time; later part-payments live in
  *  vendor_payments and are surfaced here as `paymentsTotal`. Paid = both. */
-export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal: number; lines: PurchaseLineRecord[]; branchOwed: Record<string, number>; paidLater: Record<string, number> })[]> {
-  const list = rows<PurchaseRecord>(await db.select().from(purchases).orderBy(desc(purchases.createdAt)));
+export async function getPurchases(opts: { ids?: string[]; vendorId?: string } = {}): Promise<(PurchaseRecord & { paymentsTotal: number; lines: PurchaseLineRecord[]; branchOwed: Record<string, number>; paidLater: Record<string, number> })[]> {
+  const conds: SQL[] = [];
+  if (opts.ids) conds.push(inArray(purchases.id, opts.ids));
+  if (opts.vendorId) conds.push(eq(purchases.vendorId, opts.vendorId));
+  if (opts.ids && opts.ids.length === 0) return [];
+  const list = rows<PurchaseRecord>(await db.select().from(purchases).where(conds.length ? and(...conds) : undefined).orderBy(desc(purchases.createdAt)));
+  // With a filter, only that slice of payments and lines is read (not the whole table).
+  const slice = conds.length ? list.map((p) => p.id) : null;
+  if (slice && slice.length === 0) return [];
+  const payWhere = (extra?: SQL) => and(sql`${vendorPayments.purchaseId} IS NOT NULL`, slice ? inArray(vendorPayments.purchaseId, slice) : undefined, extra);
   const sums = await db
     .select({ purchaseId: vendorPayments.purchaseId, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
     .from(vendorPayments)
-    .where(sql`${vendorPayments.purchaseId} IS NOT NULL`)
+    .where(payWhere())
     .groupBy(vendorPayments.purchaseId);
   const byId = new Map(sums.map((r) => [r.purchaseId as string, Number(r.sum)]));
   const lineRows = rows<PurchaseLineRecord>(
-    await db.select().from(stockInward).where(sql`${stockInward.purchaseId} IS NOT NULL`).orderBy(stockInward.inwardAt),
+    await db.select().from(stockInward).where(and(sql`${stockInward.purchaseId} IS NOT NULL`, slice ? inArray(stockInward.purchaseId, slice) : undefined)).orderBy(stockInward.inwardAt),
   );
   const linesById = new Map<string, PurchaseLineRecord[]>();
   for (const l of lineRows) {
@@ -164,7 +173,7 @@ export async function getPurchases(): Promise<(PurchaseRecord & { paymentsTotal:
   const byBranch = await db
     .select({ purchaseId: vendorPayments.purchaseId, branch: vendorPayments.branch, sum: sql<number>`COALESCE(SUM(${vendorPayments.amount}), 0)` })
     .from(vendorPayments)
-    .where(sql`${vendorPayments.purchaseId} IS NOT NULL`)
+    .where(payWhere())
     .groupBy(vendorPayments.purchaseId, vendorPayments.branch);
   const laterByBill = new Map<string, Record<string, number>>();
   for (const r of byBranch) {
@@ -205,23 +214,7 @@ export function branchOwedOn(
  * the screens, the outstandings and the payment checks all share.
  */
 export function shareByBranch(amount: number, lines: { branch: string; quantity: number; unitCost: number }[]): Record<string, number> {
-  const goods: Record<string, number> = {};
-  const qty: Record<string, number> = {};
-  for (const l of lines) {
-    goods[l.branch] = (goods[l.branch] ?? 0) + l.quantity * l.unitCost;
-    qty[l.branch] = (qty[l.branch] ?? 0) + l.quantity;
-  }
-  const weights = Object.values(goods).some((g) => g > 0) ? goods : qty;
-  const used = Object.keys(weights).filter((b) => weights[b] > 0);
-  const sum = used.reduce((n, b) => n + weights[b], 0);
-  const out: Record<string, number> = Object.fromEntries(Object.keys(weights).map((b) => [b, 0]));
-  let left = amount;
-  used.forEach((b, i) => {
-    const part = i === used.length - 1 ? left : Math.round((amount * weights[b]) / sum);
-    out[b] = part;
-    left -= part;
-  });
-  return out;
+  return shareFromAggregates(amount, aggregateLines(lines));
 }
 
 /**

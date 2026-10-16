@@ -3,7 +3,7 @@ import { useState, use, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { notFound } from "next/navigation";
-import { useProducts } from "@/lib/client/catalog";
+import { useProductBySlug, useProductPage } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { useCart } from "@/lib/store/cart";
@@ -14,8 +14,7 @@ import { Minus, Plus, ChevronRight, Truck, Award, Store, ShoppingBag, Check, X, 
 
 export default function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const { products, loading, error, refresh } = useProducts();
-  const product = products.find((p) => p.slug === slug);
+  const { product, loading, notFound: missing, error, refresh } = useProductBySlug(slug);
 
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState<"description" | "specs" | "shipping">("description");
@@ -52,9 +51,9 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   }, [product, activeVariant]);
   const gallery = (shown?.photos && shown.photos.length > 0 ? shown.photos : [shown?.photo].filter(Boolean) as string[]).slice(0, 4);
 
-  const related = product
-    ? products.filter((p) => p.category === product.category && p.id !== product.id).slice(0, 4)
-    : [];
+  // A few more from the same category (one extra in case this product is among them).
+  const { data: relatedPage } = useProductPage({ category: product?.category ?? "", origin: "all", maxPrice: 0, sort: "featured", page: 1, pageSize: 5 }, { skip: !product });
+  const related = product && relatedPage ? relatedPage.items.filter((p) => p.id !== product.id).slice(0, 4) : [];
   const specRows = product ? product.specs.filter((s) => s.label !== "Warranty") : [];
 
   // Auto-advance the gallery. Re-scheduling on activePhoto means a manual
@@ -85,7 +84,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
       </div>
     );
   }
-  if (!product) notFound();
+  if (!product || missing) notFound();
 
   const handleAdd = () => {
     if (!activeVariant) return;

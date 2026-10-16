@@ -1,15 +1,20 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, badRequest, readJson } from "@/lib/api/http";
-import { getPurchase, updatePurchase, deleteOpeningBalance, purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
+import { getBillDetail } from "@/lib/db/queries/purchaseBills";
+import type { Branch } from "@/lib/stock";
+import { updatePurchase, deleteOpeningBalance, purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
 
 export const dynamic = "force-dynamic";
 
+/** One bill in full: its items, what each branch has to pay, and its payment history. */
 export function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return handle("staff", async ({ access }) => {
     const { id } = await params;
-    if (!(await purchaseVisibleTo(id, access === "all" ? null : access))) return notFound("Purchase not found");
-    const rec = await getPurchase(id);
-    return rec ? ok(scopePurchaseLines(rec, access === "all" ? null : access)) : notFound("Purchase not found");
+    const scope = access === "all" ? null : (access as Branch[]);
+    if (!(await purchaseVisibleTo(id, scope))) return notFound("Purchase not found");
+    const d = await getBillDetail(id, scope);
+    if (!d) return notFound("Purchase not found");
+    return ok({ ...scopePurchaseLines(d.purchase, scope), branches: d.branches, payments: d.payments });
   });
 }
 

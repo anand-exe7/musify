@@ -2,13 +2,13 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ProductImage } from "@/components/ui/ProductImage";
-import { useProducts } from "@/lib/client/catalog";
+import { useFeatured } from "@/lib/client/catalog";
 import { formatINR } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
 
 export function Featured() {
-  const { products } = useProducts();
-  const items = products.filter((p) => p.featured).slice(0, 4);
+  const { products } = useFeatured();
+  const items = products.slice(0, 4);
 
   return (
     <section id="featured" className="bg-ink-900 py-20 text-ivory-100 md:py-28">

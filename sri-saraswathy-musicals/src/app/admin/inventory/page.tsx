@@ -1,8 +1,15 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { usePOS, productStock, productStockAt, stockState, variantStock, type InvProduct } from "@/lib/store/pos";
-import { ProductModal } from "@/components/admin/ProductModal";
+import { Pager } from "@/components/ui/Pager";
+import { slicePage } from "@/lib/paginate";
+
+// The product editor is big and only opens on demand, so it loads when first needed.
+const ProductModal = dynamic(() => import("@/components/admin/ProductModal").then((m) => m.ProductModal), { ssr: false });
+
+const PAGE_SIZES = [25, 50, 100];
 import { useVendors } from "@/lib/store/vendors";
 import { useAllSales } from "@/lib/client/sales";
 import { downloadCsv, stamp } from "@/lib/csv";
@@ -27,6 +34,8 @@ export default function InventoryPage() {
   const [dept, setDept] = useState("all");
   const [sort, setSort] = useState<"name" | "price" | "stock">("name");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [editing, setEditing] = useState<InvProduct | null>(null);
   const [adding, setAdding] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -78,6 +87,10 @@ export default function InventoryPage() {
     });
     return list;
   }, [invProducts, statusFilter, category, dept, sort, query]);
+
+  // Any change to the filters or the page size starts again from the first page.
+  useEffect(() => { setPage(1); }, [statusFilter, category, dept, sort, query, pageSize]);
+  const shown = slicePage(filtered, page, pageSize);
 
   const vendorName = (id: string) => vendors.find((v) => v.id === id)?.name ?? id;
   const exportStock = () => downloadCsv(`stock-inventory-${stamp()}`, stockRows(filtered));
@@ -205,14 +218,14 @@ export default function InventoryPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => {
+            {shown.items.map((p) => {
               const st = stockState(p);
               const meta = STATUS_META[st];
               return (
                 <tr key={p.id} className="border-b border-ink-100 last:border-0 hover:bg-ink-900/[0.02]">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-ink-100">{p.photo && <img src={p.photo} alt="" className="h-full w-full object-cover" />}</div>
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-ink-100">{p.photo && <img src={p.photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}</div>
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-ink-900">{p.name}</p>
                         {!p.active && <span className="rounded bg-ink-900/85 px-1.5 py-0.5 text-[9px] font-bold uppercase text-ivory-50">Hidden</span>}
@@ -220,7 +233,7 @@ export default function InventoryPage() {
                           <div className="mt-1 flex flex-wrap items-center gap-1" title="Variant photos">
                             {p.variants.filter((v) => v.photo).map((v, i) => (
                               <span key={v.id ?? i} className="flex items-center gap-1 rounded-full border border-ink-100 bg-white py-0.5 pl-0.5 pr-2 text-[10px] text-ink-600">
-                                <img src={v.photo ?? undefined} alt="" className="h-5 w-5 rounded-full object-cover" />
+                                <img src={v.photo ?? undefined} alt="" loading="lazy" decoding="async" className="h-5 w-5 rounded-full object-cover" />
                                 {v.attr}{v.finish ? ` · ${v.finish}` : ""}
                               </span>
                             ))}
@@ -252,6 +265,7 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
+      <Pager className="mt-4" page={shown.page} pages={shown.pages} total={shown.total} from={shown.from} to={shown.to} onPage={setPage} pageSize={pageSize} pageSizes={PAGE_SIZES} onPageSize={setPageSize} />
     </div>
   );
 }

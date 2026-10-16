@@ -1,4 +1,6 @@
 "use client";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -100,6 +102,7 @@ export default function ServicePage() {
     });
     return list;
   }, [tickets, statusF, branchF, query, sort]);
+  const pg = usePaged(rows, `${query}|${sort}|${statusF}|${branchF}`);
 
   const kpi = useMemo(() => {
     const active = tickets.filter((t) => !isClosed(t.status));
@@ -261,7 +264,7 @@ export default function ServicePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-50">
-                {rows.map((t) => {
+                {pg.items.map((t) => {
                   const lv = alertLevel(t);
                   const d = daysUntil(t.deadline);
                   const sm = statusMeta(t.status);
@@ -313,6 +316,7 @@ export default function ServicePage() {
               </tbody>
             </table>
           </div>
+          <Pager className="mt-4" {...pg.pager} />
         </>
       ) : (
         <ReportTab tickets={tickets} />

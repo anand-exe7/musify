@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
-import { selectProduct, selectProducts, insertVariants } from "./variants";
+import { selectProduct, selectProducts, insertVariants, attachVariants } from "./variants";
 import { BRANCH_KEYS, variantStock, variantStockAt } from "@/lib/stock";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { HttpError } from "@/lib/api/errors";
@@ -139,6 +139,73 @@ export async function getPricingCatalog(): Promise<PricingProduct[]> {
 /** Only products the storefront should show (the `active` kill switch). */
 export async function getStorefrontProducts(): Promise<Product[]> {
   return (await selectProducts(eq(products.active, true))).map(toProduct);
+}
+
+/* ─────────────────────────  One page of the shop  ───────────────────────── */
+
+export const SHOP_SORTS = ["featured", "price-asc", "price-desc", "name", "rating"] as const;
+export type ShopSort = (typeof SHOP_SORTS)[number];
+
+export interface ShopPageQuery {
+  category?: string;
+  origin?: string;
+  /** Highest price to show, in paise. */
+  maxPrice?: number;
+  /** Words to look for in the name, brand or tagline. */
+  q?: string;
+  sort?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ShopPage {
+  items: Product[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pages: number;
+}
+
+export const MAX_SHOP_PAGE_SIZE = 60;
+
+/**
+ * One page of the storefront: filtered and sorted in the database, so a visitor only ever
+ * downloads the products they are looking at. A page past the end is clamped to the last.
+ */
+export async function getStorefrontPage(q: ShopPageQuery = {}): Promise<ShopPage> {
+  const pageSize = Math.min(MAX_SHOP_PAGE_SIZE, Math.max(1, Math.floor(Number(q.pageSize)) || 12));
+  const conds = [eq(products.active, true)];
+  if (q.category && q.category !== "all") conds.push(eq(products.category, q.category));
+  if (q.origin && q.origin !== "all") conds.push(eq(products.origin, q.origin));
+  if (Number.isFinite(q.maxPrice) && (q.maxPrice as number) > 0) conds.push(lte(products.price, Math.floor(q.maxPrice as number)));
+  const term = (q.q ?? "").trim().slice(0, 80);
+  if (term) {
+    const like = `%${term.replace(/[\\%_]/g, "\\$&")}%`; // % and _ in what was typed are searched for literally
+    conds.push(or(ilike(products.name, like), ilike(products.brand, like), ilike(products.tagline, like), ilike(products.category, like)) as ReturnType<typeof eq>);
+  }
+  const where = and(...conds);
+
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(where);
+  const total = Number(n);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, Math.floor(Number(q.page)) || 1), pages);
+
+  const order =
+    q.sort === "price-asc" ? [asc(products.price)]
+    : q.sort === "price-desc" ? [desc(products.price)]
+    : q.sort === "name" ? [asc(products.name)]
+    : q.sort === "rating" ? [desc(products.rating), asc(products.name)]
+    : [desc(products.featured), asc(products.name)];
+
+  const rows = await db.select().from(products).where(where).orderBy(...order, asc(products.id)).limit(pageSize).offset((page - 1) * pageSize);
+  return { items: (await attachVariants(rows)).map(toProduct), total, page, pageSize, pages };
+}
+
+/** The active products with these ids (a cart, a wishlist). Unknown or hidden ids are simply absent. */
+export async function getStorefrontProductsByIds(ids: string[]): Promise<Product[]> {
+  const list = [...new Set(ids.filter((i) => typeof i === "string" && i))].slice(0, MAX_SHOP_PAGE_SIZE * 2);
+  if (list.length === 0) return [];
+  return (await selectProducts(and(inArray(products.id, list), eq(products.active, true)))).map(toProduct);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | undefined> {

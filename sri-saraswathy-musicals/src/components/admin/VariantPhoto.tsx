@@ -28,7 +28,7 @@ export function VariantPhoto({
     return (
       <div className="flex items-center gap-2">
         <a href={value} target="_blank" rel="noreferrer" title="Open full size" className="block h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-ink-200 bg-ink-100">
-          <img src={value} alt="Variant photo" className="h-full w-full object-cover" />
+          <img src={value} alt="Variant photo" loading="lazy" decoding="async" className="h-full w-full object-cover" />
         </a>
         <div className="flex flex-col items-start gap-1">
           <label className={`${btn} cursor-pointer bg-ink-100 text-ink-700 hover:bg-ink-200`}>

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -8,7 +8,8 @@ import { Search, User, ShoppingBag, Menu, X, ChevronDown } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { useCart } from "@/lib/store/cart";
 import { useAuth } from "@/lib/store/auth";
-import { useCategories, useProducts } from "@/lib/client/catalog";
+import { useCategories, searchProducts } from "@/lib/client/catalog";
+import type { Product } from "@/types";
 import { cn, formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 
@@ -41,7 +42,8 @@ export function Header() {
   const authHydrated = useAuth((s) => s.hydrated);
   const profileHref = authHydrated && loggedIn ? "/profile" : "/auth/login";
   const { categories } = useCategories();
-  const { products } = useProducts();
+  const [results, setResults] = useState<Product[]>([]);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -74,17 +76,18 @@ export function Header() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const results = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
-    return products
-      .filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.tagline.toLowerCase().includes(q),
-      )
-      .slice(0, 6);
+  // Search asks the server for the first few matches once typing pauses — the catalogue is never downloaded for it.
+  useEffect(() => {
+    const term = search.trim();
+    if (!term) { setResults([]); setSearching(false); return; }
+    const ctl = new AbortController();
+    setSearching(true);
+    const t = setTimeout(() => {
+      searchProducts(term, ctl.signal)
+        .then((r) => { setResults(r); setSearching(false); })
+        .catch(() => { if (!ctl.signal.aborted) { setResults([]); setSearching(false); } });
+    }, 250);
+    return () => { clearTimeout(t); ctl.abort(); };
   }, [search]);
 
   const isActive = (href: string) => {
@@ -415,7 +418,7 @@ export function Header() {
                   </div>
                 )}
 
-                {search.trim() !== "" && results.length === 0 && (
+                {search.trim() !== "" && !searching && results.length === 0 && (
                   <div className="p-6 text-sm text-ink-500">
                     No matches. Try &ldquo;violin&rdquo;, &ldquo;veena&rdquo;, or a brand.
                   </div>

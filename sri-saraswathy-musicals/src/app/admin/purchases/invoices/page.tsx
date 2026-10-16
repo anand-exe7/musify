@@ -1,271 +1,329 @@
 "use client";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Receipt, Pencil, Download, ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Download, Plus, Search } from "lucide-react";
 import { useVendors } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
 import { useAuth } from "@/lib/store/auth";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
-import { branchLabel } from "@/lib/stock";
+import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
+import { Pager } from "@/components/ui/Pager";
 import { PaymentDialog } from "@/components/purchases/PaymentDialog";
 import { PurchaseEditDialog } from "@/components/purchases/PurchaseEditDialog";
 import { OpeningBalanceDialog } from "@/components/purchases/OpeningBalanceDialog";
-import type { PurchaseRow } from "@/components/purchases/types";
+import { BillDetailPanel, type BillDetail } from "@/components/purchases/BillDetailPanel";
+import { VendorRollupView } from "@/components/purchases/VendorRollupView";
+import type { BillRow, BillsPage } from "@/lib/db/queries/purchaseBills";
 
-function fmt(d: string) {
-  const x = new Date(d);
-  return isNaN(+x) ? d : x.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const PAGE_SIZES = [25, 50, 100];
+type Status = "all" | "open" | "paid";
+
+const day = (d: string) => {
+  const x = new Date(`${d}T12:00:00`);
+  return isNaN(+x) ? d : x.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+interface Query {
+  q: string;
+  vendor: string;
+  branch: string;
+  status: Status;
+  from: string;
+  to: string;
+  sort: "newest" | "oldest" | "balance" | "amount";
+  page: number;
+  pageSize: number;
 }
 
-/** yyyy-mm-dd the purchase counts for (the user-entered date, else when it was saved). */
-const dayOf = (p: PurchaseRow) => p.purchaseDate || p.createdAt.slice(0, 10);
+const toParams = (s: Query, over: Partial<Query> = {}) => {
+  const x = { ...s, ...over };
+  const p = new URLSearchParams({ page: String(x.page), pageSize: String(x.pageSize), sort: x.sort });
+  if (x.q.trim()) p.set("q", x.q.trim());
+  if (x.vendor) p.set("vendor", x.vendor);
+  if (x.branch !== "all") p.set("branch", x.branch);
+  if (x.status !== "all") p.set("status", x.status);
+  if (x.from) p.set("from", x.from);
+  if (x.to) p.set("to", x.to);
+  return p;
+};
 
-export default function PurchaseInvoicesPage() {
+export default function VendorBillsPage() {
   const vendors = useVendors((s) => s.vendors);
   const hydrateVendors = useVendors((s) => s.hydrate);
   const allowed = useBranchScope((s) => s.allowed);
   const isAdmin = useAuth((s) => s.isAdmin);
 
-  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
+  const [state, setState] = useState<Query>({ q: "", vendor: "", branch: "all", status: "all", from: "", to: "", sort: "newest", page: 1, pageSize: 25 });
+  const [qInput, setQInput] = useState("");
+  const [data, setData] = useState<BillsPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [query, setQuery] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [branch, setBranch] = useState("all");
-  const [paying, setPaying] = useState<PurchaseRow | null>(null);
-  const [editing, setEditing] = useState<PurchaseRow | null>(null);
+  const [view, setView] = useState<"bills" | "vendors">("bills");
+  /** A vendor whose statement opens straight away (from a link). */
+  const [linkedVendor, setLinkedVendor] = useState<string | undefined>(undefined);
+  const [open, setOpen] = useState<string | null>(null);
+  /** Bumped after a payment or edit so the list and the open bill reload. */
+  const [version, setVersion] = useState(0);
+  const [paying, setPaying] = useState<BillDetail | null>(null);
+  const [editing, setEditing] = useState<BillDetail | null>(null);
   const [addingOpening, setAddingOpening] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const load = async () => {
-    try {
-      const res = await fetch("/api/purchases", { cache: "no-store" });
-      if (!res.ok) throw new Error("purchases");
-      setPurchases((await res.json()) as PurchaseRow[]);
-      setError(false);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
+  /** Change a filter (and go back to the first page). */
+  const set = useCallback((patch: Partial<Query>) => setState((s) => ({ ...s, page: 1, ...patch })), []);
 
+  useEffect(() => { void hydrateVendors(); }, [hydrateVendors]);
+  // A link from the Vendors page: ?vendor=<id>
   useEffect(() => {
-    void hydrateVendors();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, [hydrateVendors]);
+    const sp = new URLSearchParams(window.location.search);
+    const v = sp.get("vendor");
+    if (sp.get("view") === "vendors") { setView("vendors"); if (v) setLinkedVendor(v); }
+    else if (v) setState((s) => ({ ...s, vendor: v }));
+  }, []);
+  // Search waits until typing pauses.
+  useEffect(() => {
+    const t = setTimeout(() => setState((s) => (s.q === qInput ? s : { ...s, q: qInput, page: 1 })), 300);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
+  const key = toParams(state).toString();
+  useEffect(() => {
+    if (view !== "bills") return;
+    const ctl = new AbortController();
+    setLoading(true);
+    fetch(`/api/vendor-bills?${key}`, { cache: "no-store", signal: ctl.signal })
+      .then((r) => (r.ok ? (r.json() as Promise<BillsPage>) : Promise.reject(new Error(String(r.status)))))
+      .then((d) => {
+        setData(d);
+        setError(false);
+        setLoading(false);
+        if (d.page !== state.page) setState((s) => ({ ...s, page: d.page })); // the page asked for was past the end
+      })
+      .catch(() => { if (!ctl.signal.aborted) { setError(true); setLoading(false); } });
+    return () => ctl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, version, view]);
 
   const notify = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 3200);
   };
-  const vendorName = (id: string) => vendors.find((v) => v.id === id)?.name ?? id;
+  const changed = (m: string) => { setPaying(null); setEditing(null); setAddingOpening(false); notify(m); setVersion((v) => v + 1); };
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return purchases.filter((p) => {
-      const day = dayOf(p);
-      if (from && day < from) return false;
-      if (to && day > to) return false;
-      if (branch !== "all" && !(p.openingBranch === branch || p.lines.some((l) => l.branch === branch))) return false;
-      if (!q) return true;
-      return p.id.toLowerCase().includes(q) || p.invoiceNo.toLowerCase().includes(q) || vendorName(p.vendorId).toLowerCase().includes(q);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [purchases, query, from, to, branch, vendors]);
+  const vendorOptions = useMemo(() => [...vendors].sort((a, b) => a.name.localeCompare(b.name)), [vendors]);
+  const hasFilter = !!(state.q || state.vendor || state.from || state.to || state.branch !== "all" || state.status !== "all");
+  const clear = () => { setQInput(""); set({ q: "", vendor: "", from: "", to: "", branch: "all", status: "all" }); };
 
-  const totals = useMemo(
-    () => filtered.reduce((t, p) => ({ total: t.total + p.totalAmount, paid: t.paid + p.amountPaid + p.paymentsTotal }), { total: 0, paid: 0 }),
-    [filtered],
-  );
-  const hasFilter = !!(from || to || branch !== "all" || query.trim());
-
-  const exportCSV = () => {
-    const r2 = (paise: number) => (paise / 100).toFixed(2);
-    const head = ["Date", "Purchase ID", "Vendor Invoice", "Vendor", "Branches", "Subtotal", "CGST", "SGST", "IGST", "Total", "Paid", "Balance", "Mode", "Notes"];
-    const body = filtered.map((p) => [
-      dayOf(p), p.id, p.invoiceNo, vendorName(p.vendorId),
-      (p.openingBranch ? [branchLabel(p.openingBranch)] : [...new Set(p.lines.map((l) => branchLabel(l.branch)))]).join(" / "),
-      r2(p.subtotal), r2(p.cgst), r2(p.sgst), r2(p.igst), r2(p.totalAmount),
-      r2(p.amountPaid + p.paymentsTotal), r2(Math.max(0, p.totalAmount - p.amountPaid - p.paymentsTotal)),
-      p.paymentMode, p.notes,
-    ]);
-    downloadCsv(`purchase-invoices-${Date.now()}.csv`, [head, ...body]);
+  const exportCSV = async () => {
+    try {
+      const res = await fetch(`/api/vendor-bills?${toParams(state, { page: 1, pageSize: 1000 })}`, { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      const all = (await res.json()) as BillsPage;
+      const r2 = (paise: number) => (paise / 100).toFixed(2);
+      const head = ["Date", "Vendor", "Vendor invoice", "Items", "Total", "Paid", "Left", "Status", ...BRANCH_KEYS.flatMap((b) => [`${branchLabel(b)} pcs`, `${branchLabel(b)} bill`, `${branchLabel(b)} paid`, `${branchLabel(b)} left`])];
+      const body = all.rows.map((r) => [
+        r.date, r.vendorName, r.invoiceNo, r.items.join("; "), r2(r.total), r2(r.paid), r2(r.left), r.status,
+        ...BRANCH_KEYS.flatMap((b) => {
+          const x = r.branches.find((y) => y.branch === b);
+          return x ? [String(x.qty), r2(x.bill), r2(x.paid), r2(x.left)] : ["", "", "", ""];
+        }),
+      ]);
+      downloadCsv(`vendor-bills-${Date.now()}.csv`, [head, ...body]);
+      if (all.total > all.rows.length) notify(`Exported the first ${all.rows.length} of ${all.total} bills — narrow the filters for the rest.`);
+    } catch {
+      notify("Couldn't export. Try again.");
+    }
   };
 
   const input = "rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none";
+  const lab = "text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500";
+  const sum = data?.summary;
+  const showBranches = allowed.length > 1 || state.branch === "all";
+  const from = data && data.rows.length ? (data.page - 1) * data.pageSize + 1 : 0;
 
   return (
     <div className="p-5 md:p-8">
       {paying && (
-        <PaymentDialog
-          purchase={paying}
-          vendorName={vendorName(paying.vendorId)}
-          onClose={() => setPaying(null)}
-          onDone={async (m) => { setPaying(null); notify(m); await load(); }}
-        />
+        <PaymentDialog purchase={paying} vendorName={data?.rows.find((r) => r.id === paying.id)?.vendorName ?? vendors.find((v) => v.id === paying.vendorId)?.name ?? ""} onClose={() => setPaying(null)} onDone={changed} />
       )}
       {(addingOpening || editing?.openingBranch) && (
-        <OpeningBalanceDialog
-          existing={editing?.openingBranch ? editing : undefined}
-          onClose={() => { setAddingOpening(false); setEditing(null); }}
-          onDone={async (m) => { setAddingOpening(false); setEditing(null); notify(m); await load(); }}
-        />
+        <OpeningBalanceDialog existing={editing?.openingBranch ? editing : undefined} onClose={() => { setAddingOpening(false); setEditing(null); }} onDone={changed} />
       )}
-      {editing && !editing.openingBranch && (
-        <PurchaseEditDialog
-          purchase={editing}
-          onClose={() => setEditing(null)}
-          onDone={async (m) => { setEditing(null); notify(m); await load(); }}
-        />
-      )}
+      {editing && !editing.openingBranch && <PurchaseEditDialog purchase={editing} onClose={() => setEditing(null)} onDone={changed} />}
       {toast && <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>}
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 border-l-4 border-ink-900 pl-4">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-l-4 border-ink-900 pl-4">
         <div>
-          <h1 className="text-2xl font-bold text-ink-900">Purchase Invoices</h1>
-          <p className="mt-1 text-sm text-ink-500">Every vendor bill you&apos;ve recorded. Pay a bill, or edit its costs, GST and amount paid.</p>
+          <h1 className="text-2xl font-bold text-ink-900">Vendor Bills</h1>
+          <p className="mt-1 text-sm text-ink-500">{view === "bills" ? "Every purchase is one line. Open a line to see what each branch has to pay." : "What you bought from each vendor, and what each branch still owes."}</p>
+          <div className="mt-3 inline-flex rounded-lg border border-ink-200 bg-ivory-50 p-0.5">
+            {([["bills", "Bills"], ["vendors", "By vendor"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setView(k)} className={cn("rounded-md px-4 py-1.5 text-xs font-semibold", view === k ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>{l}</button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-        {isAdmin && (
-          <button onClick={() => setAddingOpening(true)} className="inline-flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">
-            Opening balance
-          </button>
-        )}
-        <Link href="/admin/purchases" className="inline-flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900">
-          <Plus className="h-4 w-4" /> New purchase
-        </Link>
+          {isAdmin && <button onClick={() => setAddingOpening(true)} className="inline-flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Opening balance</button>}
+          <Link href="/admin/purchases" className="inline-flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900"><Plus className="h-4 w-4" /> New purchase</Link>
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-end gap-3">
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
-          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={cn(input, "mt-1 block")} />
+      {view === "vendors" ? (
+        <VendorRollupView
+          version={version}
+          openVendor={linkedVendor}
+          onShowBills={(id) => { set({ vendor: id }); setView("bills"); }}
+          onChanged={() => setVersion((v) => v + 1)}
+        />
+      ) : (
+        <>
+      {/* Totals for everything the filters match, then each branch */}
+      <div className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Bills" value={sum ? String(sum.bills) : "—"} />
+        <Stat label="Bought" value={sum ? formatINR(sum.bought) : "—"} />
+        <Stat label="Paid" value={sum ? formatINR(sum.paid) : "—"} tone="good" />
+        <Stat label="Left to pay" value={sum ? formatINR(sum.left) : "—"} tone={sum && sum.left > 0 ? "bad" : undefined} />
+      </div>
+      {sum && showBranches && Object.keys(sum.branches).length > 0 && (
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          {Object.entries(sum.branches).map(([b, t]) => (
+            <div key={b} className="rounded-xl border border-ink-100 bg-ivory-50 p-3.5">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-700">{branchLabel(b)}</p>
+              <p className="mt-1.5 text-xs text-ink-500">Bought <b className="tabular-nums text-ink-900">{formatINR(t.bought)}</b> · {t.qty} pcs</p>
+              <p className="text-xs text-ink-500">Paid <b className="tabular-nums text-success">{formatINR(t.paid)}</b></p>
+              {t.left < 0
+                ? <p className="text-xs text-ink-500">Paid <b className="tabular-nums text-ink-900">{formatINR(-t.left)}</b> extra <span className="text-ink-400">(for other branches)</span></p>
+                : <p className="text-xs text-ink-500">Has to pay <b className={cn("tabular-nums", t.left > 0 ? "text-danger" : "text-ink-900")}>{formatINR(t.left)}</b></p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <label className={cn(lab, "relative")}>Search
+          <span className="relative mt-1 block">
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-ink-400" />
+            <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Vendor, invoice no, product…" className={cn(input, "w-64 pl-8")} />
+          </span>
         </label>
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
-          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={cn(input, "mt-1 block")} />
+        <label className={lab}>Vendor
+          <select value={state.vendor} onChange={(e) => set({ vendor: e.target.value })} className={cn(input, "mt-1 block w-48")}>
+            <option value="">All vendors</option>
+            {vendorOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
         </label>
         {allowed.length > 1 && (
-          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Branch
-            <select value={branch} onChange={(e) => setBranch(e.target.value)} className={cn(input, "mt-1 block")}>
+          <label className={lab}>Branch
+            <select value={state.branch} onChange={(e) => set({ branch: e.target.value })} className={cn(input, "mt-1 block")}>
               <option value="all">All branches</option>
               {allowed.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
             </select>
           </label>
         )}
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search purchase / invoice / vendor…" className={cn(input, "w-64")} />
-        {hasFilter && (
-          <button onClick={() => { setFrom(""); setTo(""); setBranch("all"); setQuery(""); }} className="text-xs font-semibold text-gold-600 hover:underline">Clear filters</button>
-        )}
-        <button onClick={exportCSV} disabled={filtered.length === 0} className="ml-auto flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:opacity-50">
-          <Download className="h-4 w-4" /> Export CSV
-        </button>
+        <div>
+          <p className={lab}>Show</p>
+          <div className="mt-1 flex rounded-lg border border-ink-200 bg-ivory-50 p-0.5">
+            {([["all", "All"], ["open", "To pay"], ["paid", "Paid"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => set({ status: k })} className={cn("rounded-md px-3 py-1.5 text-xs font-semibold", state.status === k ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <label className={lab}>From<input type="date" value={state.from} max={state.to || undefined} onChange={(e) => set({ from: e.target.value })} className={cn(input, "mt-1 block")} /></label>
+        <label className={lab}>To<input type="date" value={state.to} min={state.from || undefined} onChange={(e) => set({ to: e.target.value })} className={cn(input, "mt-1 block")} /></label>
+        <label className={lab}>Sort
+          <select value={state.sort} onChange={(e) => set({ sort: e.target.value as Query["sort"] })} className={cn(input, "mt-1 block")}>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="balance">Most left to pay</option>
+            <option value="amount">Biggest bill</option>
+          </select>
+        </label>
+        {hasFilter && <button onClick={clear} className="pb-2 text-xs font-semibold text-gold-600 hover:underline">Clear filters</button>}
+        <button onClick={() => void exportCSV()} disabled={!data || data.total === 0} className="ml-auto flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:opacity-50"><Download className="h-4 w-4" /> Export CSV</button>
       </div>
-      <p className="mb-3 text-xs text-ink-500">
-        {filtered.length} invoice{filtered.length === 1 ? "" : "s"} · billed <b className="tabular-nums text-ink-900">{formatINR(totals.total)}</b> · paid <b className="tabular-nums text-ink-900">{formatINR(totals.paid)}</b> · balance <b className="tabular-nums text-ink-900">{formatINR(Math.max(0, totals.total - totals.paid))}</b>
-      </p>
 
-      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-        <table className="w-full min-w-[980px] whitespace-nowrap text-sm">
-          <thead>
-            <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-              <th className="px-4 py-3">Date</th>
-              <th>Purchase ID</th>
-              <th>Vendor Invoice</th>
-              <th>Vendor</th>
-              <th>Branch</th>
-              <th className="text-right">Goods</th>
-              <th className="text-right">GST</th>
-              <th className="text-right">Total</th>
-              <th className="text-right">Paid</th>
-              <th className="text-right">Balance</th>
-              <th className="pr-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-50">
-            {filtered.map((p) => {
-              const paidAll = p.amountPaid + p.paymentsTotal;
-              const bal = Math.max(0, p.totalAmount - paidAll);
-              const gstTotal = p.tax || p.cgst + p.sgst + p.igst;
-              const branches = p.openingBranch ? [branchLabel(p.openingBranch)] : [...new Set(p.lines.map((l) => branchLabel(l.branch)))];
-              return (
-                <Fragment key={p.id}>
-                  <tr className="text-ink-700">
-                    <td className="px-4 py-3 text-xs text-ink-500">{dayOf(p)}<div className="text-[10px] text-ink-400">{fmt(p.createdAt)}</div></td>
-                    <td className="font-semibold text-ink-900">
-                      <button onClick={() => setExpanded(expanded === p.id ? null : p.id)} className="inline-flex items-center gap-1 hover:text-gold-600" title="Show items bought">
-                        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expanded === p.id && "rotate-180")} />
-                        {p.id}
-                      </button>
-                      <div className="pl-5 text-[10px] font-normal text-ink-400">{p.openingBranch ? "Opening balance" : `${p.lines.length} item${p.lines.length === 1 ? "" : "s"}`}</div>
-                    </td>
-                    <td className="text-ink-600">{p.invoiceNo || <span className="text-ink-300">—</span>}</td>
-                    <td className="text-ink-700">{vendorName(p.vendorId)}</td>
-                    <td className="text-xs text-ink-600">{branches.join(" · ") || "—"}</td>
-                    <td className="text-right tabular-nums">{formatINR(p.subtotal)}</td>
-                    <td className="text-right tabular-nums">{gstTotal ? formatINR(gstTotal) : "—"}</td>
-                    <td className="text-right font-semibold tabular-nums text-ink-900">{formatINR(p.totalAmount)}</td>
-                    <td className="text-right tabular-nums text-success">{formatINR(paidAll)}</td>
-                    <td className={cn("text-right font-semibold tabular-nums", bal > 0 ? "text-danger" : "text-ink-400")}>{bal > 0 ? formatINR(bal) : "—"}</td>
-                    <td className="pr-4">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setPaying(p)} disabled={bal <= 0} title={bal > 0 ? "Record a payment" : "Fully paid"} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600 disabled:cursor-not-allowed disabled:opacity-40">
-                          <Receipt className="h-3.5 w-3.5" /> Pay
-                        </button>
-                        {isAdmin && (
-                          <button onClick={() => setEditing(p)} title={p.openingBranch ? "Edit opening balance" : "Edit purchase invoice"} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600">
-                            <Pencil className="h-3.5 w-3.5" /> Edit
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {expanded === p.id && (
-                    <tr className="bg-[#FAF7EF]">
-                      <td colSpan={11} className="px-4 py-3">
-                        <table className="w-full max-w-3xl text-xs">
-                          <thead>
-                            <tr className="text-left text-[10px] font-semibold uppercase tracking-wider text-ink-400">
-                              <th className="py-1">Item</th><th>Variant</th><th>Branch</th><th className="text-right">Qty</th><th className="text-right">Unit cost</th><th className="text-right">GST</th><th className="text-right">Line total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-ink-100">
-                            {p.lines.map((l) => (
-                              <tr key={l.id} className="text-ink-700">
-                                <td className="py-1.5 font-medium text-ink-900">{l.productName}</td>
-                                <td>{l.variant || "—"}</td>
-                                <td>{branchLabel(l.branch)}</td>
-                                <td className="text-right tabular-nums">{l.quantity}</td>
-                                <td className="text-right tabular-nums">{formatINR(l.unitCost)}</td>
-                                <td className="text-right tabular-nums">{l.gst ? `${l.gst}%` : "—"}</td>
-                                <td className="text-right tabular-nums">{formatINR(l.quantity * l.unitCost)}</td>
-                              </tr>
-                            ))}
-                            {p.lines.length === 0 && <tr><td colSpan={7} className="py-2 text-ink-400">{p.openingBranch ? "Owed before this system was set up." : "No items linked to this purchase."}</td></tr>}
-                          </tbody>
-                        </table>
-                        {p.amountPaid > 0 && (
-                          <p className="mt-2 text-[11px] text-ink-500">
-                            Paid at purchase: {formatINR(p.amountPaid)}
-                            {p.paidAllocations ? ` · ${Object.entries(p.paidAllocations).filter(([, v]) => v > 0).map(([b, v]) => `${branchLabel(b)} ${formatINR(v)}`).join(" · ")}` : ""}
-                          </p>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {!loading && filtered.length === 0 && (
-              <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-ink-400">{error ? "Couldn’t load purchases." : hasFilter ? "No purchases match these filters." : "No purchases yet."}</td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* One line per purchase */}
+      <div className={cn("space-y-3 transition-opacity", loading && data && "opacity-60")} aria-busy={loading}>
+        {data?.rows.map((r) => (
+          <BillLine key={r.id} r={r} open={open === r.id} onToggle={() => setOpen(open === r.id ? null : r.id)}>
+            {open === r.id && <BillDetailPanel id={r.id} version={version} canEdit={isAdmin} onPay={setPaying} onEdit={setEditing} />}
+          </BillLine>
+        ))}
+        {!data && loading && Array.from({ length: 4 }, (_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-ink-100/60" />)}
+        {data && data.rows.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-ink-200 px-4 py-14 text-center text-sm text-ink-400">{hasFilter ? "No bills match these filters." : "No purchases yet."}</p>
+        )}
+        {error && (
+          <p className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-4 text-sm text-danger">Couldn&apos;t load the bills. <button onClick={() => setVersion((v) => v + 1)} className="font-semibold underline">Try again</button></p>
+        )}
       </div>
+      {data && (
+        <Pager
+          className="mt-4"
+          page={data.page} pages={data.pages} total={data.total} from={from} to={from ? from + data.rows.length - 1 : 0}
+          onPage={(p) => setState((s) => ({ ...s, page: p }))}
+          pageSize={state.pageSize} pageSizes={PAGE_SIZES} onPageSize={(n) => set({ pageSize: n })}
+        />
+      )}
+        </>
+      )}
     </div>
   );
 }
+
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+  return (
+    <div className={cn("rounded-xl border p-4", tone === "bad" ? "border-danger/30 bg-danger/5" : "border-ink-100 bg-ivory-50")}>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
+      <p className={cn("mt-1 text-xl font-bold tabular-nums", tone === "good" ? "text-success" : tone === "bad" ? "text-danger" : "text-ink-900")}>{value}</p>
+    </div>
+  );
+}
+
+const BADGE = {
+  paid: { text: "Paid", cls: "bg-success/15 text-success" },
+  part: { text: "Part paid", cls: "bg-warning/20 text-warning" },
+  unpaid: { text: "Not paid", cls: "bg-danger/10 text-danger" },
+} as const;
+
+/** One purchase, as one line: who, what, what each branch still has to pay, and the money. */
+function BillLine({ r, open, onToggle, children }: { r: BillRow; open: boolean; onToggle: () => void; children?: React.ReactNode }) {
+  const badge = BADGE[r.status];
+  const more = r.itemCount - r.items.length;
+  return (
+    <div className={cn("overflow-hidden rounded-2xl border bg-ivory-50 transition-shadow", open ? "border-gold-400 shadow-md" : "border-ink-100 hover:border-ink-200")}>
+      <button onClick={onToggle} aria-expanded={open} className="grid w-full gap-3 p-4 text-left md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-5">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <ChevronDown className={cn("h-4 w-4 shrink-0 text-ink-400 transition-transform", open && "rotate-180")} />
+            <span className="truncate text-base font-bold text-ink-900">{r.vendorName}</span>
+            <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", badge.cls)}>{badge.text}</span>
+          </div>
+          <p className="mt-1 pl-6 text-xs text-ink-500">{day(r.date)} · {r.openingBranch ? "Old balance (before this software)" : r.invoiceNo ? `Invoice ${r.invoiceNo}` : "No invoice number"}</p>
+          {r.items.length > 0 && (
+            <p className="mt-0.5 truncate pl-6 text-xs text-ink-600">{r.items.join(" · ")}{more > 0 ? ` · +${more} more` : ""}</p>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2 pl-6 md:pl-0">
+          {r.branches.map((b) => (
+            <span key={b.branch} className={cn("rounded-lg border px-2.5 py-1.5 text-[11px] leading-tight", b.left > 0 ? "border-danger/25 bg-danger/5" : "border-success/25 bg-success/5")}>
+              <b className="text-ink-900">{branchLabel(b.branch)}</b>{b.qty > 0 && <span className="text-ink-500"> · {b.qty} pcs</span>}
+              <span className={cn("block font-semibold tabular-nums", b.left > 0 ? "text-danger" : "text-success")}>{b.left > 0 ? `has to pay ${formatINR(b.left)}` : "✓ paid"}</span>
+            </span>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 pl-6 text-right text-xs md:min-w-[17rem] md:pl-0">
+          <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Total</p><p className="font-bold tabular-nums text-ink-900">{formatINR(r.total)}</p></div>
+          <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Paid</p><p className="font-bold tabular-nums text-success">{formatINR(r.paid)}</p></div>
+          <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Left</p><p className={cn("font-bold tabular-nums", r.left > 0 ? "text-danger" : "text-ink-400")}>{r.left > 0 ? formatINR(r.left) : "—"}</p></div>
+        </div>
+      </button>
+      {children}
+    </div>
+  );
+}
+

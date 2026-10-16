@@ -4,7 +4,7 @@ import { useCart } from "@/lib/store/cart";
 import { useGst, IN_STATES } from "@/lib/store/gst";
 import { useQuote, fetchQuote } from "@/lib/client/quote";
 import { useShallow } from "zustand/react/shallow";
-import { useProducts } from "@/lib/client/catalog";
+import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel } from "@/lib/catalog/variants";
 import { formatINR, cn } from "@/lib/utils";
@@ -82,8 +82,7 @@ export default function CartPage() {
   const [applying, setApplying] = useState(false);
   const [code, setCode] = useState("");
   const [celebrate, setCelebrate] = useState(false);
-  const { products, loading: productsLoading } = useProducts();
-  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const { byId, loading: productsLoading } = useProductsByIds(items.map((i) => i.productId));
   useEffect(() => setMounted(true), []);
 
   // Cart lines whose product still exists in the catalogue.
