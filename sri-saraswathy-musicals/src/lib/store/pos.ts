@@ -63,6 +63,8 @@ export interface Bill {
   gst?: number;
   status: "completed" | "pending";
   payment?: string;
+  /** Cash / Card / UPI amounts (paise). */
+  payments?: { method: "CASH" | "CARD" | "UPI"; amount: number }[];
 }
 
 /**

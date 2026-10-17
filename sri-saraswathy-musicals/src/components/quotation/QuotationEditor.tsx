@@ -8,6 +8,7 @@ import { BranchOptions } from "@/components/admin/BranchOptions";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { effectiveBranch, useBranchScope } from "@/lib/store/branch";
 import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
+import { LineProductPicker } from "@/components/quotation/LineProductPicker";
 
 const GST_RATES = [0, 5, 12, 18, 28];
 const emptyLine = (): QuotationLine => ({ name: "", hsn: "", qty: 1, rate: 0, gst: 18, amount: 0 });
@@ -57,6 +58,11 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
     setDraft((d) => ({ ...d, items: d.items.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
 
   async function save() {
+    const loose = draft.items.findIndex((l) => !l.productId || !l.variantKey);
+    if (loose >= 0) {
+      setError(`Line ${loose + 1}: pick a product from the catalogue, so this quotation can become a real order later.`);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -67,7 +73,7 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
         branch: draft.branch,
         date: draft.date,
         validUntil: draft.validUntil,
-        items: draft.items.map((l) => ({ name: l.name, hsn: l.hsn, qty: l.qty, rate: l.rate, gst: l.gst, note: l.note })),
+        items: draft.items.map((l) => ({ name: l.name, hsn: l.hsn, qty: l.qty, rate: l.rate, gst: l.gst, note: l.note, productId: l.productId, variantKey: l.variantKey })),
         discount: draft.discount ?? 0,
         advance: draft.advance ?? 0,
         notes: draft.notes ?? "",
@@ -192,8 +198,18 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
               {draft.items.map((l, i) => (
                 <tr key={i} className="border-t border-ink-100 align-top">
                   <td className="px-3 py-2">
-                    <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} placeholder="Item or service" />
-                    <input className={cn(inp, "mt-1 text-xs")} value={l.note ?? ""} onChange={(e) => setLine(i, { note: e.target.value })} placeholder="Note (optional)" />
+                    {l.productId ? (
+                      <>
+                        <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} placeholder="Item" />
+                        <input className={cn(inp, "mt-1 text-xs")} value={l.note ?? ""} onChange={(e) => setLine(i, { note: e.target.value })} placeholder="Note (optional)" />
+                        <button type="button" onClick={() => setLine(i, { productId: undefined, variantKey: undefined })} className="mt-1 text-[11px] font-semibold text-ink-500 underline hover:text-gold-600">Change product</button>
+                      </>
+                    ) : (
+                      <>
+                        <LineProductPicker branch={draft.branch} onPick={(p) => setLine(i, p)} />
+                        <p className="mt-1 text-[11px] text-danger">{l.name ? `“${l.name}” isn't linked to a product yet — search and pick it.` : "Pick a product from the catalogue."}</p>
+                      </>
+                    )}
                   </td>
                   <td className="px-2 py-2"><input className={inp} value={l.hsn} onChange={(e) => setLine(i, { hsn: e.target.value })} /></td>
                   <td className="px-2 py-2">

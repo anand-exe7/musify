@@ -6,6 +6,8 @@ import { HttpError } from "@/lib/api/errors";
 import { genDocId } from "@/lib/ids";
 import { isBranch } from "@/lib/stock";
 import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
+import { getPricingCatalog } from "./products";
+import { variantKey } from "@/lib/catalog/variants";
 import { branchCode } from "./invoices";
 import { row, rows } from "./_util";
 
@@ -50,7 +52,7 @@ export interface QuotationInput {
 const paise = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0;
 
 /** Validate a client payload. Line amounts and totals are always recomputed here, never trusted. */
-function clean(input: QuotationInput, partial: boolean) {
+async function clean(input: QuotationInput, partial: boolean) {
   const out: Record<string, unknown> = {};
   if (input.customer !== undefined || !partial) {
     const c = (input.customer ?? "").trim();
@@ -84,13 +86,21 @@ function clean(input: QuotationInput, partial: boolean) {
   if (input.items !== undefined || !partial) {
     const items = input.items ?? [];
     if (items.length === 0) throw bad("Add at least one line.");
+    // Every line sells a catalogue product, so the quotation can become a real order (and take stock) later.
+    const catalog = new Map((await getPricingCatalog()).map((p) => [p.id, p]));
     const lines = items.map((l) => {
       if (!l || typeof l.name !== "string" || !l.name.trim()) throw bad("Every line needs an item name.");
       if (!Number.isInteger(l.qty) || (l.qty as number) < 1) throw bad("Line quantity must be a whole number ≥ 1.");
       if (!paise(l.rate)) throw bad("Line rate must be a whole number of paise ≥ 0.");
       const gst = l.gst ?? 0;
       if (typeof gst !== "number" || !(gst >= 0 && gst <= 100)) throw bad("Line GST % must be between 0 and 100.");
+      const product = l.productId ? catalog.get(l.productId) : undefined;
+      if (!l.productId || !l.variantKey) throw bad(`Pick a product for "${l.name.trim()}".`);
+      if (!product) throw bad(`"${l.name.trim()}" is linked to a product that no longer exists. Pick it again.`);
+      if (!product.variants.some((v) => variantKey(v) === l.variantKey)) throw bad(`"${l.name.trim()}": that variant no longer exists. Pick it again.`);
       return {
+        productId: l.productId,
+        variantKey: l.variantKey,
         name: l.name.trim(),
         hsn: (l.hsn ?? "").toString().trim() || "-",
         qty: l.qty as number,
@@ -111,7 +121,7 @@ function clean(input: QuotationInput, partial: boolean) {
 }
 
 export async function createQuotation(input: QuotationInput): Promise<Quotation> {
-  const base = clean(input, false) as Record<string, unknown> & { branch: string };
+  const base = (await clean(input, false)) as Record<string, unknown> & { branch: string };
   const date = (base.date as string | undefined) ?? new Date().toISOString();
   const [r] = await db
     .insert(quotations)
@@ -127,13 +137,18 @@ export async function createQuotation(input: QuotationInput): Promise<Quotation>
 }
 
 export async function updateQuotation(id: string, input: QuotationInput): Promise<Quotation | undefined> {
-  const patch = clean(input, true);
-  if (Object.keys(patch).length === 0) return getQuotation(id);
+  const current = await getQuotation(id);
+  if (!current) return undefined;
+  if (current.status === "invoiced") throw new HttpError(409, "This quotation has been turned into an invoice, so it can't be changed.");
+  const patch = await clean(input, true);
+  if (Object.keys(patch).length === 0) return current;
   const [r] = await db.update(quotations).set(patch as Partial<typeof quotations.$inferInsert>).where(eq(quotations.id, id)).returning();
   return r ? row<Quotation>(r) : undefined;
 }
 
 export async function deleteQuotation(id: string): Promise<boolean> {
+  const current = await getQuotation(id);
+  if (current?.status === "invoiced") throw new HttpError(409, "This quotation has been turned into an invoice, so it can't be deleted.");
   const r = await db.delete(quotations).where(eq(quotations.id, id)).returning({ id: quotations.id });
   return r.length > 0;
 }

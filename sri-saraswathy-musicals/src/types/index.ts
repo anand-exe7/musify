@@ -115,6 +115,8 @@ export interface Invoice {
   total: number;
   /** cash / card / upi / bank / razorpay / cod — kept open so web + POS methods fit. */
   paymentMode: string;
+  /** How it was paid (Cash / Card / UPI amounts, paise). Absent or empty on older invoices. */
+  payments?: { method: "CASH" | "CARD" | "UPI"; amount: number }[];
   status: "paid" | "pending" | "cancelled";
   /** "web" (storefront), "pos" (counter), "service" (repair), or "manual". */
   source?: "web" | "pos" | "service" | "manual";
@@ -140,6 +142,9 @@ export interface QuotationLine {
   /** qty × rate (paise), before the quotation-level discount. */
   amount: number;
   note?: string;
+  /** The catalogue product and variant (`attr|finish`) this line sells; needed to turn the quotation into an order. */
+  productId?: string;
+  variantKey?: string;
 }
 
 export interface Quotation {
@@ -162,7 +167,9 @@ export interface Quotation {
   total: number;
   /** Advance needed to start work / process the order (paise). */
   advance?: number;
-  status: "open" | "accepted" | "declined";
+  status: "open" | "accepted" | "declined" | "invoiced";
+  /** Set once converted: the bill/invoice it became. */
+  invoiceId?: string | null;
   notes?: string;
 }
 

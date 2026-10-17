@@ -1,3 +1,4 @@
+import { cleanPayments, paymentLabel, statusFor } from "@/lib/paymentSplit";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posBills, products, coupons, posCategories, invoices, type ProductRow } from "@/lib/db/schema";
@@ -46,6 +47,13 @@ export async function createBill(b: Bill): Promise<Bill> {
   const lineNet = b.items.reduce((n, i) => n + i.price * i.qty - (i.discount || 0), 0);
   const lineDisc = b.items.reduce((n, i) => n + (i.discount || 0), 0);
   if ((b.discount || 0) < lineDisc || (b.discount || 0) - lineDisc > lineNet) throw new HttpError(400, "Overall discount can't exceed the bill total.");
+
+  // How it was paid. Older clients send none: the bill keeps its single `payment` text and status.
+  if (b.payments && b.payments.length > 0) {
+    const pay = cleanPayments(b.payments, b.total);
+    if (!pay.ok) throw new HttpError(400, pay.error);
+    b = { ...b, payments: pay.lines, payment: paymentLabel(pay.lines), status: statusFor(b.total, pay.lines) === "paid" ? "completed" : "pending" };
+  }
 
   let couponUsed: string | null = null;
   if (b.coupon) {
@@ -264,9 +272,11 @@ export async function updateInventoryProduct(
   return fresh ? toInvProduct(fresh) : undefined;
 }
 
+/** Same rule as the catalog delete: a product with purchases, stock-ins or transfers is kept (hide it instead),
+ *  and the owner gets that explained rather than a raw database error. */
 export async function deleteInventoryProduct(id: string): Promise<boolean> {
-  const r = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id });
-  return r.length > 0;
+  const { deleteProduct } = await import("@/lib/db/queries/products");
+  return deleteProduct(id);
 }
 
 /* ─────────────────────────────  Coupons  ───────────────────────────── */

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle, ok, created, HttpError, readJson } from "@/lib/api/http";
 import { priceOrder, type DeliveryMethod } from "@/lib/checkout/pricing";
 import { fulfilOrder } from "@/lib/checkout/fulfil";
+import { savePendingCheckout } from "@/lib/checkout/finalize";
 import { signDraft } from "@/lib/checkout/draft";
 import { nextOrderId } from "@/lib/db/queries/orders";
 import { createRazorpayOrder, razorpayConfigured, razorpayKeyId } from "@/lib/payments/razorpay";
@@ -82,7 +83,7 @@ export function POST(request: NextRequest) {
       throw new HttpError(503, "Online payments aren't configured yet. Please choose Pay on delivery.");
     }
     const rp = await createRazorpayOrder(priced.total, `rcpt_${Date.now().toString(36)}`);
-    const draftToken = await signDraft({
+    const draft = {
       ...priced,
       userId: user.id,
       customerName,
@@ -92,7 +93,10 @@ export function POST(request: NextRequest) {
       shipState: (body.shipState || "").trim(),
       branch,
       razorpayOrderId: rp.id,
-    });
+    };
+    // Kept on the server too, so the Razorpay webhook can still record the order if the browser never reports back.
+    await savePendingCheckout(draft);
+    const draftToken = await signDraft(draft);
 
     return ok({
       mode: "razorpay",

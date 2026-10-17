@@ -5,6 +5,8 @@ import { Plus, Trash2, Save, X, RotateCcw } from "lucide-react";
 import type { Invoice } from "@/types";
 import { cn } from "@/lib/utils";
 import { BranchOptions } from "@/components/admin/BranchOptions";
+import { MoneyInput } from "@/components/ui/MoneyInput";
+import { PAY_METHODS, PAY_LABEL, paidTotal, type PayMethod } from "@/lib/paymentSplit";
 
 type Line = Invoice["items"][number];
 
@@ -34,6 +36,13 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
   const [autoTotals, setAutoTotals] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Cash / Card / UPI received so far (paise). Saved as payment lines; the server works out paid / pending from them.
+  const [pay, setPay] = useState<Record<PayMethod, number>>(() => ({
+    CASH: invoice.payments?.find((p) => p.method === "CASH")?.amount ?? 0,
+    CARD: invoice.payments?.find((p) => p.method === "CARD")?.amount ?? 0,
+    UPI: invoice.payments?.find((p) => p.method === "UPI")?.amount ?? 0,
+  }));
+  const payLines = PAY_METHODS.filter((m) => pay[m] > 0).map((m) => ({ method: m, amount: pay[m] }));
 
   const totals = useMemo(() => {
     const itemsTotal = draft.items.reduce((n, l) => n + Math.max(0, (l.qty || 0) * (l.rate || 0) - (l.discount || 0)), 0);
@@ -83,6 +92,7 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
         amount: Math.max(0, (l.qty || 0) * (l.rate || 0) - (l.discount || 0)),
       })),
       ...(autoTotals ? liveTotals : {}),
+      payments: payLines,
     };
     try {
       const res = await fetch(`/api/invoices/${encodeURIComponent(invoice.id)}`, {
@@ -156,9 +166,22 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
           <label className={lbl}>Customer GSTIN</label>
           <input className={inp} value={draft.customerGstin ?? ""} onChange={(e) => setField("customerGstin", e.target.value || null)} />
         </div>
-        <div>
-          <label className={lbl}>Payment mode</label>
-          <input className={inp} value={draft.paymentMode} onChange={(e) => setField("paymentMode", e.target.value)} placeholder="cash / card / upi / cod / razorpay" />
+        <div className="md:col-span-2 lg:col-span-3">
+          <label className={lbl}>Payment received — Cash / Card / UPI</label>
+          <div className="grid grid-cols-3 gap-3">
+            {PAY_METHODS.map((m) => (
+              <div key={m}>
+                <MoneyInput value={pay[m]} onChange={(p) => setPay((v) => ({ ...v, [m]: p }))} className={cn(inp, "text-right tabular-nums")} placeholder={`${PAY_LABEL[m]} ₹`} />
+              </div>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-ink-500">
+            {payLines.length === 0
+              ? `Nothing entered — payment stays “${draft.paymentMode || "not set"}” and the status below applies.`
+              : paidTotal(payLines) >= liveTotals.total
+                ? "Paid in full — the invoice will show as paid."
+                : "Part paid — the invoice will show as pending until the rest is entered."}
+          </p>
         </div>
         <div>
           <label className={lbl}>Status</label>

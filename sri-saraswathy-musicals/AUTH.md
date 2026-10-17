@@ -81,6 +81,12 @@ browser opens Razorpay's hosted checkout; on success `/api/checkout/verify`
 **verifies the payment signature** before the order is saved. "Pay on delivery"
 skips Razorpay and saves the order directly.
 
+The priced checkout is also saved on the server (`pending_checkouts`) when the
+payment starts. If the customer pays and then closes the tab, Razorpay calls
+`/api/razorpay/webhook` (`payment.captured`), which records the order and sends
+the email. `verify` and the webhook share `finalizePaidOrder`, so one payment
+never makes two orders.
+
 ### Set it up
 
 1. Sign up at <https://dashboard.razorpay.com>.
@@ -93,7 +99,11 @@ skips Razorpay and saves the order directly.
    ```
    `NEXT_PUBLIC_RAZORPAY_KEY_ID` is exposed to the browser — that's expected and
    safe (it's the publishable key id; the secret stays server-side).
-4. Test card: `4111 1111 1111 1111`, any future expiry, any CVV, any OTP.
+4. **Webhook** (needed on the live site): Settings -> Webhooks -> Add. URL
+   `https://<your-site>/api/razorpay/webhook`, event **payment.captured**, and a
+   secret of your choice, which goes in `.env.local` / Vercel as
+   `RAZORPAY_WEBHOOK_SECRET`. Not needed on localhost.
+5. Test card: `4111 1111 1111 1111`, any future expiry, any CVV, any OTP.
 
 If Razorpay isn't configured, online payment returns a friendly error and the
 customer can still use **Pay on delivery**.

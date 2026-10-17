@@ -1,6 +1,7 @@
 import type { Invoice } from "@/types";
 import { BUSINESS, branchInfo } from "@/lib/data/business";
 import { amountInWords, formatINR, cn } from "@/lib/utils";
+import { paymentText } from "@/lib/paymentSplit";
 
 /**
  * Print stylesheet shared by every route that renders the tax invoice — isolates
@@ -91,6 +92,9 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
               <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Source</dt><dd className="font-medium uppercase text-ink-700">{SOURCE_LABEL[invoice.source ?? "manual"] ?? invoice.source}</dd></div>
               <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Status</dt><dd><span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[status] ?? "bg-ink-100 text-ink-600")}>{status}</span></dd></div>
               <div className="flex items-center justify-between gap-6"><dt className="text-ink-400">Payment</dt><dd className="font-medium uppercase text-ink-700">{invoice.paymentMode}</dd></div>
+              {(invoice.payments?.length ?? 0) > 1 && (
+                <div className="flex items-start justify-between gap-6"><dt className="text-ink-400">Paid by</dt><dd className="text-right font-medium text-ink-700">{paymentText(invoice.payments ?? [], formatINR)}</dd></div>
+              )}
             </dl>
           </div>
         </div>

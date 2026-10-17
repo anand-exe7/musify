@@ -56,3 +56,15 @@ export function verifyRazorpaySignature(input: {
     return false;
   }
 }
+
+/** Verify a webhook call: HMAC-SHA256 of the raw request body with the webhook secret, sent in `x-razorpay-signature`. */
+export function verifyWebhookSignature(rawBody: string, signature: string | null): boolean {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!secret || !signature) return false;
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}

@@ -170,6 +170,7 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       igst: 0,
       total: bill.total,
       paymentMode: bill.payment || (bill.source === "online" ? "razorpay" : "cash"),
+      payments: bill.payments ?? [],
       status: bill.status === "pending" ? "pending" : "paid",
       source: "pos",
       refId: bill.id,

@@ -4,6 +4,7 @@ import { invoices, branches, counters } from "@/lib/db/schema";
 import type { Invoice } from "@/types";
 import { HttpError } from "@/lib/api/errors";
 import { isBranch } from "@/lib/stock";
+import { cleanPayments, paymentLabel, statusFor } from "@/lib/paymentSplit";
 import { row, rows, definedOnly } from "./_util";
 
 export async function getInvoices(): Promise<Invoice[]> {
@@ -54,7 +55,7 @@ export async function createInvoice(inv: Invoice): Promise<Invoice> {
 
 const EDITABLE = [
   "number", "date", "customer", "branch", "items", "subtotal", "cgst", "sgst", "igst", "total",
-  "paymentMode", "status", "source", "customerGstin", "customerPhone", "delivery", "discount",
+  "paymentMode", "payments", "status", "source", "customerGstin", "customerPhone", "delivery", "discount",
 ] as const;
 const MONEY = ["subtotal", "cgst", "sgst", "igst", "total", "delivery", "discount"] as const;
 const bad = (m: string) => new HttpError(400, m);
@@ -96,6 +97,20 @@ export async function updateInvoice(
   patch: Partial<Invoice>,
 ): Promise<Invoice | undefined> {
   const clean = validateInvoicePatch(patch);
+  // Payment lines decide the payment text and paid/pending status, so the three never disagree.
+  if (clean.payments !== undefined) {
+    const current = await getInvoice(id);
+    if (!current) return undefined;
+    const total = clean.total ?? current.total;
+    const pay = cleanPayments(clean.payments, total);
+    if (!pay.ok) throw bad(pay.error);
+    clean.payments = pay.lines;
+    // No lines (an older invoice, or none entered) leaves the payment text and status as they are.
+    if (pay.lines.length > 0) {
+      clean.paymentMode = paymentLabel(pay.lines);
+      if ((clean.status ?? current.status) !== "cancelled") clean.status = statusFor(total, pay.lines);
+    }
+  }
   const set = definedOnly(clean) as Partial<typeof invoices.$inferInsert>;
   if (Object.keys(set).length === 0) return getInvoice(id);
   if (set.number !== undefined) {

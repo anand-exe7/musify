@@ -23,14 +23,17 @@ vi.mock("@/lib/db", async () => {
 });
 
 import { db } from "@/lib/db";
-import { branches } from "@/lib/db/schema";
+import { branches, products } from "@/lib/db/schema";
+import { insertVariants } from "@/lib/db/queries/variants";
 import { createQuotation, getQuotation, updateQuotation, deleteQuotation } from "@/lib/db/queries/quotations";
 import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
 
-const line = (over = {}) => ({ name: "Tabla set", hsn: "9206", qty: 1, rate: 118000, gst: 18, ...over });
+const line = (over = {}) => ({ name: "Tabla set", hsn: "9206", qty: 1, rate: 118000, gst: 18, productId: "qp", variantKey: "Std|", ...over });
 
 beforeAll(async () => {
   await db.select().from(branches); // wait for the mocked db + migrations
+  await db.insert(products).values({ id: "qp", slug: "qp", name: "Quote product", category: "string" });
+  await insertVariants("qp", [{ attr: "Std", finish: "", price: 118000, weight: 0, stockByBranch: { "Branch 1": 10 } }]);
 }, 60_000);
 
 describe("quotation maths", () => {

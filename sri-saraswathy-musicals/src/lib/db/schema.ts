@@ -287,6 +287,8 @@ export const invoices = pgTable("invoices", {
   igst: integer("igst").notNull().default(0),
   total: integer("total").notNull().default(0),
   paymentMode: text("payment_mode").notNull(),
+  /** How it was paid: [{ method: "CASH" | "CARD" | "UPI", amount }] in paise. Empty on older invoices. */
+  payments: jsonb("payments").$type<{ method: string; amount: number }[]>().notNull().default([]),
   status: text("status").notNull(),
   /** Where the sale originated: "web" (storefront), "pos" (counter), or "manual". */
   source: text("source").notNull().default("manual"),
@@ -322,7 +324,7 @@ export const quotations = pgTable("quotations", {
   customerGstin: text("customer_gstin"),
   branch: text("branch").notNull(),
   items: jsonb("items")
-    .$type<{ name: string; hsn: string; qty: number; rate: number; gst: number; amount: number; note?: string }[]>()
+    .$type<{ name: string; hsn: string; qty: number; rate: number; gst: number; amount: number; note?: string; productId?: string; variantKey?: string }[]>()
     .notNull()
     .default([]),
   subtotal: integer("subtotal").notNull().default(0),
@@ -334,6 +336,8 @@ export const quotations = pgTable("quotations", {
   /** Advance the customer must pay to start the work / process the order (paise). */
   advance: integer("advance").notNull().default(0),
   status: text("status").notNull().default("open"),
+  /** The bill/invoice this quotation was turned into (set when status becomes "invoiced"). */
+  invoiceId: text("invoice_id"),
   notes: text("notes").notNull().default(""),
 }, (t) => [
   check("quotations_status_check", oneOf(t.status, QUOTATION_STATUSES)),
@@ -524,6 +528,8 @@ export const posBills = pgTable("pos_bills", {
   gst: integer("gst").notNull().default(0),
   status: text("status").notNull(),
   payment: text("payment"),
+  /** How it was paid: [{ method: "CASH" | "CARD" | "UPI", amount }] in paise. */
+  payments: jsonb("payments").$type<{ method: string; amount: number }[]>().notNull().default([]),
 }, (t) => [
   check("pos_bills_status_check", oneOf(t.status, BILL_STATUSES)),
   check("pos_bills_source_check", oneOf(t.source, BILL_SOURCES)),
@@ -703,3 +709,14 @@ export type GstSettingsRow = typeof gstSettings.$inferSelect;
 export type DeliverySettingsRow = typeof deliverySettings.$inferSelect;
 export type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
 export type UserAddressRow = typeof userAddresses.$inferSelect;
+
+/**
+ * A checkout waiting for its Razorpay payment. Written when the payment starts, so the order can still be
+ * recorded if the customer's browser never reports back (the Razorpay webhook finishes it). Removed once the
+ * order exists. `draft` is the exact server-priced order the customer was shown.
+ */
+export const pendingCheckouts = pgTable("pending_checkouts", {
+  razorpayOrderId: text("razorpay_order_id").primaryKey(),
+  draft: jsonb("draft").$type<Record<string, unknown>>().notNull(),
+  createdAt: text("created_at").notNull(),
+});

@@ -10,7 +10,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export function PATCH(request: NextRequest, ctx: Ctx) {
   return handle("admin", async () => {
     const { id } = await ctx.params;
-    const patch = await readJson<Partial<BranchProfile>>(request);
+    // The invoice code fixes the numbering of every invoice the branch has issued, so it is never editable here.
+    const { code: _code, ...patch } = await readJson<Partial<BranchProfile>>(request);
     const b = await updateBranch(id, patch);
     return b ? ok(b) : notFound("Branch not found");
   });

@@ -1,4 +1,6 @@
 "use client";
+import { PaymentBox } from "@/components/ui/PaymentBox";
+import { freshPayBox, resolvePayBox, paymentLabel, type PayBox, type PaymentLine } from "@/lib/paymentSplit";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   User as UserIcon,
@@ -83,7 +85,7 @@ export default function BillingPage() {
   const [discType, setDiscType] = useState<"₹" | "%">("₹");
   const [discVal, setDiscVal] = useState(0);
   const [delivery, setDelivery] = useState(0);
-  const [cash, setCash] = useState<number | "">("");
+  const [payBox, setPayBox] = useState<PayBox>(freshPayBox);
   const [toast, setToast] = useState<string | null>(null);
 
   const activeRows = rows.filter((r) => r.name.trim() && r.price > 0);
@@ -123,7 +125,6 @@ export default function BillingPage() {
   const tax = billTax(billItems, true, billDiscount);
   const totalDiscount = itemDiscounts + billDiscount;
   const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
-  const change = cash === "" ? 0 : Number(cash) - grand;
   const couponProblem = couponCheck && !couponCheck.ok ? couponCheck.reason : null;
 
   // How many of each catalog product are already on the bill (for badges).
@@ -177,7 +178,7 @@ export default function BillingPage() {
     setCouponCode("");
     setDiscVal(0);
     setDelivery(0);
-    setCash("");
+    setPayBox(freshPayBox());
   };
 
   const buildBill = (): Bill | null => {
@@ -191,6 +192,17 @@ export default function BillingPage() {
       setToast("GST number must be a valid 15-character GSTIN, or leave it blank.");
       setTimeout(() => setToast(null), 3000);
       return null;
+    }
+    // How it was paid (counter sales only; online orders are Razorpay).
+    let pay: { payment: string; payments?: PaymentLine[]; status: Bill["status"] } = { payment: "Razorpay", status: "completed" };
+    if (source === "offline") {
+      const r = resolvePayBox(payBox, grand);
+      if (!r.ok) {
+        setToast(r.error);
+        setTimeout(() => setToast(null), 3000);
+        return null;
+      }
+      pay = { payment: paymentLabel(r.lines) || "cash", payments: r.lines, status: r.balance > 0 ? "pending" : "completed" };
     }
     return {
       id: genInvoiceId(),
@@ -211,8 +223,9 @@ export default function BillingPage() {
       cgst: tax.cgst,
       sgst: tax.sgst,
       gst: tax.gst,
-      status: "completed",
-      payment: source === "online" ? "Razorpay" : "Cash",
+      status: pay.status,
+      payment: pay.payment,
+      payments: pay.payments,
     };
   };
 
@@ -601,18 +614,8 @@ export default function BillingPage() {
               <span className="text-2xl font-bold tabular-nums text-ink-900">{formatINR(grand)}</span>
             </div>
 
-            {/* cash */}
-            {source === "offline" && (
-              <div className="mt-4 rounded-xl border border-ink-100 bg-[#FAF7EF] p-3">
-                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Cash Payment</label>
-                <MoneyInput value={cash === "" ? 0 : cash} onChange={(paise) => setCash(paise)} placeholder="Amount received (₹)" className={cn(fieldCls, "py-2.5")} />
-                {cash !== "" && cash > 0 && grand > 0 && (
-                  <p className={cn("mt-2 text-xs font-medium", change >= 0 ? "text-success" : "text-danger")}>
-                    {change >= 0 ? `Change to return: ${formatINR(change)}` : `Short by ${formatINR(-change)}`}
-                  </p>
-                )}
-              </div>
-            )}
+            {/* payment */}
+            {source === "offline" && <PaymentBox className="mt-4" total={grand} value={payBox} onChange={setPayBox} />}
 
             {/* actions */}
             <button onClick={sendWhatsApp} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#128C4B] py-3.5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-[#0f7a41]">

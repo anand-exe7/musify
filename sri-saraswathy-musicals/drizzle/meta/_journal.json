@@ -225,6 +225,20 @@
       "when": 1792048202441,
       "tag": "0031_repair_parts",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792218400277,
+      "tag": "0032_pending_checkouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792226275993,
+      "tag": "0033_payments_and_quotation_invoice",
+      "breakpoints": true
     }
   ]
 }
