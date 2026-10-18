@@ -41,11 +41,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   if (!hydrated || adminAccess === null) {
     return (
       <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-4 bg-[#F4F1EA]">
-        <div className="relative h-12 w-12">
+        <div className="relative h-14 w-14">
           <div className="absolute inset-0 animate-spin rounded-full border-2 border-ink-200 border-t-gold-500" />
           <div className="absolute inset-[6px] animate-spin rounded-full border-2 border-ink-100 border-b-gold-300 [animation-direction:reverse] [animation-duration:600ms]" />
         </div>
-        <p className="text-[11px] uppercase tracking-[0.24em] text-ink-400">Verifying access…</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-ink-500">Verifying access…</p>
       </div>
     );
   }

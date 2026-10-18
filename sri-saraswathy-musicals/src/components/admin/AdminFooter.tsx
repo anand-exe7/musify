@@ -15,7 +15,7 @@ export function AdminFooter() {
           </a>{" "}
           ©2026
         </p>
-        <p className="font-serif italic text-gold-600">· Fine Instruments · Since 1978</p>
+        <p className="font-medium normal-case tracking-normal text-gold-600">· Fine Instruments · Since 1978</p>
       </div>
     </footer>
   );

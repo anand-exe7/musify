@@ -184,3 +184,92 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Admin — single-font (Poppins) scope + shared layout utilities.
+ * Every admin tab lives under <div class="admin-root">. We remap the three
+ * site-wide font vars so stray `font-display` / `font-serif` tokens still
+ * render in Poppins, and we define a small set of reusable classes
+ * (.admin-page, .admin-page__title, .admin-card, .admin-pill, .admin-tabs,
+ * .admin-input) so every page shares the same shape and spacing.
+ * ──────────────────────────────────────────────────────────────────────── */
+.admin-root {
+  --font-sans: var(--font-admin);
+  --font-display: var(--font-admin);
+  --font-serif: var(--font-admin);
+  font-family: var(--font-admin), system-ui, sans-serif;
+  letter-spacing: -0.005em;
+}
+.admin-root * {
+  font-family: inherit;
+}
+
+@layer components {
+  /* Page shell — consistent padding + width across every tab. */
+  .admin-page {
+    @apply w-full px-4 py-5 md:px-6 md:py-8;
+  }
+
+  /* Page header block — title, subtitle, right-side actions. */
+  .admin-page__head {
+    @apply mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between;
+  }
+  .admin-page__title {
+    @apply text-2xl font-bold tracking-tight text-ink-900 md:text-[28px];
+  }
+  .admin-page__subtitle {
+    @apply mt-1 text-sm text-ink-500;
+  }
+
+  /* Soft card with gentle hairline + hover lift. */
+  .admin-card {
+    @apply rounded-2xl border border-ink-100 bg-ivory-50 shadow-[0_1px_2px_rgba(10,9,8,0.03)] transition-shadow;
+  }
+  .admin-card:hover {
+    @apply shadow-[0_6px_20px_-10px_rgba(10,9,8,0.14)];
+  }
+
+  /* Pill-style segmented control. */
+  .admin-pill-group {
+    @apply inline-flex flex-wrap items-center gap-1 rounded-full border border-ink-100 bg-ivory-50 p-1 shadow-sm;
+  }
+  .admin-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500 transition-colors hover:text-ink-900;
+  }
+  .admin-pill--active {
+    @apply bg-ink-900 text-ivory-50 shadow-sm;
+  }
+  .admin-pill--gold {
+    @apply bg-gold-500 text-ink-900 shadow-sm;
+  }
+
+  /* Underline tab row. */
+  .admin-tabs {
+    @apply flex gap-6 border-b border-ink-100;
+  }
+  .admin-tab {
+    @apply relative -mb-px border-b-2 border-transparent pb-3 text-sm font-semibold tracking-wide text-ink-400 transition-colors hover:text-ink-700;
+  }
+  .admin-tab--active {
+    @apply border-ink-900 text-ink-900;
+  }
+
+  /* Form fields. */
+  .admin-input {
+    @apply w-full rounded-xl border border-ink-200 bg-ivory-50 px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-300 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/15;
+  }
+  .admin-label {
+    @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500;
+  }
+
+  /* Primary / secondary admin buttons — rounded, calmer than storefront. */
+  .admin-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .admin-btn--gold {
+    @apply bg-gold-500 text-ink-900 hover:bg-gold-400;
+  }
+  .admin-btn--ghost {
+    @apply border border-ink-200 bg-transparent text-ink-700 hover:border-gold-500 hover:text-gold-700;
+  }
+}

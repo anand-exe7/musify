@@ -86,13 +86,13 @@ const sections: Section[] = [
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2.5 px-5 py-5">
-      <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-ink-900">
+    <div className="flex items-center gap-3 px-5 py-5">
+      <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-ink-900 ring-1 ring-gold-500/40">
         <Image src="/LOGO2.png" alt="" width={28} height={28} className="object-contain" />
       </div>
       <div className="min-w-0 leading-tight">
-        <p className="truncate font-display text-lg font-bold text-ink-900">Saraswathy</p>
-        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-gold-600">Admin</p>
+        <p className="truncate text-[15px] font-bold tracking-tight text-ink-900">Saraswathy</p>
+        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-gold-600">Admin Suite</p>
       </div>
     </div>
   );
@@ -142,10 +142,10 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   })();
 
   return (
-    <nav className="flex flex-col gap-4 px-3">
+    <nav className="flex flex-col gap-5 px-3">
       {visibleSections.map((s, idx) => (
         <div key={s.title} className="flex flex-col gap-0.5">
-          <p className={cn("px-3.5 pb-1 text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400", idx === 0 ? "pt-0" : "pt-1")}>
+          <p className={cn("px-3.5 pb-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-ink-400/80", idx === 0 ? "pt-0" : "pt-1")}>
             {s.title}
           </p>
           {s.items.map((i) => {
@@ -158,18 +158,24 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                 href={i.href}
                 onClick={onNavigate}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all",
+                  "group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13.5px] font-medium transition-all",
                   active
-                    ? "bg-ink-900 text-ivory-50 shadow-sm"
-                    : "text-ink-600 hover:bg-ink-900/[0.05] hover:text-ink-900",
+                    ? "bg-ink-900 text-ivory-50 shadow-[0_4px_14px_-6px_rgba(10,9,8,0.4)]"
+                    : "text-ink-600 hover:bg-ink-900/[0.045] hover:text-ink-900",
                 )}
               >
-                <Icon className="h-[18px] w-[18px]" strokeWidth={active ? 2.2 : 1.8} />
-                <span className="flex-1">{i.label}</span>
+                {active && (
+                  <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-x-1 -translate-y-1/2 rounded-r-full bg-gold-400" />
+                )}
+                <Icon
+                  className={cn("h-[18px] w-[18px] transition-colors", active ? "text-gold-400" : "text-ink-500 group-hover:text-ink-800")}
+                  strokeWidth={active ? 2.2 : 1.8}
+                />
+                <span className="flex-1 truncate">{i.label}</span>
                 {badge && (
                   <span
                     className={cn(
-                      "grid h-5 min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[10px] font-bold",
+                      "grid h-5 min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[10px] font-bold tabular-nums",
                       badge.danger ? "bg-danger text-white" : "bg-gold-500 text-ink-900",
                     )}
                   >
@@ -199,11 +205,12 @@ export function AdminSidebar({
       {/* Desktop */}
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-ink-100 bg-ivory-50 lg:flex",
+          "sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-ink-100 bg-ivory-50/95 backdrop-blur-sm lg:flex",
           collapsed && "lg:hidden",
         )}
       >
         <Brand />
+        <div className="mx-5 mb-2 h-px bg-gradient-to-r from-transparent via-ink-200 to-transparent" />
         <div className="mt-2 flex-1 overflow-y-auto pb-6">
           <NavList />
         </div>
@@ -213,13 +220,14 @@ export function AdminSidebar({
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-ink-950/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 flex h-full w-72 flex-col border-r border-ink-100 bg-ivory-50">
+          <aside className="absolute left-0 top-0 flex h-full w-72 flex-col border-r border-ink-100 bg-ivory-50 shadow-2xl">
             <div className="flex items-center justify-between pr-3">
               <Brand />
               <button onClick={() => setMobileOpen(false)} className="grid h-9 w-9 place-items-center rounded-lg text-ink-600 hover:bg-ink-900/5">
                 <X className="h-5 w-5" />
               </button>
             </div>
+            <div className="mx-5 mb-2 h-px bg-gradient-to-r from-transparent via-ink-200 to-transparent" />
             <div className="mt-2 flex-1 overflow-y-auto pb-6">
               <NavList onNavigate={() => setMobileOpen(false)} />
             </div>
