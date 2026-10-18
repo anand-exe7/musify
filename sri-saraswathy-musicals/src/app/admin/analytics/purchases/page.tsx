@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Package, Receipt, CheckCircle2, AlertCircle, FileText } from "lucide-react";
+import { AdminStat } from "@/components/admin/AdminStat";
 import { useVendors } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
@@ -48,15 +49,8 @@ function owes(left: number) {
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
 }
-function Stat({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: "gold" | "green" | "danger" | "ink" }) {
-  return (
-    <Card>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
-      <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl", accent === "gold" ? "text-gold-600" : accent === "green" ? "text-success" : accent === "danger" ? "text-danger" : "text-ink-900")}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>}
-    </Card>
-  );
-}
+/** Re-export the shared stat tile under the local name used in this file. */
+const Stat = AdminStat;
 
 export default function PurchaseAnalyticsPage() {
   const vendors = useVendors((s) => s.vendors);
@@ -178,11 +172,11 @@ export default function PurchaseAnalyticsPage() {
 
       {/* Every card follows the branch, vendor and period chosen above */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Bought" value={formatINR(t.bought)} hint={`${t.bills} bill${t.bills === 1 ? "" : "s"} · ${t.qty} pcs`} accent="gold" />
-        <Stat label="Goods value" value={formatINR(t.goods)} hint="Before GST" />
-        <Stat label="GST input" value={formatINR(t.gst)} hint="CGST + SGST + IGST" accent="green" />
-        <Stat label="Paid" value={formatINR(t.paid)} hint="Against these bills" accent="green" />
-        <Stat label="Still to pay" value={formatINR(Math.max(0, t.left))} hint={t.opening > 0 ? `Includes ${formatINR(t.opening)} old balance` : "Bought + old balance − paid"} accent={t.left > 0 ? "danger" : "ink"} />
+        <Stat label="Bought" value={formatINR(t.bought)} hint={`${t.bills} bill${t.bills === 1 ? "" : "s"} · ${t.qty} pcs`} accent="gold" icon={<Package className="h-4 w-4" />} />
+        <Stat label="Goods value" value={formatINR(t.goods)} hint="Before GST" icon={<FileText className="h-4 w-4" />} />
+        <Stat label="GST input" value={formatINR(t.gst)} hint="CGST + SGST + IGST" accent="green" icon={<Receipt className="h-4 w-4" />} />
+        <Stat label="Paid" value={formatINR(t.paid)} hint="Against these bills" accent="green" icon={<CheckCircle2 className="h-4 w-4" />} />
+        <Stat label="Still to pay" value={formatINR(Math.max(0, t.left))} hint={t.opening > 0 ? `Includes ${formatINR(t.opening)} old balance` : "Bought + old balance − paid"} accent={t.left > 0 ? "danger" : "ink"} icon={<AlertCircle className="h-4 w-4" />} />
       </div>
 
       {/* What each branch bought, paid and owes */}

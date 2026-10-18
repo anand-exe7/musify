@@ -3,11 +3,12 @@ import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Search, Globe, Store, Wrench, ExternalLink } from "lucide-react";
+import { FileText, Search, Globe, Store, Wrench, ExternalLink, Receipt, Banknote } from "lucide-react";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 import { useBranchScope } from "@/lib/store/branch";
+import { AdminStat } from "@/components/admin/AdminStat";
 
 /** yyyy-mm-dd of an invoice's timestamp in the viewer's local time (so an evening bill stays on its day). */
 function localDay(iso: string): string {
@@ -126,10 +127,10 @@ export default function InvoicesLedgerPage() {
 
       {/* Stats */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Invoices" value={stat(stats.count)} />
-        <Stat label="Total billed" value={loading ? "…" : error ? "—" : formatINR(stats.total)} />
-        <Stat label="Online" value={stat(stats.web)} />
-        <Stat label="In-store" value={stat(stats.pos)} />
+        <AdminStat label="Invoices" value={stat(stats.count)} icon={<Receipt className="h-4 w-4" />} accent="ink" />
+        <AdminStat label="Total billed" value={loading ? "…" : error ? "—" : formatINR(stats.total)} icon={<Banknote className="h-4 w-4" />} accent="gold" />
+        <AdminStat label="Online" value={stat(stats.web)} icon={<Globe className="h-4 w-4" />} accent="green" />
+        <AdminStat label="In-store" value={stat(stats.pos)} icon={<Store className="h-4 w-4" />} accent="info" />
       </div>
 
       {/* Date + branch filters */}
@@ -245,11 +246,3 @@ export default function InvoicesLedgerPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">{label}</p>
-      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-ink-900">{value}</p>
-    </div>
-  );
-}

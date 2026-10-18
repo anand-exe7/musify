@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Download, Plus, Search } from "lucide-react";
+import { ChevronDown, Download, Plus, Search, FileText, Package, BadgeCheck, AlertCircle } from "lucide-react";
+import { AdminStat } from "@/components/admin/AdminStat";
 import { useVendors } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
 import { useAuth } from "@/lib/store/auth";
@@ -180,10 +181,15 @@ export default function VendorBillsPage() {
         <>
       {/* Totals for everything the filters match, then each branch */}
       <div className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Bills" value={sum ? String(sum.bills) : "—"} />
-        <Stat label="Bought" value={sum ? formatINR(sum.bought) : "—"} />
-        <Stat label="Paid" value={sum ? formatINR(sum.paid) : "—"} tone="good" />
-        <Stat label="Left to pay" value={sum ? formatINR(sum.left) : "—"} tone={sum && sum.left > 0 ? "bad" : undefined} />
+        <AdminStat label="Bills" value={sum ? String(sum.bills) : "—"} icon={<FileText className="h-4 w-4" />} accent="ink" />
+        <AdminStat label="Bought" value={sum ? formatINR(sum.bought) : "—"} icon={<Package className="h-4 w-4" />} accent="gold" />
+        <AdminStat label="Paid" value={sum ? formatINR(sum.paid) : "—"} icon={<BadgeCheck className="h-4 w-4" />} accent="green" />
+        <AdminStat
+          label="Left to pay"
+          value={sum ? formatINR(sum.left) : "—"}
+          icon={<AlertCircle className="h-4 w-4" />}
+          accent={sum && sum.left > 0 ? "danger" : "ink"}
+        />
       </div>
       {sum && showBranches && Object.keys(sum.branches).length > 0 && (
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
@@ -269,15 +275,6 @@ export default function VendorBillsPage() {
       )}
         </>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
-  return (
-    <div className={cn("rounded-xl border p-4", tone === "bad" ? "border-danger/30 bg-danger/5" : "border-ink-100 bg-ivory-50")}>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
-      <p className={cn("mt-1 text-xl font-bold tabular-nums", tone === "good" ? "text-success" : tone === "bad" ? "text-danger" : "text-ink-900")}>{value}</p>
     </div>
   );
 }

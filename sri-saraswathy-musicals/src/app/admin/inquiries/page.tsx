@@ -14,6 +14,7 @@ import { BUSINESS, waLink } from "@/lib/data/business";
 import { cn } from "@/lib/utils";
 import { downloadCsv, stamp } from "@/lib/csv";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
+import { AdminStat } from "@/components/admin/AdminStat";
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -26,17 +27,7 @@ function replyMessage(i: Inquiry) {
   );
 }
 
-function Stat({ label, value, accent, icon }: { label: string; value: string; accent?: "gold" | "green" | "ink"; icon?: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
-      <div className="flex items-start justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
-        {icon && <span className="text-ink-300">{icon}</span>}
-      </div>
-      <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl", accent === "gold" ? "text-gold-600" : accent === "green" ? "text-success" : "text-ink-900")}>{value}</p>
-    </div>
-  );
-}
+const Stat = AdminStat;
 
 export default function InquiriesPage() {
   const inquiries = useInquiry((s) => s.inquiries);

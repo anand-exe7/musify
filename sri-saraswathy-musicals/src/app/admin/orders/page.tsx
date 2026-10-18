@@ -148,60 +148,118 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-        <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
+      {/* Table — generous cell padding + two-line Order / Customer cells so the
+          row reads like a card instead of a crammed grid. */}
+      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50 shadow-[0_1px_2px_rgba(10,9,8,0.03)]">
+        <table className="w-full min-w-[1120px] text-sm">
           <thead>
-            <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-              <th className="px-5 py-4">Order</th><th>Customer</th><th>Phone</th><th>Type</th><th>Tax Invoice</th><th>Coupon</th><th className="text-right">Discount</th><th className="text-right">Delivery</th><th className="text-right">Total</th><th>Date</th><th>Status</th><th className="px-5 text-right">Actions</th>
+            <tr className="border-b border-ink-100 bg-[#F4F1EA]/60 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500 [&>th]:px-4 [&>th]:py-3.5">
+              <th className="!pl-6">Order</th>
+              <th>Customer</th>
+              <th>Type</th>
+              <th>Tax Invoice</th>
+              <th>Coupon</th>
+              <th className="text-right">Discount</th>
+              <th className="text-right">Delivery</th>
+              <th className="text-right">Total</th>
+              <th>Status</th>
+              <th className="!pr-6 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-ink-50">
+          <tbody className="divide-y divide-ink-100/70">
             {pg.items.map((b) => (
-              <tr key={b.id} className="text-ink-800">
-                <td className="px-5 py-4"><span className="inline-flex items-center gap-1 font-semibold text-ink-900">{b.id.toUpperCase()}</span></td>
-                <td className="font-medium">{b.customerName}</td>
-                <td className="text-ink-600">{b.phone || "—"}</td>
-                <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", b.source === "online" ? "bg-success/15 text-success" : b.source === "service" ? "bg-[#8B5CF6]/15 text-[#6D28D9]" : "bg-gold-100 text-gold-700")}>{b.source === "online" ? "Online" : b.source === "service" ? "Service" : "In-store"}</span></td>
+              <tr key={b.id} className="text-ink-800 transition-colors hover:bg-[#FAF7EF]/70 [&>td]:px-4 [&>td]:py-4 [&>td]:align-middle">
+                {/* Order id — the id is primary, date lives right under it so
+                    the "Date" column doesn't need its own cramped slot. */}
+                <td className="!pl-6">
+                  <p className="font-semibold tracking-tight text-ink-900">{b.id.toUpperCase()}</p>
+                  <p className="mt-0.5 text-[11px] text-ink-400">{fmtDate(b.createdAt)}</p>
+                </td>
+                {/* Customer + phone stacked — reads at a glance. */}
+                <td>
+                  <p className="font-medium text-ink-900">{b.customerName}</p>
+                  <p className="mt-0.5 text-[11px] text-ink-500">{b.phone || "—"}</p>
+                </td>
+                <td>
+                  <span className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider",
+                    b.source === "online"
+                      ? "bg-success/15 text-success"
+                      : b.source === "service"
+                        ? "bg-[#8B5CF6]/15 text-[#6D28D9]"
+                        : "bg-gold-100 text-gold-700",
+                  )}>
+                    <span className={cn("h-1.5 w-1.5 rounded-full",
+                      b.source === "online" ? "bg-success" : b.source === "service" ? "bg-[#8B5CF6]" : "bg-gold-500",
+                    )} />
+                    {b.source === "online" ? "Online" : b.source === "service" ? "Service" : "In-store"}
+                  </span>
+                </td>
                 <td>
                   {invByRef[b.id] ? (
-                    <Link href={`/admin/invoices/${invByRef[b.id].id}`} target="_blank" title="Open GST tax invoice" className="inline-flex items-center gap-1 font-semibold text-gold-600 hover:text-gold-700">
-                      {invByRef[b.id].number} <ExternalLink className="h-3 w-3 text-ink-300" />
+                    <Link
+                      href={`/admin/invoices/${invByRef[b.id].id}`}
+                      target="_blank"
+                      title="Open GST tax invoice"
+                      className="inline-flex items-center gap-1 font-semibold text-gold-700 hover:text-gold-800"
+                    >
+                      {invByRef[b.id].number}
+                      <ExternalLink className="h-3 w-3 text-ink-300" />
                     </Link>
                   ) : (
                     <span className="text-ink-300">—</span>
                   )}
                 </td>
-                <td className="text-gold-600">{b.coupon || "—"}</td>
-                <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
-                <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
-                <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
-                <td className="text-ink-600">{fmtDate(b.createdAt)}</td>
-                <td><span className="rounded bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase text-success">{b.status}</span></td>
-                <td className="px-5">
+                <td className="text-gold-700">{b.coupon || <span className="text-ink-300">—</span>}</td>
+                <td className="text-right tabular-nums text-ink-600">
+                  {b.discount ? formatINR(b.discount) : <span className="text-ink-300">—</span>}
+                </td>
+                <td className="text-right tabular-nums text-ink-600">
+                  {b.delivery ? formatINR(b.delivery) : <span className="text-ink-300">—</span>}
+                </td>
+                <td className="text-right text-base font-bold tabular-nums tracking-tight text-ink-900">
+                  {formatINR(b.total)}
+                </td>
+                <td>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                    {b.status}
+                  </span>
+                </td>
+                {/* Actions — icon buttons grouped in a soft hairline pill so
+                    hovering a row doesn't light up unrelated areas. */}
+                <td className="!pr-6">
                   <div className="flex items-center justify-end gap-1">
                     <Link
                       href={`/invoice/${b.id}`}
                       target="_blank"
                       title="View invoice"
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 hover:text-gold-600"
+                      className="group/btn inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-700 transition-colors hover:border-gold-500 hover:bg-gold-50 hover:text-gold-700"
                     >
-                      <Eye className="h-3.5 w-3.5" /> Invoice <ExternalLink className="h-3 w-3 text-ink-300" />
+                      <Eye className="h-3.5 w-3.5" /> Invoice
+                      <ExternalLink className="h-3 w-3 text-ink-300 group-hover/btn:text-gold-500" />
                     </Link>
-                    {b.source === "offline" && (
-                      <button onClick={() => setConfirmId(b.id)} title="Delete POS bill" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
+                    {b.source === "offline" ? (
+                      <button
+                        onClick={() => setConfirmId(b.id)}
+                        title="Delete POS bill"
+                        aria-label="Delete bill"
+                        className="grid h-8 w-8 place-items-center rounded-lg border border-transparent text-ink-400 transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
+                    ) : (
+                      <span className="h-8 w-8" aria-hidden />
                     )}
                   </div>
                 </td>
               </tr>
             ))}
             {!loading && loadFailed && (
-              <tr><td colSpan={12} className="px-5 py-10 text-center text-sm font-semibold text-danger">{errorMessage ?? "Couldn't load orders."} The list below may be incomplete — don&apos;t read it as &ldquo;no orders&rdquo;.</td></tr>
+              <tr><td colSpan={10} className="px-5 py-10 text-center text-sm font-semibold text-danger">{errorMessage ?? "Couldn't load orders."} The list below may be incomplete — don&apos;t read it as &ldquo;no orders&rdquo;.</td></tr>
             )}
             {!loading && !loadFailed && rows.length === 0 && (
-              <tr><td colSpan={12} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
+              <tr><td colSpan={10} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
             )}
           </tbody>
         </table>

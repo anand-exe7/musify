@@ -19,6 +19,7 @@ import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/Repai
 import { formatINR, cn } from "@/lib/utils";
 import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
+import { AdminStat } from "@/components/admin/AdminStat";
 
 type Tab = "tickets" | "report";
 type BranchFilter = Branch | "all";
@@ -45,19 +46,7 @@ function KpiCell({ label, value, sub, dot, tone }: { label: string; value: strin
   );
 }
 
-function Stat({ label, value, hint, accent, icon }: { label: string; value: string; hint?: string; accent?: "gold" | "green" | "red" | "ink"; icon?: React.ReactNode }) {
-  return (
-    <Card>
-      <div className="flex items-start justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
-        {icon && <span className="text-ink-300">{icon}</span>}
-      </div>
-      <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl",
-        accent === "gold" ? "text-gold-600" : accent === "green" ? "text-success" : accent === "red" ? "text-danger" : "text-ink-900")}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>}
-    </Card>
-  );
-}
+const Stat = AdminStat;
 
 export default function ServicePage() {
   const router = useRouter();

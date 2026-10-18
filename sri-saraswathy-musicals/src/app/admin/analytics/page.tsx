@@ -10,6 +10,7 @@ import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
 import { Download } from "lucide-react";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
+import { AdminStat } from "@/components/admin/AdminStat";
 
 /** A sale is "GST" when it actually carried tax: POS bills honour their saved
  *  `gstEnabled` snapshot; web + service sales are always taxed. */
@@ -41,15 +42,8 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
 }
 
-function Stat({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: "gold" | "green" | "ink" }) {
-  return (
-    <Card>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">{label}</p>
-      <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl", accent === "gold" ? "text-gold-600" : accent === "green" ? "text-success" : "text-ink-900")}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>}
-    </Card>
-  );
-}
+/** Re-export the shared stat tile under the local name used in this file. */
+const Stat = AdminStat;
 
 export default function AnalyticsPage() {
   const { sales: bills, loading, error } = useAllSales();
