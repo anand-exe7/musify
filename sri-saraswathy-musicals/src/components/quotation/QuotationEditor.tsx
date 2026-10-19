@@ -73,7 +73,7 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
         branch: draft.branch,
         date: draft.date,
         validUntil: draft.validUntil,
-        items: draft.items.map((l) => ({ name: l.name, hsn: l.hsn, qty: l.qty, rate: l.rate, gst: l.gst, note: l.note, productId: l.productId, variantKey: l.variantKey })),
+        items: draft.items.map((l) => ({ name: l.name, hsn: l.hsn, qty: l.qty, rate: l.rate, mrp: l.mrp || undefined, discount: Math.min(l.discount || 0, l.qty * l.rate) || undefined, gst: l.gst, note: l.note, productId: l.productId, variantKey: l.variantKey })),
         discount: draft.discount ?? 0,
         advance: draft.advance ?? 0,
         notes: draft.notes ?? "",
@@ -182,15 +182,17 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
           </button>
         </div>
         <div className="overflow-x-auto rounded-xl border border-ink-100">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[1040px] text-sm">
             <thead className="bg-ivory-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">
               <tr>
                 <th className="px-3 py-2">Item</th>
                 <th className="w-24 px-2 py-2">HSN</th>
-                <th className="w-20 px-2 py-2 text-center">Qty</th>
-                <th className="w-32 px-2 py-2 text-right">Rate ₹ (incl. GST)</th>
                 <th className="w-24 px-2 py-2 text-right">GST %</th>
-                <th className="w-32 px-2 py-2 text-right">Amount</th>
+                <th className="w-28 px-2 py-2 text-right">MRP ₹</th>
+                <th className="w-20 px-2 py-2 text-center">Qty</th>
+                <th className="w-28 px-2 py-2 text-right">Rate ₹ (incl. GST)</th>
+                <th className="w-28 px-2 py-2 text-right">Disc. ₹</th>
+                <th className="w-28 px-2 py-2 text-right">Amount</th>
                 <th className="w-10" />
               </tr>
             </thead>
@@ -213,14 +215,16 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
                   </td>
                   <td className="px-2 py-2"><input className={inp} value={l.hsn} onChange={(e) => setLine(i, { hsn: e.target.value })} /></td>
                   <td className="px-2 py-2">
-                    <input type="number" min={1} className={cn(inp, "text-center tabular-nums")} value={l.qty} onChange={(e) => setLine(i, { qty: Math.max(0, Math.floor(Number(e.target.value)) || 0) })} />
-                  </td>
-                  <td className="px-2 py-2"><MoneyInput value={l.rate} onChange={(rate) => setLine(i, { rate })} className={cn(inp, "text-right tabular-nums")} placeholder="0" /></td>
-                  <td className="px-2 py-2">
                     <select className={cn(inp, "text-right tabular-nums")} value={l.gst} onChange={(e) => setLine(i, { gst: Number(e.target.value) })}>
                       {[...new Set([...GST_RATES, l.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                     </select>
                   </td>
+                  <td className="px-2 py-2"><MoneyInput value={l.mrp ?? 0} onChange={(mrp) => setLine(i, { mrp })} className={cn(inp, "text-right tabular-nums")} placeholder={l.rate > 0 ? String(l.rate / 100) : "MRP"} /></td>
+                  <td className="px-2 py-2">
+                    <input type="number" min={1} className={cn(inp, "text-center tabular-nums")} value={l.qty} onChange={(e) => setLine(i, { qty: Math.max(0, Math.floor(Number(e.target.value)) || 0) })} />
+                  </td>
+                  <td className="px-2 py-2"><MoneyInput value={l.rate} onChange={(rate) => setLine(i, { rate })} className={cn(inp, "text-right tabular-nums")} placeholder="0" /></td>
+                  <td className="px-2 py-2"><MoneyInput value={l.discount ?? 0} onChange={(discount) => setLine(i, { discount: Math.min(discount, l.qty * l.rate) })} className={cn(inp, "text-right tabular-nums")} placeholder="0" /></td>
                   <td className="px-2 py-2 pt-4 text-right font-semibold tabular-nums text-ink-900">{formatINR(amounts[i] ?? 0)}</td>
                   <td className="px-1 py-2 text-right">
                     <button
@@ -234,7 +238,7 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
                 </tr>
               ))}
               {draft.items.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-6 text-center text-ink-400">No items. Click “Add line”.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-ink-400">No items. Click “Add line”.</td></tr>
               )}
             </tbody>
           </table>

@@ -174,7 +174,7 @@ export async function loadBills(f: BillFilter, scope: Branch[] | null): Promise<
 }
 
 export async function getBillsPage(f: BillFilter, scope: Branch[] | null): Promise<BillsPage> {
-  const pageSize = Math.min(MAX_BILL_PAGE, Math.max(1, Math.floor(Number(f.pageSize)) || 25));
+  const pageSize = Math.min(MAX_BILL_PAGE, Math.max(1, Math.floor(Number(f.pageSize)) || 10));
   const rows = await loadBills(f, scope);
 
   const byDateDesc = (a: BillRow, b: BillRow) => (a.date === b.date ? (a.createdAt < b.createdAt ? 1 : -1) : a.date < b.date ? 1 : -1);

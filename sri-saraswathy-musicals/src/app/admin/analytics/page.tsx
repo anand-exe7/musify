@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { usePOS, filterBills, inPeriod, productStock, type Bill, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
+import { usePOS, useInventory, filterBills, inPeriod, productStock, type Bill, type Period, type BranchFilter, type Source } from "@/lib/store/pos";
 import { useAllSales } from "@/lib/client/sales";
 import { useGst, extractGst } from "@/lib/store/gst";
 import { useExpenses } from "@/lib/store/expenses";
@@ -11,6 +11,9 @@ import { downloadCsv } from "@/lib/csv";
 import { Download } from "lucide-react";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { AdminStat } from "@/components/admin/AdminStat";
+import { Pager } from "@/components/ui/Pager";
+import { usePaged } from "@/lib/client/usePaged";
+import type { Invoice } from "@/types";
 
 /** A sale is "GST" when it actually carried tax: POS bills honour their saved
  *  `gstEnabled` snapshot; web + service sales are always taxed. */
@@ -47,7 +50,7 @@ const Stat = AdminStat;
 
 export default function AnalyticsPage() {
   const { sales: bills, loading, error } = useAllSales();
-  const invProducts = usePOS((s) => s.invProducts);
+  const invProducts = useInventory();
   const coupons = usePOS((s) => s.coupons);
   const gstRate = useGst((s) => s.standardRate);
   const expensesAll = useExpenses((s) => s.expenses);
@@ -398,7 +401,7 @@ export default function AnalyticsPage() {
       {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} rate={gstRate} />}
 
       {/* ── SALES REPORT ── */}
-      {tab === "sales" && <SalesTab scoped={scoped} query={salesQuery} setQuery={setSalesQuery} billGst={billGst} />}
+      {tab === "sales" && <SalesTab scoped={scoped} query={salesQuery} setQuery={setSalesQuery} billGst={billGst} rate={gstRate} />}
 
       {/* ── PRODUCTS ── */}
       {tab === "products" && (
@@ -487,127 +490,175 @@ function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: Re
 }
 
 /* ── Sales report tab ── */
-function SalesTab({ scoped, query, setQuery, billGst }: { scoped: Bill[]; query: string; setQuery: (v: string) => void; billGst: (b: Bill) => number }) {
+function SalesTab({ scoped, query, setQuery, billGst, rate }: { scoped: Bill[]; query: string; setQuery: (v: string) => void; billGst: (b: Bill) => number; rate: number }) {
   const fmtDate = (iso: string) => {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
+
+  // Tax invoices keyed by the bill/order they were raised for, so each row shows its branch number and GST number.
+  const [invByRef, setInvByRef] = useState<Record<string, Invoice>>({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/invoices")
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => [])
+      .then((data: Invoice[]) => {
+        if (!alive || !Array.isArray(data)) return;
+        const m: Record<string, Invoice> = {};
+        for (const inv of data) if (inv.refId) m[inv.refId] = inv;
+        setInvByRef(m);
+      });
+    return () => { alive = false; };
+  }, []);
+  const refOf = (b: Bill) => invByRef[b.id]?.reference || b.id;
+  const gstNoOf = (b: Bill) => invByRef[b.id]?.number ?? "";
+
   const q = query.trim().toLowerCase();
   const rows = useMemo(() => {
     const list = q
       ? scoped.filter(
           (b) =>
             b.id.toLowerCase().includes(q) ||
+            (invByRef[b.id]?.reference ?? "").toLowerCase().includes(q) ||
+            (invByRef[b.id]?.number ?? "").toLowerCase().includes(q) ||
             (b.customerName || "").toLowerCase().includes(q) ||
             b.phone.includes(query.trim()) ||
-            (b.customerGstin || "").toLowerCase().includes(q),
+            (b.customerGstin || "").toLowerCase().includes(q) ||
+            b.items.some((i) => i.name.toLowerCase().includes(q)),
         )
       : scoped;
     return [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  }, [scoped, q, query]);
+  }, [scoped, q, query, invByRef]);
+  const pg = usePaged(rows, query);
 
   const totals = useMemo(() => {
-    let subtotal = 0, discount = 0, gst = 0, delivery = 0, total = 0;
+    let subtotal = 0, discount = 0, gst = 0, delivery = 0, total = 0, units = 0;
     for (const b of rows) {
       subtotal += b.subtotal;
       discount += b.discount;
       gst += billGst(b);
       delivery += b.delivery;
       total += b.total;
+      units += b.items.reduce((n, i) => n + i.qty, 0);
     }
-    return { subtotal, discount, gst, delivery, total };
+    return { subtotal, discount, gst, delivery, total, units };
   }, [rows, billGst]);
 
-  const exportCSV = () => {
-    const r2 = (paise: number) => (paise / 100).toFixed(2);
-    const head = ["Date", "Invoice", "Customer", "Phone", "GSTIN", "Branch", "Source", "Items", "Subtotal", "Discount", "GST", "Delivery", "Total", "Payment", "Status"];
-    const body = rows.map((b) => [
-      fmtDate(b.createdAt),
-      b.id,
-      b.customerName || "",
-      b.phone || "",
-      b.customerGstin || "",
-      b.branch,
-      b.source,
-      String(b.items.reduce((q, i) => q + i.qty, 0)),
-      r2(b.subtotal),
-      r2(b.discount),
-      r2(billGst(b)),
-      r2(b.delivery),
-      r2(b.total),
-      b.payment ?? "",
-      b.status,
-    ]);
-    downloadCsv(`sales-report-${Date.now()}.csv`, [head, ...body]);
+  const r2 = (paise: number) => (paise / 100).toFixed(2);
+  /** One line of a bill: what the customer paid for it (after its own discount) and the GST inside that. */
+  const lineAmounts = (b: Bill, i: Bill["items"][number]) => {
+    const gross = Math.max(0, i.price * i.qty - (i.discount ?? 0));
+    const lineRate = i.gstRate === null ? 0 : (i.gstRate ?? (b.source === "offline" && !b.gstEnabled ? 0 : rate));
+    return { gross, gst: extractGst(gross, lineRate).gst, lineRate };
   };
 
+  // Bill-wise: one row per bill, its products listed in one cell.
+  const exportBills = () => {
+    const head = ["Date", "Invoice", "Tax invoice no.", "Customer", "Phone", "GSTIN", "Branch", "Source", "Products", "Units", "Subtotal", "Discount", "GST", "Delivery", "Total", "Payment", "Status"];
+    const body = rows.map((b) => [
+      fmtDate(b.createdAt), refOf(b), gstNoOf(b), b.customerName || "", b.phone || "", b.customerGstin || "", branchLabel(b.branch), b.source,
+      b.items.map((i) => `${i.name} × ${i.qty}`).join("; "), String(b.items.reduce((n, i) => n + i.qty, 0)),
+      r2(b.subtotal), r2(b.discount), r2(billGst(b)), r2(b.delivery), r2(b.total), b.payment ?? "", b.status,
+    ]);
+    downloadCsv(`sales-report-bills-${Date.now()}.csv`, [head, ...body]);
+  };
+  // Product-wise: one row per product sold, with the customer repeated on each — ready to sort or pivot.
+  const exportItems = () => {
+    const head = ["Date", "Invoice", "Tax invoice no.", "Customer", "Phone", "GSTIN", "Branch", "Source", "Product", "HSN", "Qty", "Rate", "MRP", "Line discount", "GST %", "GST", "Line amount", "Payment", "Status"];
+    const body = rows.flatMap((b) =>
+      b.items.map((i) => {
+        const a = lineAmounts(b, i);
+        return [fmtDate(b.createdAt), refOf(b), gstNoOf(b), b.customerName || "", b.phone || "", b.customerGstin || "", branchLabel(b.branch), b.source,
+          i.name, i.hsn ?? "", String(i.qty), r2(i.price), i.mrp ? r2(i.mrp) : "", r2(i.discount ?? 0), String(a.lineRate), r2(a.gst), r2(a.gross), b.payment ?? "", b.status];
+      }),
+    );
+    downloadCsv(`sales-report-products-${Date.now()}.csv`, [head, ...body]);
+  };
+
+  const btn = "flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <Card>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-ink-900">Sales Report</p>
-          <p className="mt-1 text-xs text-ink-500">{rows.length} bill(s) in current filters · customer details included</p>
+          <p className="mt-1 text-xs text-ink-500">{rows.length} bill(s) · {totals.units} unit(s) in current filters · customer and product details included</p>
         </div>
-        <div className="flex items-center gap-3">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search invoice, name, phone, GSTIN…" className="w-72 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-          <button onClick={exportCSV} disabled={rows.length === 0} className="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:cursor-not-allowed disabled:opacity-50">
-            <Download className="h-4 w-4" /> Export CSV
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search invoice, customer, phone, GSTIN, product…" className="w-72 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+          <button onClick={exportBills} disabled={rows.length === 0} className={btn} title="One row per bill, with its products in one cell"><Download className="h-4 w-4" /> Bills CSV</button>
+          <button onClick={exportItems} disabled={rows.length === 0} className={btn} title="One row per product sold, with the customer on every row"><Download className="h-4 w-4" /> Products CSV</button>
         </div>
       </div>
       {rows.length === 0 ? (
         <p className="py-12 text-center text-sm text-ink-400">No sales match the current filters.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] whitespace-nowrap text-sm">
-            <thead>
-              <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-                <th className="py-3">Date</th>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th>Phone</th>
-                <th>GSTIN</th>
-                <th>Branch</th>
-                <th>Source</th>
-                <th className="text-center">Items</th>
-                <th className="text-right">Subtotal</th>
-                <th className="text-right">Discount</th>
-                <th className="text-right">GST</th>
-                <th className="text-right">Delivery</th>
-                <th className="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-50">
-              {rows.map((b) => (
-                <tr key={b.id} className="text-ink-800">
-                  <td className="py-3 text-ink-600">{fmtDate(b.createdAt)}</td>
-                  <td className="font-semibold text-ink-900">{b.id}</td>
-                  <td className="font-medium">{b.customerName || <span className="text-ink-300">—</span>}</td>
-                  <td className="text-ink-600">{b.phone || "—"}</td>
-                  <td className="text-ink-600">{b.customerGstin || <span className="text-ink-300">—</span>}</td>
-                  <td className="text-ink-600">{branchLabel(b.branch)}</td>
-                  <td className="uppercase text-ink-500">{b.source}</td>
-                  <td className="text-center tabular-nums">{b.items.reduce((q, i) => q + i.qty, 0)}</td>
-                  <td className="text-right tabular-nums">{formatINR(b.subtotal)}</td>
-                  <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
-                  <td className="text-right tabular-nums">{billGst(b) ? formatINR(billGst(b)) : "—"}</td>
-                  <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
-                  <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-sm">
+              <thead>
+                <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+                  <th className="py-3">Date</th>
+                  <th>Invoice</th>
+                  <th>Customer</th>
+                  <th>Products</th>
+                  <th>Branch · Source</th>
+                  <th>Payment</th>
+                  <th className="text-right">Subtotal</th>
+                  <th className="text-right">Discount</th>
+                  <th className="text-right">GST</th>
+                  <th className="text-right">Delivery</th>
+                  <th className="text-right">Total</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-ink-200 bg-ivory-50/50 font-bold text-ink-900">
-                <td className="py-3 text-[10px] uppercase tracking-wider text-ink-500" colSpan={8}>Totals ({rows.length})</td>
-                <td className="text-right tabular-nums">{formatINR(totals.subtotal)}</td>
-                <td className="text-right tabular-nums">{formatINR(totals.discount)}</td>
-                <td className="text-right tabular-nums">{formatINR(totals.gst)}</td>
-                <td className="text-right tabular-nums">{formatINR(totals.delivery)}</td>
-                <td className="text-right tabular-nums">{formatINR(totals.total)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-ink-50">
+                {pg.items.map((b) => (
+                  <tr key={b.id} className="align-top text-ink-800">
+                    <td className="whitespace-nowrap py-3 text-ink-600">{fmtDate(b.createdAt)}</td>
+                    <td className="whitespace-nowrap">
+                      <p className="font-semibold text-ink-900">{refOf(b)}</p>
+                      {gstNoOf(b) && <p className="text-[11px] text-ink-400">{gstNoOf(b)}</p>}
+                    </td>
+                    <td className="min-w-[150px]">
+                      <p className="font-medium text-ink-900">{b.customerName || <span className="text-ink-300">—</span>}</p>
+                      <p className="text-[11px] text-ink-500">{b.phone || "—"}</p>
+                      {b.customerGstin && <p className="font-mono text-[10px] text-ink-400">{b.customerGstin}</p>}
+                    </td>
+                    <td className="min-w-[240px]">
+                      {b.items.map((i, k) => (
+                        <p key={k} className="text-[12px] leading-snug text-ink-800">
+                          {i.name} <span className="whitespace-nowrap font-semibold text-ink-500">× {i.qty}</span>
+                          <span className="whitespace-nowrap text-ink-400"> · {formatINR(i.price)}{i.discount ? ` − ${formatINR(i.discount)}` : ""}</span>
+                        </p>
+                      ))}
+                    </td>
+                    <td className="whitespace-nowrap text-[12px]">
+                      <p className="text-ink-700">{branchLabel(b.branch)}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-ink-400">{b.source}</p>
+                    </td>
+                    <td className="whitespace-nowrap text-[12px] text-ink-600">{b.payment || "—"}</td>
+                    <td className="text-right tabular-nums">{formatINR(b.subtotal)}</td>
+                    <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
+                    <td className="text-right tabular-nums">{billGst(b) ? formatINR(billGst(b)) : "—"}</td>
+                    <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
+                    <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-ink-200 bg-ivory-50/50 font-bold text-ink-900">
+                  <td className="py-3 text-[10px] uppercase tracking-wider text-ink-500" colSpan={6}>Totals · all {rows.length} bill(s), {totals.units} unit(s)</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.subtotal)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.discount)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.gst)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.delivery)}</td>
+                  <td className="text-right tabular-nums">{formatINR(totals.total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <Pager className="mt-4" {...pg.pager} />
+        </>
       )}
     </Card>
   );

@@ -69,12 +69,12 @@ export function PaymentDialog({
   const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain bg-ink-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="my-auto w-full max-w-2xl rounded-2xl bg-ivory-50 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold text-ink-900">Record Payment</h3>
         <p className="mt-1 text-xs text-ink-500">{purchase.invoiceNo ? `${purchase.invoiceNo} · ` : ""}{purchase.id} · {vendorName}</p>
-        <p className="mt-3 rounded-lg bg-ink-900/5 px-3 py-2 text-xs"><span className="text-ink-500">Outstanding on this invoice:</span> <span className="font-bold tabular-nums text-ink-900">{formatINR(bal)}</span></p>
-        <div className="mt-4 space-y-4">
+        <p className="mt-2 rounded-lg bg-ink-900/5 px-3 py-2 text-xs"><span className="text-ink-500">Outstanding on this invoice:</span> <span className="font-bold tabular-nums text-ink-900">{formatINR(bal)}</span></p>
+        <div className="mt-3 space-y-3">
           <div>
             <label className={label}>Mode</label>
             <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className={field}>
@@ -91,7 +91,7 @@ export function PaymentDialog({
             {amount > bal && <p className="mt-1.5 text-[11px] font-semibold text-danger">That is more than the {formatINR(bal)} left on this bill.</p>}
           </div>
           <div><label className={label}>Reference (cheque / txn id)</label><input value={reference} onChange={(e) => setReference(e.target.value)} className={field} /></div>
-          <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} /></div>
+          <div><label className={label}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={1} className={cn(field, "resize-none")} /></div>
           {error && <p className="text-xs font-semibold text-danger">{error}</p>}
           <div className="flex gap-2">
             <button onClick={onClose} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>

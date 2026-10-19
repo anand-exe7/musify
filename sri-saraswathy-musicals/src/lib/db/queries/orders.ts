@@ -1,4 +1,5 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { HttpError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { orders, invoices } from "@/lib/db/schema";
 import { getPricingCatalog } from "@/lib/db/queries/products";
@@ -58,21 +59,11 @@ export async function updateOrder(id: string, patch: Partial<Order>): Promise<Or
   return r ? row<Order>(r) : undefined;
 }
 
-/**
- * Delete an order and reverse what it did: its tax invoice is cancelled (kept,
- * not erased — GST numbers must stay gap-free and a cancelled invoice drops out
- * of every return), its coupon redemption is returned, and the stock it took is
- * put back. Only orders placed since web orders began taking stock carry the
- * per-line `gstRate` snapshot, so older ones are not "restocked" — they never
- * took anything out.
- */
-export async function deleteOrder(id: string): Promise<boolean> {
-  const order = await getOrder(id);
-  if (!order) return false;
-  const r = await db.delete(orders).where(eq(orders.id, id)).returning({ id: orders.id });
-  if (r.length === 0) return false;
-
-  await db.update(invoices).set({ status: "cancelled" }).where(eq(invoices.refId, id));
+/** Undo what an order did: cancel its tax invoice (kept, never erased — GST numbers must stay gap-free), return its
+ *  coupon redemption, and put back the stock it took. Only orders placed since web orders began taking stock carry
+ *  the per-line `gstRate` snapshot, so older ones are not "restocked" — they never took anything out. */
+async function reverseOrder(order: Order): Promise<void> {
+  await db.update(invoices).set({ status: "cancelled" }).where(eq(invoices.refId, order.id));
   if (order.couponCode) await releaseCoupon(order.couponCode).catch(() => {});
 
   const tookStock = order.items.length > 0 && order.items.every((i) => typeof i.gstRate === "number");
@@ -82,9 +73,93 @@ export async function deleteOrder(id: string): Promise<boolean> {
       const idx = (catalog.get(it.productId)?.variants ?? []).findIndex((v) => variantKey(v) === it.variantKey);
       if (idx < 0) continue;
       await adjustProductStock(it.productId, [{ variantIndex: idx, branch: order.branch, delta: it.quantity }]).catch((err) =>
-        console.error("[orders] couldn't restore stock for deleted order", id, it, err),
+        console.error("[orders] couldn't restore stock for", order.id, it, err),
       );
     }
   }
+}
+
+/** Delete an order and reverse what it did (see `reverseOrder`). */
+export async function deleteOrder(id: string): Promise<boolean> {
+  const order = await getOrder(id);
+  if (!order) return false;
+  const r = await db.delete(orders).where(eq(orders.id, id)).returning({ id: orders.id });
+  if (r.length === 0) return false;
+  await reverseOrder(order);
   return true;
+}
+
+export interface FulfilmentInput {
+  status?: Order["status"];
+  courier?: string;
+  trackingNo?: string;
+}
+
+const STAGES: Order["status"][] = ["processing", "shipped", "delivered", "cancelled"];
+
+/**
+ * Move an online order along (processing → shipped → delivered) or cancel it, and record the courier and tracking
+ * number. Stages can be corrected backwards (a mis-click), but a cancelled order stays cancelled and a delivered one
+ * can't be cancelled (that is a return). Cancelling reverses the sale — invoice cancelled, coupon and stock returned —
+ * but keeps the order on record. Returns the order and whether it just moved to a new stage.
+ */
+export async function fulfilOrder(id: string, input: FulfilmentInput): Promise<{ order: Order; from: Order["status"]; changed: boolean } | undefined> {
+  const current = await getOrder(id);
+  if (!current) return undefined;
+  const to = input.status ?? current.status;
+  if (!STAGES.includes(to)) throw new HttpError(400, "Unknown order status.");
+  if (current.status === "cancelled" && (to !== "cancelled" || input.courier !== undefined || input.trackingNo !== undefined)) {
+    throw new HttpError(409, "This order is cancelled, so it can't be changed.");
+  }
+  if (to === "cancelled" && current.status === "delivered") {
+    throw new HttpError(409, "A delivered order can't be cancelled — it would need a return.");
+  }
+
+  const set: Partial<typeof orders.$inferInsert> = {};
+  if (input.courier !== undefined) set.courier = String(input.courier).trim().slice(0, 80);
+  if (input.trackingNo !== undefined) set.trackingNo = String(input.trackingNo).trim().slice(0, 120);
+  const changed = to !== current.status;
+  if (changed) {
+    set.status = to;
+    const now = new Date().toISOString();
+    if (to === "processing") { set.shippedAt = null; set.deliveredAt = null; }
+    if (to === "shipped") { set.shippedAt = current.shippedAt ?? now; set.deliveredAt = null; }
+    if (to === "delivered") { set.shippedAt = current.shippedAt ?? now; set.deliveredAt = now; }
+    // Claim the change first: it only goes through if the order is still at the stage we read. Two quick clicks, or two
+    // people, can't both win — so the sale is reversed (stock, invoice, coupon) by exactly one of them, and never
+    // before the new status is safely saved.
+    const [won] = await db.update(orders).set(set).where(and(eq(orders.id, id), eq(orders.status, current.status))).returning();
+    if (!won) throw new HttpError(409, "This order was just changed by someone else. Refresh the page and try again.");
+    if (to === "cancelled") await reverseOrder(current);
+    return { order: row<Order>(won), from: current.status, changed: true };
+  }
+  if (Object.keys(set).length === 0) return { order: current, from: current.status, changed: false };
+  const [r] = await db.update(orders).set(set).where(eq(orders.id, id)).returning();
+  return { order: row<Order>(r), from: current.status, changed: false };
+}
+
+export interface OrderAlert {
+  id: string;
+  customerName: string;
+  total: number;
+  date: string;
+  branch: string;
+}
+
+/** Online orders still waiting to be shipped — the count for the badge and the latest few for the bell. `branches`
+ *  limits it to a branch user's own stores; `null` means every branch. */
+export async function getOrderAlerts(branches: string[] | null, limit = 8): Promise<{ count: number; latest: OrderAlert[] }> {
+  const where = branches
+    ? and(eq(orders.status, "processing"), inArray(orders.branch, branches.length ? branches : ["-"]))
+    : eq(orders.status, "processing");
+  const [[{ n }], latest] = await Promise.all([
+    db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(orders).where(where),
+    db
+      .select({ id: orders.id, customerName: orders.customerName, total: orders.total, date: orders.date, branch: orders.branch })
+      .from(orders)
+      .where(where)
+      .orderBy(desc(orders.date), desc(orders.id))
+      .limit(limit),
+  ]);
+  return { count: n, latest };
 }

@@ -12,6 +12,7 @@ import {
   chargeBase, grossTotal, balanceDue, turnaroundDays, isClosed, REPAIR_STATUS,
   type RepairStatus, type RepairTicket,
 } from "@/lib/store/repair";
+import { serviceEarned, serviceEarnedAt } from "@/lib/client/sales";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
 import type { Branch } from "@/lib/store/pos";
 import { waLink } from "@/lib/data/business";
@@ -101,7 +102,7 @@ export default function ServicePage() {
       const d = new Date(t.completedAt || t.updatedAt);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
-    const revenue = completed.reduce((n, t) => n + grossTotal(t), 0);
+    const revenue = tickets.reduce((n, t) => n + serviceEarned(t), 0);
     return {
       active: active.length,
       overdue: overdue.length,
@@ -320,7 +321,7 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
   const m = useMemo(() => {
     const completed = tickets.filter((t) => t.status === "completed");
     const active = tickets.filter((t) => !isClosed(t.status));
-    const revenue = completed.reduce((n, t) => n + grossTotal(t), 0);
+    const revenue = tickets.reduce((n, t) => n + serviceEarned(t), 0);
     const collected = tickets.reduce((n, t) => n + (t.advance || 0), 0);
     const outstanding = tickets.filter((t) => !isClosed(t.status)).reduce((n, t) => n + balanceDue(t), 0);
     const turnarounds = completed.map(turnaroundDays).filter((x): x is number => x != null);
@@ -332,7 +333,7 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
     tickets.forEach((t) => {
       const e = catMap.get(t.category) || { n: 0, rev: 0 };
       e.n += 1;
-      if (t.status === "completed") e.rev += grossTotal(t);
+      e.rev += serviceEarned(t);
       catMap.set(t.category, e);
     });
     const byCategory = [...catMap.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.n - a.n);
@@ -343,7 +344,7 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
         b,
         total: list.length,
         active: list.filter((t) => !isClosed(t.status)).length,
-        rev: list.filter((t) => t.status === "completed").reduce((n, t) => n + grossTotal(t), 0),
+        rev: list.reduce((n, t) => n + serviceEarned(t), 0),
       };
     });
 
@@ -360,7 +361,10 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
     // monthly ticket intake + revenue (current year)
     const months = Array.from({ length: 12 }, () => ({ raised: 0, rev: 0 }));
     tickets.forEach((t) => { months[new Date(t.createdAt).getMonth()].raised += 1; });
-    completed.forEach((t) => { months[new Date(t.completedAt || t.updatedAt).getMonth()].rev += grossTotal(t); });
+    tickets.forEach((t) => {
+      const earned = serviceEarned(t);
+      if (earned > 0) months[new Date(serviceEarnedAt(t)).getMonth()].rev += earned;
+    });
 
     return { completed, active, revenue, collected, outstanding, avgTAT, byStatus, byCategory, branchAgg, byTech, months };
   }, [tickets]);
@@ -374,7 +378,7 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
     <div className="space-y-6">
       {/* KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Repair Revenue" value={formatINR(m.revenue)} accent="green" hint={`${m.completed.length} completed · incl GST`} />
+        <Stat label="Repair Revenue" value={formatINR(m.revenue)} accent="green" hint={`${m.completed.length} completed · advances included · incl GST`} />
         <Stat label="Outstanding Balance" value={formatINR(m.outstanding)} accent="gold" hint="On open tickets" />
         <Stat label="Advance Collected" value={formatINR(m.collected)} hint="Across all tickets" />
         <Stat label="Avg Turnaround" value={`${m.avgTAT} days`} hint="Raise → completed" />

@@ -8,7 +8,7 @@ import { Pager } from "@/components/ui/Pager";
 import { StatementDrawer } from "./StatementDrawer";
 import type { VendorRollupPage, VendorRollupRow } from "@/lib/db/queries/purchaseViews";
 
-const PAGE_SIZES = [25, 50, 100];
+const PAGE_SIZES = [10, 25, 50, 100];
 
 const day = (d: string) => {
   const x = new Date(`${d}T12:00:00`);
@@ -42,7 +42,7 @@ export function VendorRollupView({
   const [branch, setBranch] = useState("all");
   const [openOnly, setOpenOnly] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [data, setData] = useState<VendorRollupPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);

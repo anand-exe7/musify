@@ -37,6 +37,12 @@ function availableStock(variants: ProductRow["variants"]): number {
     .reduce((n, v) => n + variantStock(v), 0);
 }
 
+/** The photo a product shows when it has none of its own: its first variant's photo (enabled variants first). */
+export function firstVariantPhoto(variants: ProductRow["variants"]): string | undefined {
+  const list = variants ?? [];
+  return (list.find((v) => !v.disabled && v.photo) ?? list.find((v) => v.photo))?.photo ?? undefined;
+}
+
 /** Map a unified catalog row to the storefront `Product` shape. Stock is derived
  *  from the variants; a `null` `gstRate` (non-GST product) surfaces as rate 0. */
 export function toProduct(r: ProductRow): Product {
@@ -62,7 +68,8 @@ export function toProduct(r: ProductRow): Product {
     specs: r.specs,
     features: r.features,
     images: r.images,
-    photo: r.photo ?? undefined,
+    // No main photo → the first variant's photo stands in for it (the stored product is left as it is)
+    photo: r.photo || (r.photos && r.photos.length > 0 ? undefined : firstVariantPhoto(r.variants)),
     photos: r.photos ?? undefined,
     featured: r.featured,
     bestSeller: r.bestSeller,

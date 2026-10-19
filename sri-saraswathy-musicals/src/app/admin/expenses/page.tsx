@@ -14,7 +14,7 @@ import { useBranchScope } from "@/lib/store/branch";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
-import { DEFAULT_BRANCH } from "@/lib/stock";
+import { DEFAULT_BRANCH, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: "today", label: "Today" },
@@ -46,7 +46,7 @@ const PAY_TONE: Record<PaymentMode, string> = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const blankForm = () => ({ title: "", amount: "" as number | "", category: "", date: today(), paymentMode: "CASH" as PaymentMode, notes: "" });
+const blankForm = () => ({ title: "", amount: "" as number | "", category: "", date: today(), paymentMode: "CASH" as PaymentMode, notes: "", branch: "" });
 
 export default function ExpensesPage() {
   const expensesAll = useExpenses((s) => s.expenses);
@@ -56,6 +56,8 @@ export default function ExpensesPage() {
   const deleteExpense = useExpenses((s) => s.deleteExpense);
 
   const scopeSelected = useBranchScope((s) => s.selected);
+  const canSwitchBranch = useBranchScope((s) => s.canSwitch);
+  const allowedBranches = useBranchScope((s) => s.allowed);
 
   const [period, setPeriod] = useState<Period>("month");
   const [custom, setCustom] = useState<{ from?: string; to?: string }>({});
@@ -150,6 +152,12 @@ export default function ExpensesPage() {
     return [...set].sort();
   }, [expensesAll]);
 
+  // Which branch a new expense is booked to: the one picked in the form, else the branch being viewed. Admins may
+  // pick any branch; branch staff only their own.
+  const branchChoices: string[] = canSwitchBranch ? [...BRANCH_KEYS] : allowedBranches.length > 0 ? allowedBranches : [DEFAULT_BRANCH];
+  const viewed = scopeSelected !== "all" && branchChoices.includes(scopeSelected) ? scopeSelected : branchChoices[0];
+  const formBranch = branchChoices.includes(form.branch) ? form.branch : viewed;
+
   const submit = async () => {
     if (!form.title.trim()) return notify("Enter what the expense is for.");
     const amount = Number(form.amount) || 0;
@@ -163,7 +171,7 @@ export default function ExpensesPage() {
       notes: form.notes.trim() || null,
       expenseDate: form.date || today(),
       createdAt: new Date().toISOString(),
-      branch: scopeSelected === "all" ? DEFAULT_BRANCH : scopeSelected,
+      branch: formBranch,
     };
     const okSave = await addExpense(expense);
     if (!okSave) return notify("Couldn't save the expense.");
@@ -184,7 +192,7 @@ export default function ExpensesPage() {
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="border-l-4 border-ink-900 pl-4">
           <h1 className="text-2xl font-bold text-ink-900">Expense Tracker</h1>
-          <p className="mt-1 text-sm text-ink-500">Outgoings &amp; true net profit{scopeSelected !== "all" ? ` · ${scopeSelected}` : ""}</p>
+          <p className="mt-1 text-sm text-ink-500">Outgoings &amp; true net profit{scopeSelected !== "all" ? ` · ${branchLabel(scopeSelected)}` : ""}</p>
         </div>
         {/* Period filter */}
         <div className="flex flex-wrap items-center gap-1.5 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
@@ -230,6 +238,12 @@ export default function ExpensesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={label}>Amount (₹)</label><MoneyInput value={form.amount === "" ? 0 : form.amount} onChange={(paise) => setForm({ ...form, amount: paise })} className={field} /></div>
                 <div><label className={label}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={field} /></div>
+              </div>
+              <div>
+                <label className={label}>Branch</label>
+                <select value={formBranch} onChange={(e) => setForm({ ...form, branch: e.target.value })} disabled={branchChoices.length === 1} className={field}>
+                  {branchChoices.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+                </select>
               </div>
               <div>
                 <label className={label}>Category</label>
@@ -295,7 +309,7 @@ export default function ExpensesPage() {
                 {ledger.map((e) => (
                   <tr key={e.id} className="align-top text-ink-700">
                     <td className="px-4 py-3 text-xs text-ink-500 tabular-nums">{e.expenseDate}</td>
-                    <td><p className="font-medium text-ink-900">{e.title}</p>{e.notes && <p className="text-[11px] text-ink-400">{e.notes}</p>}</td>
+                    <td><p className="font-medium text-ink-900">{e.title}</p><p className="text-[11px] text-ink-400">{branchLabel(e.branch)}{e.notes ? ` · ${e.notes}` : ""}</p></td>
                     <td><span className="inline-block rounded bg-ink-900/5 px-2 py-0.5 text-[11px] font-medium text-ink-600">{e.category}</span></td>
                     <td><span className={cn("inline-block rounded px-2 py-0.5 text-[10px] font-bold", PAY_TONE[e.paymentMode] ?? PAY_TONE.OTHER)}>{e.paymentMode}</span></td>
                     <td className="pr-4 text-right font-semibold tabular-nums text-danger">− {formatINR(e.amount)}</td>

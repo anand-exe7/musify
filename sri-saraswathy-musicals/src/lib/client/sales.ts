@@ -42,6 +42,7 @@ export function orderToBill(order: Order, productById?: Map<string, Product>): U
     delivery: order.shipping,
     total: order.total,
     status: order.status === "cancelled" ? "pending" : "completed",
+    fulfilment: order.status,
     payment: order.paymentMethod || "razorpay",
   };
 }
@@ -55,6 +56,21 @@ export function isServiceRevenue(t: RepairTicket): boolean {
   if (t.status === "cancelled") return false;
   if (grossTotal(t) <= 0) return false;
   return isFixed(t.status) || Boolean(t.invoiceNo);
+}
+
+/**
+ * What a repair has earned so far (GST-inclusive, paise): the full charge once the work is done or invoiced,
+ * otherwise just the advance already received. The Service page uses this so its revenue agrees with Analytics.
+ */
+export function serviceEarned(t: RepairTicket): number {
+  if (t.status === "cancelled") return 0;
+  if (isServiceRevenue(t)) return grossTotal(t);
+  return Math.max(0, t.advance || 0);
+}
+
+/** The day that money lands in revenue: completion for a finished repair, intake for an advance. */
+export function serviceEarnedAt(t: RepairTicket): string {
+  return isServiceRevenue(t) ? t.completedAt || t.updatedAt : t.createdAt;
 }
 
 /**
@@ -118,7 +134,8 @@ export function ticketAdvanceBill(t: RepairTicket): UnifiedBill | null {
  * they are fetched here. A failure in any of the three is reported through
  * `error` / `errorMessage` rather than looking like an empty ledger.
  */
-export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: boolean; errorMessage: string | null } {
+/** `reloadKey` re-reads the web orders whenever it changes (the Orders page passes the new-order counter). */
+export function useAllSales(reloadKey = 0): { sales: UnifiedBill[]; loading: boolean; error: boolean; errorMessage: string | null } {
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
@@ -147,7 +164,7 @@ export function useAllSales(): { sales: UnifiedBill[]; loading: boolean; error: 
     return () => {
       alive = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   const loading = ordersLoading || (!posHydrated && !posError) || (!repairHydrated && !repairError);
   const errorMessage = ordersError ?? posError ?? repairError;

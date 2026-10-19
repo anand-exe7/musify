@@ -57,8 +57,8 @@ export function OpeningBalanceDialog({
   const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20 disabled:opacity-60";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain bg-ink-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="my-auto w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold text-ink-900">{existing ? "Edit opening balance" : "Add opening balance"}</h3>
         <p className="mt-1 text-xs text-ink-500">What you already owed this vendor before using this system. It shows in outstandings and can be paid like any bill.</p>
         <div className="mt-4 space-y-4">

@@ -62,7 +62,7 @@ export default function QuotationsPage() {
         />
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-white">
+      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-white" aria-busy={loading}>
         <table className="w-full min-w-[700px] text-sm">
           <thead className="bg-ivory-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">
             <tr>
@@ -87,13 +87,21 @@ export default function QuotationsPage() {
                 <td className="px-4 py-3 text-right"><Link href={`/admin/quotations/${encodeURIComponent(q.id)}`} className="font-semibold text-gold-600 hover:underline">View</Link></td>
               </tr>
             ))}
+            {loading && Array.from({ length: 6 }, (_, i) => (
+              <tr key={`sk-${i}`} className="border-t border-ink-100" aria-hidden>
+                {[28, 20, 20, 36, 16, 16, 10].map((w, j) => (
+                  <td key={j} className="px-4 py-4"><div className="h-3.5 animate-pulse rounded bg-ink-100" style={{ width: `${w * 2.2}%`, minWidth: 40 }} /></td>
+                ))}
+              </tr>
+            ))}
             {!loading && rows.length === 0 && (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-400">{error ? "Couldn’t load quotations." : "No quotations yet."}</td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <Pager className="mt-4" {...pg.pager} />
+      {loading && <p role="status" className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-ink-400">Loading quotations…</p>}
+      {!loading && <Pager className="mt-4" {...pg.pager} />}
     </div>
   );
 }

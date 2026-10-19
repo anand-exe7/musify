@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
-import { usePOS, productStockAt, variantStockAt, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
+import { usePOS, useInventory, productStockAt, variantStockAt, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { formatINR, toPaise, cn } from "@/lib/utils";
@@ -56,7 +56,7 @@ const LINE_GST_RATES: { label: string; value: number | null }[] = [
 export default function BillingPage() {
   const coupons = usePOS((s) => s.coupons);
   const loadError = usePOS((s) => s.loadError);
-  const invProducts = usePOS((s) => s.invProducts);
+  const invProducts = useInventory();
   const addBill = usePOS((s) => s.addBill);
 
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
@@ -710,7 +710,7 @@ export default function BillingPage() {
                       )}
                     >
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-100">
-                        {p.photo && <img src={p.photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
+                        {(p.photo || p.variants.find((v) => !v.disabled && v.photo)?.photo || p.variants.find((v) => v.photo)?.photo || undefined) && <img src={p.photo || p.variants.find((v) => !v.disabled && v.photo)?.photo || p.variants.find((v) => v.photo)?.photo || undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
                         {inOrder > 0 && (
                           <span className="absolute -right-1 -top-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-ink-900 shadow">
                             {inOrder}

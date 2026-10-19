@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useRepair, alertLevel } from "@/lib/store/repair";
 import { useInquiry } from "@/lib/store/inquiry";
+import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { useAuth } from "@/lib/store/auth";
 
 // `staff: true` marks the operational pages a branch-scoped user may open. The
@@ -102,6 +103,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const tickets = useRepair((s) => s.tickets);
   const inquiries = useInquiry((s) => s.inquiries);
+  const newOrders = useOrderAlerts((s) => s.count);
   const adminAccess = useAuth((s) => s.adminAccess);
   const authHydrated = useAuth((s) => s.hydrated);
   const [mounted, setMounted] = useState(false);
@@ -124,6 +126,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const badgeFor = (href: string): { n: number; danger?: boolean } | null => {
     if (href === "/admin/service" && repairAlerts > 0) return { n: repairAlerts, danger: true };
     if (href === "/admin/inquiries" && newInquiries > 0) return { n: newInquiries };
+    if (href === "/admin/orders" && mounted && newOrders > 0) return { n: newOrders, danger: true };
     return null;
   };
 

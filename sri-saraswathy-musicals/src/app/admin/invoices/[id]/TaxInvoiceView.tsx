@@ -1,8 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Printer, Lock, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Printer, Lock, Pencil, Ban } from "lucide-react";
 import type { Invoice } from "@/types";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 import { InvoiceEditor } from "./InvoiceEditor";
@@ -10,27 +9,27 @@ import { InvoiceEditor } from "./InvoiceEditor";
 /**
  * Admin wrapper around the shared tax-invoice sheet — same content the
  * customer sees at `/invoice/[id]`, plus the admin toolbar (back to ledger,
- * admin-only badge, print, edit, delete).
+ * admin-only badge, print, edit, cancel).
  */
 export function TaxInvoiceView({ invoice }: { invoice: Invoice }) {
-  const router = useRouter();
   const [current, setCurrent] = useState<Invoice>(invoice);
   const [editing, setEditing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelled = current.status === "cancelled";
 
-  async function del() {
-    if (!confirm(`Delete invoice ${current.number}? This cannot be undone.`)) return;
-    setDeleting(true);
+  async function cancel() {
+    if (!confirm(`Cancel invoice ${current.number}?
+
+It stays on record as Cancelled (its number is never reused). If it came from a counter sale, the stock goes back and the sale is removed from revenue.`)) return;
+    setCancelling(true);
     try {
       const res = await fetch(`/api/invoices/${encodeURIComponent(current.id)}`, { method: "DELETE" });
-      if (res.ok) router.push("/admin/invoices");
-      else {
-        alert(`Delete failed (${res.status})`);
-        setDeleting(false);
-      }
+      if (res.ok) setCurrent((await res.json()) as Invoice);
+      else alert(`Couldn't cancel the invoice (${res.status})`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed");
-      setDeleting(false);
+      alert(e instanceof Error ? e.message : "Couldn't cancel the invoice");
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -55,13 +54,15 @@ export function TaxInvoiceView({ invoice }: { invoice: Invoice }) {
               >
                 <Pencil className="h-4 w-4" /> Edit
               </button>
-              <button
-                onClick={del}
-                disabled={deleting}
-                className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-2.5 text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" /> {deleting ? "Deleting…" : "Delete"}
-              </button>
+              {!cancelled && (
+                <button
+                  onClick={cancel}
+                  disabled={cancelling}
+                  className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-2.5 text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"
+                >
+                  <Ban className="h-4 w-4" /> {cancelling ? "Cancelling…" : "Cancel invoice"}
+                </button>
+              )}
               <button
                 onClick={() => window.print()}
                 className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900"
@@ -72,6 +73,12 @@ export function TaxInvoiceView({ invoice }: { invoice: Invoice }) {
           )}
         </div>
       </div>
+
+      {cancelled && !editing && (
+        <p className="mx-auto mb-4 max-w-3xl rounded-xl border border-danger/30 bg-danger/5 px-4 py-2.5 text-sm font-semibold text-danger print:hidden">
+          This invoice is cancelled. It stays on record under {current.number}.
+        </p>
+      )}
 
       {editing ? (
         <InvoiceEditor

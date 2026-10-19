@@ -483,6 +483,13 @@ export default function ProfilePage() {
                       o.status === "cancelled" && "bg-danger/10 text-danger",
                     )}>{o.status}</span>
                   </div>
+                  {(o.status === "shipped" || o.status === "delivered") && (o.courier || o.trackingNo) && (
+                    <p className="mt-4 bg-info/5 px-3 py-2 text-xs text-ink-700">
+                      <span className="font-semibold">{o.status === "shipped" ? "On its way" : "Delivered"}</span>
+                      {" · "}
+                      {[o.courier, o.trackingNo ? `Tracking ${o.trackingNo}` : ""].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                   <div className="mt-4 space-y-3">
                     {o.items.map((item) => {
                       const p = byId.get(item.productId);

@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { genDocId } from "@/lib/ids";
 import { fetchJson, errMsg, readError, makeSender } from "@/lib/client/api";
@@ -62,6 +63,9 @@ export interface Bill {
   sgst?: number;
   gst?: number;
   status: "completed" | "pending";
+  /** Online orders only: where the order is (processing → shipped → delivered, or cancelled). `status` above just says
+   *  whether the sale counts, so it can't tell these apart. */
+  fulfilment?: "processing" | "shipped" | "delivered" | "cancelled";
   payment?: string;
   /** Cash / Card / UPI amounts (paise). */
   payments?: { method: "CASH" | "CARD" | "UPI"; amount: number }[];
@@ -126,9 +130,25 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const send = makeSender("the change");
 
+/** A product change reached the server: drop the storefront's cached catalogue and tell Inventory to re-read. */
+export const productsChanged = () => {
+  invalidateCatalog();
+  usePOS.setState((s) => ({ invVersion: s.invVersion + 1 }));
+};
+
+/** The catalogue read in flight, so screens asking at the same moment share one request. */
+let inventoryLoad: Promise<boolean> | null = null;
+
 interface POSState {
   bills: Bill[];
+  /** The whole catalogue with every variant and branch's stock. NOT loaded with the store: only the screens that
+   *  need all of it at once (billing, purchases, transfers, pickers) ask for it, through `useInventory()`. The
+   *  Inventory screen itself pages through the server instead. */
   invProducts: InvProduct[];
+  invLoaded: boolean;
+  /** Bumped whenever a product is added, edited or deleted, so a screen showing a server page knows to re-read it. */
+  invVersion: number;
+  loadInventory: () => Promise<boolean>;
   coupons: Coupon[];
   categories: string[];
   branch: BranchFilter;
@@ -159,6 +179,8 @@ interface POSState {
 export const usePOS = create<POSState>()((set, get) => ({
   bills: [],
   invProducts: [],
+  invLoaded: false,
+  invVersion: 0,
   coupons: [],
   categories: [],
   branch: "all",
@@ -166,9 +188,11 @@ export const usePOS = create<POSState>()((set, get) => ({
   hydrated: false,
   loadError: null,
   hydrate: async () => {
+    // The catalogue is the heavy part, so it is re-read only if a screen has already asked for it.
+    const wantInventory = get().invLoaded;
     const [bills, invProducts, coupons, categories] = await Promise.allSettled([
       fetchJson<Bill[]>("/api/pos/bills"),
-      fetchJson<InvProduct[]>("/api/pos/inventory"),
+      wantInventory ? fetchJson<InvProduct[]>("/api/pos/inventory") : Promise.resolve<InvProduct[] | null>(null),
       fetchJson<Coupon[]>("/api/pos/coupons"),
       fetchJson<string[]>("/api/pos/categories"),
     ]);
@@ -184,14 +208,30 @@ export const usePOS = create<POSState>()((set, get) => ({
       else failed.push(`${label} (${errMsg(r.reason)})`);
     };
     take("bills", "bills", bills);
-    take("invProducts", "inventory", invProducts);
+    if (wantInventory) take("invProducts", "inventory", invProducts as PromiseSettledResult<InvProduct[]>);
     take("coupons", "coupons", coupons);
     take("categories", "categories", categories);
     set({ ...patch, hydrated: failed.length === 0, loadError: failed.length ? `Couldn't load ${failed.join(", ")}` : null });
     // Stock inward/transfers and every edit end in a re-hydrate, so this is also
     // where the storefront's cached catalogue is thrown away.
-    if (invProducts.status === "fulfilled") invalidateCatalog();
+    if (wantInventory && invProducts.status === "fulfilled") invalidateCatalog();
     return failed.length === 0;
+  },
+
+  loadInventory: () => {
+    inventoryLoad ??= (async () => {
+      try {
+        const list = await fetchJson<InvProduct[]>("/api/pos/inventory");
+        set({ invProducts: list, invLoaded: true });
+        return true;
+      } catch (e) {
+        set((s) => ({ loadError: `Couldn't load inventory (${errMsg(e)})`, invLoaded: s.invLoaded }));
+        return false;
+      } finally {
+        inventoryLoad = null;
+      }
+    })();
+    return inventoryLoad;
   },
 
   // Branch selectors are local UI state only.
@@ -214,17 +254,17 @@ export const usePOS = create<POSState>()((set, get) => ({
   updateProduct: (id, patch, stockChanges) => {
     const prev = get().invProducts;
     set((s) => ({ invProducts: s.invProducts.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
-    void send(`/api/pos/inventory/${id}`, "PATCH", stockChanges ? { ...patch, stockChanges } : patch, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && invalidateCatalog());
+    void send(`/api/pos/inventory/${id}`, "PATCH", stockChanges ? { ...patch, stockChanges } : patch, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && productsChanged());
   },
   addProduct: (p) => {
     const prev = get().invProducts;
     set((s) => ({ invProducts: [p, ...s.invProducts] }));
-    void send("/api/pos/inventory", "POST", p, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && invalidateCatalog());
+    void send("/api/pos/inventory", "POST", p, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && productsChanged());
   },
   deleteProduct: (id) => {
     const prev = get().invProducts;
     set((s) => ({ invProducts: s.invProducts.filter((p) => p.id !== id) }));
-    void send(`/api/pos/inventory/${id}`, "DELETE", null, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && invalidateCatalog());
+    void send(`/api/pos/inventory/${id}`, "DELETE", null, get().hydrate, () => set({ invProducts: prev })).then((ok) => ok && productsChanged());
   },
 
   addCoupon: (c) => {
@@ -290,6 +330,19 @@ export const usePOS = create<POSState>()((set, get) => ({
 
 if (typeof window !== "undefined") {
   void usePOS.getState().hydrate();
+}
+
+/**
+ * The whole catalogue, loaded the first time a screen asks for it (not with the rest of the admin data).
+ * Use this wherever every product and variant is needed at once; a list of products should page on the server.
+ */
+export function useInventory(): InvProduct[] {
+  const products = usePOS((s) => s.invProducts);
+  const loaded = usePOS((s) => s.invLoaded);
+  useEffect(() => {
+    if (!loaded) void usePOS.getState().loadInventory();
+  }, [loaded]);
+  return products;
 }
 
 /* ─────────────────────────  Derived helpers  ─────────────────────── */

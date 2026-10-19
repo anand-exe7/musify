@@ -45,7 +45,7 @@ export interface VendorFilter { q?: string; branch?: string; openOnly?: boolean;
  */
 export async function getVendorRollup(f: VendorFilter, scope: Branch[] | null): Promise<VendorRollupPage> {
   const view = viewBranches({ branch: f.branch }, scope);
-  const pageSize = Math.min(MAX_BILL_PAGE, Math.max(1, Math.floor(Number(f.pageSize)) || 25));
+  const pageSize = Math.min(MAX_BILL_PAGE, Math.max(1, Math.floor(Number(f.pageSize)) || 10));
   const [out, vendorRows, billStats, loose] = await Promise.all([
     vendorOutstandings(),
     db.select({ id: vendors.id, name: vendors.name }).from(vendors),

@@ -95,6 +95,11 @@ export interface Order {
   /** subtotal − discount + shipping. */
   total: number;
   address: string;
+  /** Filled in by the shop when the order is dispatched; shown to the customer. */
+  courier?: string;
+  trackingNo?: string;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
 }
 
 export interface Invoice {
@@ -139,7 +144,11 @@ export interface QuotationLine {
   /** GST-inclusive unit price (paise). */
   rate: number;
   gst: number;
-  /** qty × rate (paise), before the quotation-level discount. */
+  /** The unit MRP (paise), shown struck through beside the rate like on an invoice. */
+  mrp?: number;
+  /** Discount on this line (paise, off qty × rate). */
+  discount?: number;
+  /** qty × rate − line discount (paise), before the quotation-level discount. */
   amount: number;
   note?: string;
   /** The catalogue product and variant (`attr|finish`) this line sells; needed to turn the quotation into an order. */

@@ -28,10 +28,10 @@ export type QuoteTotals = { subtotal: number; cgst: number; sgst: number; igst: 
 
 /** Each line's `amount` plus the totals after the quotation-level discount. */
 export function computeQuote(
-  items: Pick<QuotationLine, "qty" | "rate" | "gst">[],
+  items: Pick<QuotationLine, "qty" | "rate" | "gst" | "discount">[],
   discount = 0,
 ): { amounts: number[]; totals: QuoteTotals } {
-  const amounts = items.map((l) => Math.max(0, Math.round((l.qty || 0) * (l.rate || 0))));
+  const amounts = items.map((l) => Math.max(0, Math.round((l.qty || 0) * (l.rate || 0)) - Math.max(0, l.discount || 0)));
   const { totals } = taxLines(
     items.map((l, i) => ({ gross: amounts[i], rate: l.gst || 0 })),
     discount,

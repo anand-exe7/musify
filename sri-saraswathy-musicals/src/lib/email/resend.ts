@@ -10,6 +10,18 @@ import { getAllProducts } from "@/lib/db/queries/products";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 
+/** Make text safe to put inside email HTML: a name, address or tracking number must never be read as markup. */
+export function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+/** An address keeps its line breaks. */
+const escLines = (value: unknown) => esc(value).replace(/\r?\n/g, "<br>");
+
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }
@@ -25,24 +37,24 @@ async function renderOrderEmail(order: Order): Promise<string> {
     .map((i) => {
       const name = names.get(i.productId) ?? i.productId;
       return `<tr>
-        <td style="padding:8px 0;border-bottom:1px solid #eee;">${name} &times; ${i.quantity}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #eee;">${esc(name)} &times; ${esc(i.quantity)}</td>
         <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${formatINR(i.price * i.quantity)}</td>
       </tr>`;
     })
     .join("");
 
   return `<div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;color:#1a1a1a;">
-    <h1 style="font-size:22px;">Thank you${order.customerName ? `, ${order.customerName}` : ""} — your order is confirmed.</h1>
-    <p style="color:#555;">Order <strong>#${order.id}</strong> · ${order.date}</p>
+    <h1 style="font-size:22px;">Thank you${order.customerName ? `, ${esc(order.customerName)}` : ""} — your order is confirmed.</h1>
+    <p style="color:#555;">Order <strong>#${esc(order.id)}</strong> · ${esc(order.date)}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-family:Arial,sans-serif;font-size:14px;">
       ${rows}
       <tr><td style="padding:8px 0;">Subtotal</td><td style="padding:8px 0;text-align:right;">${formatINR(order.subtotal)}</td></tr>
-      ${order.discount ? `<tr><td style="padding:8px 0;">Discount${order.couponCode ? ` (${order.couponCode})` : ""}</td><td style="padding:8px 0;text-align:right;">&minus;${formatINR(order.discount)}</td></tr>` : ""}
+      ${order.discount ? `<tr><td style="padding:8px 0;">Discount${order.couponCode ? ` (${esc(order.couponCode)})` : ""}</td><td style="padding:8px 0;text-align:right;">&minus;${formatINR(order.discount)}</td></tr>` : ""}
       <tr><td style="padding:8px 0;color:#777;">GST included in prices</td><td style="padding:8px 0;text-align:right;color:#777;">${formatINR(order.gst)}</td></tr>
       <tr><td style="padding:8px 0;">Shipping</td><td style="padding:8px 0;text-align:right;">${order.shipping === 0 ? "Free" : formatINR(order.shipping)}</td></tr>
       <tr><td style="padding:12px 0;font-weight:bold;border-top:2px solid #111;">Total</td><td style="padding:12px 0;text-align:right;font-weight:bold;border-top:2px solid #111;">${formatINR(order.total)}</td></tr>
     </table>
-    <p style="color:#555;margin-top:16px;">${order.address}</p>
+    <p style="color:#555;margin-top:16px;">${escLines(order.address)}</p>
     <p style="color:#999;font-size:12px;margin-top:24px;">Sri Saraswathy Musicals · ${BUSINESS.branches.map((b) => b.area).join(" · ")}</p>
   </div>`;
 }
@@ -75,5 +87,33 @@ export async function sendOrderConfirmation(order: Order, to: string | undefined
     console.info(`[email] order #${order.id} sent to ${to} (id=${data?.id ?? "?"})`);
   } catch (err) {
     console.error(`[email] order #${order.id} → ${to} failed:`, err);
+  }
+}
+
+export function renderShippedEmail(order: Order): string {
+  const track = [order.courier, order.trackingNo].filter(Boolean).map(esc).join(" · ");
+  return `<div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;color:#1a1a1a;">
+    <h1 style="font-size:22px;">Good news${order.customerName ? `, ${esc(order.customerName)}` : ""} — your order is on its way.</h1>
+    <p style="color:#555;">Order <strong>#${esc(order.id)}</strong> has been dispatched.</p>
+    ${track ? `<p style="font-family:Arial,sans-serif;font-size:14px;"><strong>Tracking:</strong> ${track}</p>` : ""}
+    <p style="color:#555;margin-top:16px;">${escLines(order.address)}</p>
+    <p style="color:#999;font-size:12px;margin-top:24px;">Sri Saraswathy Musicals · ${BUSINESS.branches.map((b) => b.area).join(" · ")}</p>
+  </div>`;
+}
+
+/** Tell the customer their order has shipped. Best effort, like every other email here: it never fails the status change. */
+export async function sendOrderShipped(order: Order, to: string | undefined | null): Promise<void> {
+  if (!emailConfigured() || !to) return;
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY as string);
+    const { error } = await resend.emails.send({
+      from: fromAddress(),
+      to,
+      subject: `Your Sri Saraswathy Musicals order #${order.id} has shipped`,
+      html: renderShippedEmail(order),
+    });
+    if (error) console.error(`[email] shipped notice for #${order.id} → ${to} rejected by Resend:`, error);
+  } catch (err) {
+    console.error(`[email] shipped notice for #${order.id} → ${to} failed:`, err);
   }
 }

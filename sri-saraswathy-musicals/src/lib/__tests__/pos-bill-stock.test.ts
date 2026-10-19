@@ -28,7 +28,7 @@ import { products } from "@/lib/db/schema";
 import { insertVariants, selectProduct } from "@/lib/db/queries/variants";
 import { createBill, deleteBill } from "@/lib/db/queries/pos";
 import { recordBillInvoice } from "@/lib/billing/ledger";
-import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
+import { getInvoiceByRefId, cancelInvoice, getInvoices } from "@/lib/db/queries/invoices";
 import { variantStockAt, type Variant } from "@/lib/stock";
 import type { Bill } from "@/lib/store/pos";
 
@@ -79,5 +79,22 @@ describe("billing panel sale", () => {
     expect(await stock("Branch 1")).toBe(3);
     await deleteBill("B-4");
     expect(await stock("Branch 1")).toBe(7);
+  });
+
+  it("cancelling an invoice keeps it (and its number), undoes the sale and puts the stock back", async () => {
+    const b = bill("B-5", "Branch 1", 2);
+    await createBill(b);
+    await recordBillInvoice(b);
+    const inv = (await getInvoiceByRefId("B-5"))!;
+    const countBefore = (await getInvoices()).length;
+    expect(await stock("Branch 1")).toBe(5);
+
+    const done = await cancelInvoice(inv.id);
+    expect(done).toMatchObject({ id: inv.id, number: inv.number, status: "cancelled" });
+    expect((await getInvoices()).length).toBe(countBefore); // nothing erased, so no gap in the numbers
+    expect(await stock("Branch 1")).toBe(7);
+    expect(await cancelInvoice(inv.id)).toMatchObject({ status: "cancelled" }); // cancelling twice changes nothing
+    expect(await stock("Branch 1")).toBe(7);
+    expect(await cancelInvoice("nope")).toBeUndefined();
   });
 });

@@ -6,6 +6,8 @@ import { AdminFooter } from "./AdminFooter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/store/auth";
 import { useRouter } from "next/navigation";
+import { startOrderAlerts } from "@/lib/store/orderAlerts";
+import { OrderToasts } from "./OrderToasts";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -29,6 +31,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       router.replace("/?denied=admin");
     }
   }, [hydrated, adminAccess, router]);
+
+  // Watch for new online orders for as long as the admin is open (and signed in with admin rights).
+  const signedIn = hydrated && adminAccess !== null;
+  useEffect(() => (signedIn ? startOrderAlerts() : undefined), [signedIn]);
 
   const onMenu = () => {
     if (typeof window !== "undefined" && window.innerWidth >= 1024) setCollapsed((c) => !c);
@@ -62,6 +68,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </main>
         <AdminFooter />
       </div>
+      <OrderToasts />
     </div>
   );
 }

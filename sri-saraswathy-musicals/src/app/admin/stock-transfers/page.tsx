@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightLeft, Search, ArrowRight, Trash2 } from "lucide-react";
-import { usePOS, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
+import { usePOS, useInventory, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { cn } from "@/lib/utils";
 import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
@@ -37,7 +37,7 @@ function fmt(d: string) {
 const otherBranch = (b: Branch): Branch => BRANCH_KEYS[(BRANCH_KEYS.indexOf(b) + 1) % BRANCH_KEYS.length];
 
 export default function StockTransfersPage() {
-  const invProducts = usePOS((s) => s.invProducts);
+  const invProducts = useInventory();
   const hydratePOS = usePOS((s) => s.hydrate);
   const canSwitch = useBranchScope((s) => s.canSwitch);
   const allowedBranches = useBranchScope((s) => s.allowed);

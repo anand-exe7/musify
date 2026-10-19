@@ -61,7 +61,7 @@ export default function VendorsPage() {
   };
 
   const rows = vendors.filter((v) => vendorMatches(v, query));
-  const pg = usePaged(rows, query, 24);
+  const pg = usePaged(rows, query);
   const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
   const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
 

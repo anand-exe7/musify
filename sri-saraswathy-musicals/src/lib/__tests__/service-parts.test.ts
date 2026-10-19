@@ -26,7 +26,7 @@ import { products } from "@/lib/db/schema";
 import { insertVariants, stockAt } from "@/lib/db/queries/variants";
 import { applyPartsStock, cleanParts } from "@/lib/db/queries/repair";
 import { serviceInvoiceBreakup, partsTotal } from "@/lib/billing/serviceInvoice";
-import { ticketAdvanceBill, isServiceRevenue } from "@/lib/client/sales";
+import { ticketAdvanceBill, isServiceRevenue, serviceEarned, serviceEarnedAt } from "@/lib/client/sales";
 import { grossTotal, balanceDue, type RepairTicket } from "@/lib/store/repair";
 
 beforeAll(async () => {
@@ -104,5 +104,15 @@ describe("advance counts as revenue", () => {
     expect(ticketAdvanceBill(ticket({ status: "ready", advance: 50000 }))).toBeNull();
     expect(ticketAdvanceBill(ticket({ status: "cancelled", advance: 50000 }))).toBeNull();
     expect(ticketAdvanceBill(ticket({ advance: 0 }))).toBeNull();
+  });
+
+  it("serviceEarned: advance while open, full charge once ready, nothing if cancelled", () => {
+    const open = ticket({ advance: 50000 });
+    expect(serviceEarned(open)).toBe(50000);
+    expect(serviceEarnedAt(open)).toBe(open.createdAt);
+    const ready = ticket({ status: "ready", advance: 50000 });
+    expect(serviceEarned(ready)).toBeGreaterThan(50000);
+    expect(serviceEarned(ticket({ status: "cancelled", advance: 50000 }))).toBe(0);
+    expect(serviceEarned(ticket({ advance: 0 }))).toBe(0);
   });
 });

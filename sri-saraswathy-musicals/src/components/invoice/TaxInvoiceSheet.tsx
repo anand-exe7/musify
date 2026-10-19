@@ -2,6 +2,7 @@ import type { Invoice } from "@/types";
 import { BUSINESS, branchInfo } from "@/lib/data/business";
 import { amountInWords, formatINR, cn } from "@/lib/utils";
 import { paymentText } from "@/lib/paymentSplit";
+import { PrintFit } from "@/components/invoice/PrintFit";
 
 /**
  * Print stylesheet shared by every route that renders the tax invoice — isolates
@@ -13,7 +14,7 @@ export const TAX_INVOICE_PRINT_CSS = `
   body * { visibility: hidden !important; }
   #invoice-sheet, #invoice-sheet * { visibility: visible !important; }
   #invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; margin: 0; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
-  @page { margin: 10mm; }
+  @page { size: A4; margin: 8mm; }
 }
 `;
 
@@ -76,11 +77,12 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         <span className="font-serif text-[280px] font-bold leading-none text-ink-900">SSM</span>
       </div>
 
-      <div className="relative p-7 md:p-11">
+      <PrintFit />
+      <div className="relative p-7 md:p-11 print:p-6">
         {/* ─────────────────────────────────────────────────────────────
             Letterhead — logo + name on left, GSTIN block on right.
             ───────────────────────────────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-6 border-b border-ink-900 pb-5">
+        <div className="flex items-start justify-between gap-6 border-b border-ink-900 pb-5 print:pb-3">
           <div className="flex items-start gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/LOGO2.png" alt="" className="h-16 w-16 shrink-0 object-contain" />
@@ -95,7 +97,8 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             </div>
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">GSTIN</p>
+            <p className="text-[15px] font-bold uppercase tracking-[0.3em] text-ink-900">{docTitle}</p>
+            <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">GSTIN</p>
             <p className="mt-0.5 font-mono text-[13px] font-bold tracking-wide text-ink-900">{BUSINESS.gstin}</p>
             <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">State · Code</p>
             <p className="mt-0.5 text-[12px] font-semibold text-ink-800">Tamil Nadu · 33</p>
@@ -103,28 +106,10 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            Centered document title — the "this is an official invoice"
-            moment. Thin ruled band under it.
-            ───────────────────────────────────────────────────────────── */}
-        <div className="my-6 text-center">
-          <p className="font-display text-[22px] font-bold uppercase tracking-[0.4em] text-ink-900">
-            {docTitle}
-          </p>
-          <div className="mx-auto mt-2 flex items-center justify-center gap-3">
-            <span className="h-px w-14 bg-ink-900" />
-            <span className="h-1.5 w-1.5 rotate-45 bg-gold-500" />
-            <span className="h-px w-14 bg-ink-900" />
-          </div>
-          <p className="mt-2 text-[9px] uppercase tracking-[0.3em] text-ink-400">
-            Original for Recipient
-          </p>
-        </div>
-
-        {/* ─────────────────────────────────────────────────────────────
             Meta table — invoice no / date / status / etc. — in a
             formal boxed grid instead of a right-aligned card.
             ───────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 overflow-hidden rounded border border-ink-200 text-[12px] sm:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 overflow-hidden rounded border border-ink-200 text-[12px] sm:grid-cols-4 print:mt-3">
           <MetaCell label="Invoice No." value={invoice.number} strong />
           <MetaCell label="Date" value={fmtDate(invoice.date)} />
           <MetaCell label="Source" value={SOURCE_LABEL[invoice.source ?? "manual"] ?? (invoice.source ?? "Manual")} />
@@ -147,8 +132,8 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         {/* ─────────────────────────────────────────────────────────────
             Parties — Billed To / Seller, side by side, like a GST form.
             ───────────────────────────────────────────────────────────── */}
-        <div className="mt-5 grid grid-cols-1 overflow-hidden rounded border border-ink-200 sm:grid-cols-2 sm:divide-x sm:divide-ink-200">
-          <div className="p-4">
+        <div className="mt-5 grid grid-cols-1 overflow-hidden rounded border border-ink-200 sm:grid-cols-2 sm:divide-x sm:divide-ink-200 print:mt-3 print:grid-cols-2">
+          <div className="p-4 print:p-3">
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-gold-700">Billed To</p>
             <p className="mt-2 text-[15px] font-bold text-ink-900">{invoice.customer || "Customer"}</p>
             {invoice.customerPhone && (
@@ -162,7 +147,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
               </p>
             )}
           </div>
-          <div className="border-t border-ink-200 p-4 sm:border-t-0">
+          <div className="border-t border-ink-200 p-4 sm:border-t-0 print:border-t-0 print:p-3">
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-gold-700">Supplied By</p>
             <p className="mt-2 text-[15px] font-bold text-ink-900">{BUSINESS.name}</p>
             <p className="text-[12px] font-semibold text-gold-700">{branch.area} Branch</p>
@@ -175,7 +160,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             Line items — proper GST table with ruled rows + banded
             header. Reads like a Tally / Zoho invoice.
             ───────────────────────────────────────────────────────────── */}
-        <div className="mt-6 overflow-x-auto">
+        <div className="mt-6 overflow-x-auto print:mt-3 print:overflow-visible">
           <table className="w-full min-w-[640px] border-separate border-spacing-0 text-[12px]">
             <thead>
               <tr className="bg-ink-900 text-ivory-50 [&>th]:py-2.5 [&>th]:text-[9.5px] [&>th]:font-bold [&>th]:uppercase [&>th]:tracking-[0.18em]">
@@ -192,7 +177,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             </thead>
             <tbody>
               {invoice.items.map((l, i) => (
-                <tr key={i} className="align-top odd:bg-ivory-50/30 [&>td]:border-b [&>td]:border-ink-100 [&>td]:py-3">
+                <tr key={i} className="align-top odd:bg-ivory-50/30 [&>td]:border-b [&>td]:border-ink-100 [&>td]:py-3 print:[&>td]:py-1.5">
                   <td className="border-r border-ink-100 px-2 text-center font-semibold text-ink-500">{i + 1}</td>
                   <td className="border-r border-ink-100 px-3">
                     <p className="font-semibold text-ink-900">{l.name}</p>
@@ -227,7 +212,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         {/* ─────────────────────────────────────────────────────────────
             Amount-in-words + totals, boxed like a bank cheque stub.
             ───────────────────────────────────────────────────────────── */}
-        <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-5">
+        <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-5 print:mt-3 print:grid-cols-5 print:break-inside-avoid">
           <div className="sm:col-span-3">
             <div className="rounded border border-dashed border-ink-200 p-4">
               <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">Amount Chargeable (in words)</p>
@@ -286,29 +271,24 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         {/* ─────────────────────────────────────────────────────────────
             Declaration + signatory — formal footer.
             ───────────────────────────────────────────────────────────── */}
-        <div className="mt-7 grid grid-cols-1 gap-6 border-t border-dashed border-ink-200 pt-5 sm:grid-cols-2">
+        <div className="mt-7 grid grid-cols-1 gap-6 border-t border-dashed border-ink-200 pt-5 sm:grid-cols-2 print:mt-3 print:grid-cols-2 print:gap-4 print:break-inside-avoid print:pt-3">
           <div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">Declaration</p>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-600">
-              We declare that this {docTitle.toLowerCase()} shows the actual price of the goods described and that all particulars are true and correct.
-            </p>
-            <p className="mt-3 text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">Terms &amp; Conditions</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">Terms &amp; Conditions</p>
             <ol className="mt-1.5 list-inside list-decimal space-y-0.5 text-[11px] leading-relaxed text-ink-600">
               <li>Goods once sold cannot be taken back or exchanged.</li>
               <li>Subject to &lsquo;Chennai&rsquo; jurisdiction only.</li>
-              {!isBillOfSupply && <li>GST invoice numbers are issued sequentially per Rule 46 of the CGST Rules.</li>}
             </ol>
           </div>
           <div className="text-right">
             <p className="text-[11px] text-ink-500">For <span className="font-serif font-bold italic text-ink-900">{BUSINESS.name}</span></p>
-            <div className="ml-auto mt-14 w-48 border-t-2 border-ink-900 pt-1.5 text-right text-[10px] font-bold uppercase tracking-[0.22em] text-ink-600">
+            <div className="ml-auto mt-14 w-48 print:mt-9 border-t-2 border-ink-900 pt-1.5 text-right text-[10px] font-bold uppercase tracking-[0.22em] text-ink-600">
               Authorised Signatory
             </div>
           </div>
         </div>
 
         {/* Footer strap. */}
-        <div className="mt-6 flex items-center justify-between border-t border-ink-100 pt-3 text-[10px] text-ink-400">
+        <div className="mt-6 flex items-center justify-between border-t border-ink-100 pt-3 text-[10px] text-ink-400 print:mt-3 print:break-inside-avoid">
           <span className="font-semibold">
             {isBillOfSupply ? "Computer-generated bill of supply." : "Computer-generated tax invoice."}
           </span>

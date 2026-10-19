@@ -44,6 +44,7 @@ describe("quotation maths", () => {
   });
 
   it("applies a discount before tax and keeps the parts adding up", () => {
+    expect(computeQuote([{ qty: 2, rate: 50000, gst: 18, discount: 20000 }]).amounts).toEqual([80000]);
     const { totals } = computeQuote([{ qty: 2, rate: 59000, gst: 18 }, { qty: 1, rate: 50000, gst: 0 }], 18000);
     expect(totals.total).toBe(118000 + 50000 - 18000);
     expect(totals.subtotal + totals.cgst + totals.sgst).toBe(totals.total);

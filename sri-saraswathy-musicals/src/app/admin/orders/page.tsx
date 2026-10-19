@@ -4,12 +4,13 @@ import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePOS } from "@/lib/store/pos";
+import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { inPeriod, type Period, type Source } from "@/lib/store/pos";
 import { useAllSales } from "@/lib/client/sales";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
-import { ShoppingCart, Trash2, Download, ExternalLink, Eye } from "lucide-react";
+import { ShoppingCart, Trash2, Download, ExternalLink, Eye, Truck } from "lucide-react";
 import { branchLabel } from "@/lib/stock";
 
 function fmtDate(iso: string) {
@@ -17,8 +18,26 @@ function fmtDate(iso: string) {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
+/** What a row's status pill says: an online order's real stage, otherwise whether the bill is settled. */
+function statusPill(b: { source: string; status: string; fulfilment?: string }): { label: string; tone: string; dot: string } {
+  if (b.source === "online" && b.fulfilment) {
+    const m: Record<string, { label: string; tone: string; dot: string }> = {
+      processing: { label: "Processing", tone: "bg-warning/20 text-warning", dot: "bg-warning" },
+      shipped: { label: "Shipped", tone: "bg-info/15 text-info", dot: "bg-info" },
+      delivered: { label: "Delivered", tone: "bg-success/15 text-success", dot: "bg-success" },
+      cancelled: { label: "Cancelled", tone: "bg-danger/15 text-danger", dot: "bg-danger" },
+    };
+    if (m[b.fulfilment]) return m[b.fulfilment];
+  }
+  return b.status === "pending"
+    ? { label: "Payment due", tone: "bg-warning/20 text-warning", dot: "bg-warning" }
+    : { label: "Completed", tone: "bg-success/15 text-success", dot: "bg-success" };
+}
+
 export default function OrdersPage() {
-  const { sales, loading, error: loadFailed, errorMessage } = useAllSales();
+  // A new online order (or one being shipped from elsewhere) bumps this, and the list re-reads itself.
+  const orderVersion = useOrderAlerts((s) => s.version);
+  const { sales, loading, error: loadFailed, errorMessage } = useAllSales(orderVersion);
   const deleteBill = usePOS((s) => s.deleteBill);
 
   // Tax invoices keyed by the order/bill/ticket id they were raised for, so each
@@ -38,7 +57,11 @@ export default function OrdersPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [orderVersion]);
+
+  // What a row is called on screen: its sequential branch reference (INV-2026-P0001) once an invoice exists,
+  // the underlying id only until then.
+  const refOf = (id: string) => invByRef[id]?.reference || id;
 
   const [type, setType] = useState<Source | "all">("all");
   const [date, setDate] = useState<Period>("all");
@@ -54,6 +77,8 @@ export default function OrdersPage() {
         inPeriod(b.createdAt, date, new Date(), custom) &&
         (query.trim() === "" ||
           b.id.toLowerCase().includes(query.toLowerCase()) ||
+          refOf(b.id).toLowerCase().includes(query.toLowerCase()) ||
+          (invByRef[b.id]?.number ?? "").toLowerCase().includes(query.toLowerCase()) ||
           b.customerName.toLowerCase().includes(query.toLowerCase()) ||
           b.phone.includes(query.trim())),
     );
@@ -64,14 +89,14 @@ export default function OrdersPage() {
       return a.total - b.total;
     });
     return list;
-  }, [sales, type, date, custom, query, sort]);
+  }, [sales, type, date, custom, query, sort, invByRef]);
   const pg = usePaged(rows, `${query}|${sort}`);
 
   const exportCSV = () => {
     // Money columns are exported in rupees (paise ÷ 100) at 2 decimals.
     const r2 = (paise: number) => (paise / 100).toFixed(2);
-    const head = ["Invoice", "Customer", "Phone", "Type", "Branch", "Coupon", "Discount", "Delivery", "Total", "Date", "Status"];
-    const body = rows.map((b) => [b.id, b.customerName, b.phone, b.source, branchLabel(b.branch), b.coupon ?? "", r2(b.discount), r2(b.delivery), r2(b.total), fmtDate(b.createdAt), b.status]);
+    const head = ["Invoice", "Tax invoice no.", "Customer", "Phone", "Type", "Branch", "Coupon", "Discount", "Delivery", "Total", "Date", "Status"];
+    const body = rows.map((b) => [refOf(b.id), invByRef[b.id]?.number ?? "", b.customerName, b.phone, b.source, branchLabel(b.branch), b.coupon ?? "", r2(b.discount), r2(b.delivery), r2(b.total), fmtDate(b.createdAt), b.status]);
     downloadCsv(`orders-${Date.now()}.csv`, [head, ...body]);
   };
 
@@ -172,7 +197,7 @@ export default function OrdersPage() {
                 {/* Order id — the id is primary, date lives right under it so
                     the "Date" column doesn't need its own cramped slot. */}
                 <td className="!pl-6">
-                  <p className="font-semibold tracking-tight text-ink-900">{b.id.toUpperCase()}</p>
+                  <p className="font-semibold tracking-tight text-ink-900">{refOf(b.id).toUpperCase()}</p>
                   <p className="mt-0.5 text-[11px] text-ink-400">{fmtDate(b.createdAt)}</p>
                 </td>
                 {/* Customer + phone stacked — reads at a glance. */}
@@ -221,15 +246,29 @@ export default function OrdersPage() {
                   {formatINR(b.total)}
                 </td>
                 <td>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
-                    <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                    {b.status}
-                  </span>
+                  {(() => {
+                    const st = statusPill(b);
+                    return (
+                      <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider", st.tone)}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
+                        {st.label}
+                      </span>
+                    );
+                  })()}
                 </td>
                 {/* Actions — icon buttons grouped in a soft hairline pill so
                     hovering a row doesn't light up unrelated areas. */}
                 <td className="!pr-6">
                   <div className="flex items-center justify-end gap-1">
+                    {b.source === "online" && (
+                      <Link
+                        href={`/admin/orders/${encodeURIComponent(b.id)}`}
+                        title="Open order — status, courier and tracking"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gold-500/50 bg-gold-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gold-800 transition-colors hover:bg-gold-100"
+                      >
+                        <Truck className="h-3.5 w-3.5" /> Manage
+                      </Link>
+                    )}
                     <Link
                       href={`/invoice/${b.id}`}
                       target="_blank"

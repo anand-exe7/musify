@@ -125,7 +125,19 @@ export async function updateInvoice(
   return r ? row<Invoice>(r) : undefined;
 }
 
-export async function deleteInvoice(id: string): Promise<boolean> {
-  const r = await db.delete(invoices).where(eq(invoices.id, id)).returning({ id: invoices.id });
-  return r.length > 0;
+/**
+ * Cancel an invoice. It is kept, marked "cancelled", never erased: GST invoice numbers must run without gaps, so a
+ * cancelled one stays on record under its number. If it came from a counter sale, the sale is undone as well —
+ * the stock goes back and the sale leaves revenue — exactly as when the bill itself is deleted.
+ */
+export async function cancelInvoice(id: string): Promise<Invoice | undefined> {
+  const current = await getInvoice(id);
+  if (!current) return undefined;
+  if (current.status === "cancelled") return current;
+  if (current.refId) {
+    const { deleteBill } = await import("./pos"); // false when the reference isn't a counter bill (web order, repair, manual)
+    await deleteBill(current.refId);
+  }
+  const [r] = await db.update(invoices).set({ status: "cancelled" }).where(eq(invoices.id, id)).returning();
+  return row<Invoice>(r);
 }

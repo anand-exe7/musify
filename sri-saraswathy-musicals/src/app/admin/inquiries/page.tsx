@@ -58,6 +58,7 @@ export default function InquiriesPage() {
     message: "",
     productInterest: "",
     status: "new" as InquiryStatus,
+    branch: "",
   });
 
   const scopedInquiries = useMemo(() => {
@@ -98,6 +99,11 @@ export default function InquiriesPage() {
     cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all",
       active ? "bg-ink-900 text-ivory-50" : "bg-ivory-50 text-ink-500 ring-1 ring-ink-100 hover:text-ink-900");
 
+  // Which branch a new inquiry is for: whatever is picked in the form, else the branch being viewed. Branch staff
+  // choose only among their own branches; an admin may also leave it as "Any branch".
+  const branchChoices: string[] = lockedBranch ? [lockedBranch] : canSwitchBranch ? [...BRANCH_KEYS, "Any"] : allowedBranches;
+  const addBranch = branchChoices.includes(addForm.branch) ? addForm.branch : lockedBranch || effectiveBranch(branch);
+
   const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
   return (
@@ -132,6 +138,12 @@ export default function InquiriesPage() {
                 <input value={addForm.productInterest} onChange={(e) => setAddForm((f) => ({ ...f, productInterest: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
               </div>
               <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Branch</label>
+                <select value={addBranch} onChange={(e) => setAddForm((f) => ({ ...f, branch: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
+                  {branchChoices.map((b) => <option key={b} value={b}>{b === "Any" ? "Any branch" : branchLabel(b)}</option>)}
+                </select>
+              </div>
+              <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Follow-up Status</label>
                 <select value={addForm.status} onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value as InquiryStatus }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
                   <option value="new">New</option>
@@ -153,10 +165,10 @@ export default function InquiriesPage() {
                   message: addForm.message.trim(),
                   productInterest: addForm.productInterest.trim() || undefined,
                   status: addForm.status,
-                  branch: lockedBranch || effectiveBranch(branch),
+                  branch: addBranch,
                 });
                 setShowAdd(false);
-                setAddForm({ name: "", phone: "", topic: "Other", message: "", productInterest: "", status: "new" });
+                setAddForm({ name: "", phone: "", topic: "Other", message: "", productInterest: "", status: "new", branch: "" });
               }} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-white hover:opacity-90">Save</button>
             </div>
           </div>
@@ -207,7 +219,7 @@ export default function InquiriesPage() {
           <div className="flex items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-ink-100">
             <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
             {lockedBranch ? (
-              <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
+              <span className={cn(pill, "bg-gold-500 text-ink-900")}>{branchLabel(lockedBranch)}</span>
             ) : (
               ([["all", "All"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>

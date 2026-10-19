@@ -1,12 +1,12 @@
 "use client";
 import { useMemo, useState } from "react";
-import { usePOS, productStock } from "@/lib/store/pos";
+import { usePOS, useInventory, productStock } from "@/lib/store/pos";
 import { formatINR, cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Check, X, Tags } from "lucide-react";
 
 export default function CategoriesPage() {
   const categories = usePOS((s) => s.categories);
-  const invProducts = usePOS((s) => s.invProducts);
+  const invProducts = useInventory();
   const addCategory = usePOS((s) => s.addCategory);
   const renameCategory = usePOS((s) => s.renameCategory);
   const deleteCategory = usePOS((s) => s.deleteCategory);

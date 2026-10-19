@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, noContent, readJson } from "@/lib/api/http";
-import { getInvoice, updateInvoice, deleteInvoice } from "@/lib/db/queries/invoices";
+import { getInvoice, updateInvoice, cancelInvoice } from "@/lib/db/queries/invoices";
 import type { Invoice } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,8 @@ export function PATCH(request: NextRequest, ctx: Ctx) {
 export function DELETE(_request: NextRequest, ctx: Ctx) {
   return handle("admin", async () => {
     const { id } = await ctx.params;
-    return (await deleteInvoice(id)) ? noContent() : notFound("Invoice not found");
+    // An invoice is never erased (its number would leave a gap); "delete" cancels it.
+    const inv = await cancelInvoice(id);
+    return inv ? ok(inv) : notFound("Invoice not found");
   });
 }

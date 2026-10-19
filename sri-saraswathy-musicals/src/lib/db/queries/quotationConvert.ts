@@ -9,7 +9,7 @@ import { quotations } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { getQuotation } from "./quotations";
 import { getPricingCatalog } from "./products";
-import { createBill } from "./pos";
+import { createBill, deleteBill } from "./pos";
 import { getInvoiceByRefId } from "./invoices";
 import { recordBillInvoice } from "@/lib/billing/ledger";
 import { variantKey } from "@/lib/catalog/variants";
@@ -35,7 +35,7 @@ export async function convertQuotation(id: string, paymentsInput: unknown): Prom
     const product = l.productId ? catalog.get(l.productId) : undefined;
     const idx = product && l.variantKey ? product.variants.findIndex((v) => variantKey(v) === l.variantKey) : -1;
     if (idx < 0) throw bad(`"${l.name}" isn't linked to a product in the catalogue. Edit the quotation and pick the product for that line.`);
-    return { name: l.name, price: l.rate, qty: l.qty, gstRate: l.gst, hsn: l.hsn === "-" ? "" : l.hsn, productId: l.productId, variantIndex: idx };
+    return { name: l.name, price: l.rate, qty: l.qty, gstRate: l.gst, hsn: l.hsn === "-" ? "" : l.hsn, mrp: Math.max(l.mrp ?? 0, l.rate), discount: l.discount || undefined, productId: l.productId, variantIndex: idx };
   });
 
   const gst = q.cgst + q.sgst + (q.igst ?? 0);
@@ -48,8 +48,9 @@ export async function convertQuotation(id: string, paymentsInput: unknown): Prom
     source: "offline",
     branch: q.branch as Bill["branch"],
     items,
-    subtotal: q.items.reduce((n, l) => n + l.amount, 0),
-    discount: q.discount ?? 0,
+    // a sale's subtotal is the gross (rate × qty); its discount is the line discounts plus the overall one
+    subtotal: q.items.reduce((n, l) => n + l.rate * l.qty, 0),
+    discount: q.items.reduce((n, l) => n + (l.discount ?? 0), 0) + (q.discount ?? 0),
     delivery: 0,
     total: q.total,
     gstEnabled: true,
@@ -77,8 +78,15 @@ export async function convertQuotation(id: string, paymentsInput: unknown): Prom
     await db.update(quotations).set({ status: q.status }).where(eq(quotations.id, id));
     throw err;
   }
-  await recordBillInvoice(bill);
-  if (!(await getInvoiceByRefId(bill.id))) console.error(`[quotation] bill ${bill.id} saved for ${q.number} but its tax invoice was not written`);
+  await recordBillInvoice(bill); // logs and swallows its own failures, so check that the invoice really exists
+  if (!(await getInvoiceByRefId(bill.id))) {
+    // A sale with no tax invoice would need fixing by hand, so take it back instead: stock returns with the bill, and
+    // the quotation reopens so the person can simply press Convert again.
+    console.error(`[quotation] tax invoice for ${q.number} (bill ${bill.id}) was not written — sale undone`);
+    await deleteBill(bill.id).catch((err) => console.error("[quotation] couldn't undo the sale", bill.id, err));
+    await db.update(quotations).set({ status: q.status }).where(eq(quotations.id, id));
+    throw new HttpError(500, "The invoice couldn't be created, so nothing was sold and the stock is unchanged. Please try again.");
+  }
   await db.update(quotations).set({ invoiceId: bill.id }).where(eq(quotations.id, id));
   return { quotation: { ...q, status: "invoiced", invoiceId: bill.id }, billId: bill.id };
 }

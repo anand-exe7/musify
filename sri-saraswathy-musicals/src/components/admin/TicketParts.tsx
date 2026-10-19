@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Plus, Trash2, Save, Package, Search } from "lucide-react";
-import { usePOS } from "@/lib/store/pos";
+import { useInventory } from "@/lib/store/pos";
 import { useRepair, type RepairTicket, type RepairPart } from "@/lib/store/repair";
 import { variantStockAt, branchLabel } from "@/lib/stock";
 import { formatINR, cn } from "@/lib/utils";
@@ -17,7 +17,7 @@ const GST_RATES = [0, 5, 12, 18, 28];
  */
 export function TicketParts({ ticket }: { ticket: RepairTicket }) {
   const updateTicket = useRepair((s) => s.updateTicket);
-  const catalog = usePOS((s) => s.invProducts);
+  const catalog = useInventory();
   const saved = ticket.parts ?? [];
   const [draft, setDraft] = useState<RepairPart[] | null>(null);
   const parts = draft ?? saved;

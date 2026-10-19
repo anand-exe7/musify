@@ -92,6 +92,9 @@ async function clean(input: QuotationInput, partial: boolean) {
       if (!l || typeof l.name !== "string" || !l.name.trim()) throw bad("Every line needs an item name.");
       if (!Number.isInteger(l.qty) || (l.qty as number) < 1) throw bad("Line quantity must be a whole number ≥ 1.");
       if (!paise(l.rate)) throw bad("Line rate must be a whole number of paise ≥ 0.");
+      if (l.mrp !== undefined && !paise(l.mrp)) throw bad("Line MRP must be a whole number of paise ≥ 0.");
+      if (l.discount !== undefined && !paise(l.discount)) throw bad("Line discount must be a whole number of paise ≥ 0.");
+      if ((l.discount ?? 0) > (l.qty as number) * (l.rate as number)) throw bad(`Discount on "${String(l.name).trim()}" can't exceed the line total.`);
       const gst = l.gst ?? 0;
       if (typeof gst !== "number" || !(gst >= 0 && gst <= 100)) throw bad("Line GST % must be between 0 and 100.");
       const product = l.productId ? catalog.get(l.productId) : undefined;
@@ -105,6 +108,8 @@ async function clean(input: QuotationInput, partial: boolean) {
         hsn: (l.hsn ?? "").toString().trim() || "-",
         qty: l.qty as number,
         rate: l.rate as number,
+        mrp: l.mrp || undefined,
+        discount: l.discount || undefined,
         gst,
         note: l.note?.toString().trim() || undefined,
       };

@@ -24,6 +24,7 @@ export function QuotationSheet({ quotation: q }: { quotation: Quotation }) {
   const branch = branchInfo(q.branch);
   const hasTax = q.cgst + q.sgst + (q.igst ?? 0) > 0;
   const discount = q.discount ?? 0;
+  const showDiscount = q.items.some((l) => (l.discount ?? 0) > 0);
   const itemsTotal = q.items.reduce((n, l) => n + l.amount, 0);
   const advance = Math.min(q.advance ?? 0, q.total);
 
@@ -81,12 +82,14 @@ export function QuotationSheet({ quotation: q }: { quotation: Quotation }) {
             <thead>
               <tr className="bg-ink-900 text-ivory-50 [&>th]:py-3 [&>th]:text-[10px] [&>th]:font-bold [&>th]:uppercase [&>th]:tracking-[0.12em]">
                 <th className="rounded-l-lg pl-4 pr-3 text-left">#</th>
-                <th className="px-3 text-left">Description</th>
+                <th className="px-3 text-left">Description of Goods</th>
                 <th className="px-3 text-center">HSN</th>
-                {hasTax && <th className="px-3 text-center">GST</th>}
+                {hasTax && <th className="px-3 text-center">GST %</th>}
+                <th className="px-3 text-right">MRP</th>
                 <th className="px-3 text-center">Qty</th>
                 <th className="px-3 text-right">Rate</th>
-                <th className="rounded-r-lg pl-3 pr-4 text-right">Amount</th>
+                {showDiscount && <th className="px-3 text-right">Disc.</th>}
+                <th className="rounded-r-lg pl-3 pr-4 text-right">Amount (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -99,8 +102,19 @@ export function QuotationSheet({ quotation: q }: { quotation: Quotation }) {
                   </td>
                   <td className="px-3 text-center text-ink-600">{l.hsn || "-"}</td>
                   {hasTax && <td className="px-3 text-center tabular-nums text-ink-600">{l.gst > 0 ? `${l.gst}%` : "—"}</td>}
+                  <td className="px-3 text-right tabular-nums text-ink-500 line-through">{formatINR(Math.max(l.mrp ?? 0, l.rate))}</td>
                   <td className="px-3 text-center tabular-nums text-ink-700">{l.qty}</td>
                   <td className="px-3 text-right tabular-nums text-ink-700">{formatINR(l.rate)}</td>
+                  {showDiscount && (
+                    <td className="px-3 text-right tabular-nums text-success">
+                      {l.discount ? (
+                        <>
+                          {formatINR(l.discount)}
+                          <span className="block text-[10px] text-ink-400">({+((l.discount / (l.rate * l.qty || 1)) * 100).toFixed(2)}%)</span>
+                        </>
+                      ) : "—"}
+                    </td>
+                  )}
                   <td className="pl-3 pr-4 text-right font-semibold tabular-nums text-ink-900">{formatINR(l.amount)}</td>
                 </tr>
               ))}

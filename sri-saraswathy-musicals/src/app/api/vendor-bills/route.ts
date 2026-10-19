@@ -25,7 +25,7 @@ export function GET(request: NextRequest) {
         branch: sp.get("branch") || undefined,
         openOnly: sp.get("status") === "open",
         page: Number(sp.get("page")) || 1,
-        pageSize: Number(sp.get("pageSize")) || 25,
+        pageSize: Number(sp.get("pageSize")) || 10,
       }, scope));
     }
     const pick = <T extends string>(v: string | null, allowed: readonly T[]): T | undefined => (v && (allowed as readonly string[]).includes(v) ? (v as T) : undefined);
@@ -38,7 +38,7 @@ export function GET(request: NextRequest) {
       q: sp.get("q") || undefined,
       sort: pick(sp.get("sort"), SORTS),
       page: Number(sp.get("page")) || 1,
-      pageSize: Number(sp.get("pageSize")) || 25,
+      pageSize: Number(sp.get("pageSize")) || 10,
     };
     return ok(await getBillsPage(filter, scope));
   });

@@ -224,6 +224,12 @@ export async function getInventory(): Promise<InvProduct[]> {
   return (await selectProducts()).map(toInvProduct);
 }
 
+/** One product in full (variants and stock included) — what the editor opens. */
+export async function getInventoryProduct(id: string): Promise<InvProduct | undefined> {
+  const row = await selectProduct(id);
+  return row ? toInvProduct(row) : undefined;
+}
+
 export async function createInventoryProduct(p: InvProduct): Promise<InvProduct> {
   await db.insert(products).values(toInsertRow(p));
   await insertVariants(p.id, p.variants ?? []);

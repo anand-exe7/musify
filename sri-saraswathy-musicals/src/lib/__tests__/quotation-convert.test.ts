@@ -28,6 +28,7 @@ import { createQuotation, getQuotation, updateQuotation, deleteQuotation } from 
 import { convertQuotation } from "@/lib/db/queries/quotationConvert";
 import { getInvoiceByRefId, updateInvoice } from "@/lib/db/queries/invoices";
 import { deleteBill } from "@/lib/db/queries/pos";
+import * as ledger from "@/lib/billing/ledger";
 import { variantStockAt } from "@/lib/stock";
 import { cleanPayments, resolvePayBox, freshPayBox, paymentLabel, statusFor } from "@/lib/paymentSplit";
 
@@ -90,6 +91,34 @@ describe("converting a quotation", () => {
     expect(await stock()).toBe(before);
     await expect(updateQuotation(q.id, { notes: "x" })).rejects.toMatchObject({ status: 409 });
     await expect(deleteQuotation(q.id)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("a line discount and MRP are saved, reduce the line, and carry onto the invoice", async () => {
+    const q = await quote({ items: [line({ qty: 2, rate: 118000, mrp: 150000, discount: 36000 })], discount: 10000 });
+    expect(q.items[0]).toMatchObject({ mrp: 150000, discount: 36000, amount: 2 * 118000 - 36000 });
+    expect(q.total).toBe(2 * 118000 - 36000 - 10000);
+    await expect(quote({ items: [line({ qty: 1, discount: 999999 })] })).rejects.toMatchObject({ status: 400 });
+    const r = await convertQuotation(q.id, [{ method: "CASH", amount: q.total }]);
+    const inv = (await getInvoiceByRefId(r!.billId))!;
+    expect(inv.total).toBe(q.total);
+    expect(inv.items[0]).toMatchObject({ rate: 118000, mrp: 150000, discount: 36000 });
+  });
+
+  it("if the tax invoice can't be written, the sale is undone: stock back, quotation reopened, nothing left half-done", async () => {
+    const q = await quote({ items: [line({ qty: 2 })] });
+    const before = await stock();
+    const spy = vi.spyOn(ledger, "recordBillInvoice").mockResolvedValueOnce(undefined); // "fails" without writing an invoice
+    await expect(convertQuotation(q.id, [{ method: "CASH", amount: q.total }])).rejects.toMatchObject({ status: 500 });
+    spy.mockRestore();
+    expect(await stock()).toBe(before);
+    const after = (await getQuotation(q.id))!;
+    expect(after.status).toBe("open");
+    expect(after.invoiceId).toBeFalsy();
+    // and pressing Convert again now just works
+    const again = await convertQuotation(q.id, [{ method: "CASH", amount: q.total }]);
+    expect(again?.quotation.status).toBe("invoiced");
+    expect(await getInvoiceByRefId(again!.billId)).toBeTruthy();
+    expect(await stock()).toBe(before - 2);
   });
 
   it("two people converting at once make one sale", async () => {

@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, notFound, noContent, readJson, badRequest } from "@/lib/api/http";
-import { updateInventoryProduct, deleteInventoryProduct, type StockChange } from "@/lib/db/queries/pos";
+import { getInventoryProduct, updateInventoryProduct, deleteInventoryProduct, type StockChange } from "@/lib/db/queries/pos";
 import { isBranch } from "@/lib/stock";
 import type { InvProduct, Variant } from "@/lib/store/pos";
 import { branchAllowed } from "@/lib/auth/session";
@@ -31,6 +31,15 @@ async function sanitizeForStaff(id: string, raw: Partial<InvProduct>): Promise<P
   }
   clean.variants = variants.map((v, i) => ({ ...v, price: existing.variants[i].price } as Variant));
   return clean;
+}
+
+/** GET one product in full — the editor loads it when opened, instead of the page carrying the whole catalogue. */
+export function GET(_request: NextRequest, ctx: Ctx) {
+  return handle("staff", async () => {
+    const { id } = await ctx.params;
+    const p = await getInventoryProduct(id);
+    return p ? ok(p) : notFound("Product not found");
+  });
 }
 
 export function PATCH(request: NextRequest, ctx: Ctx) {

@@ -219,7 +219,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                     <option key={keyOf(v)} value={keyOf(v)} disabled={left <= 0}>
                       {variantLabel(v)}
                       {v.price !== product.price ? ` — ${formatINR(v.price)}` : ""}
-                      {left <= 0 ? " — Sold out" : left <= 3 ? ` — Only ${left} left` : ` — ${left} in stock`}
+                      {left <= 0 ? " — Sold out" : ""}
                     </option>
                   );
                 })}
@@ -229,11 +229,9 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
           {/* Stock — of the selected variant. */}
           <div className="mt-4 flex items-center gap-2 text-sm">
-            <span className={`inline-block h-2 w-2 rounded-full ${variantStock > 3 ? "bg-success" : variantStock > 0 ? "bg-warning" : "bg-danger"}`} />
-            {variantStock > 3 ? (
+            <span className={`inline-block h-2 w-2 rounded-full ${variantStock > 0 ? "bg-success" : "bg-danger"}`} />
+            {variantStock > 0 ? (
               <span className="text-ink-700">In stock · Ships in 2-3 days</span>
-            ) : variantStock > 0 ? (
-              <span className="text-warning">Only {variantStock} left</span>
             ) : (
               <span className="text-danger">Currently unavailable</span>
             )}
@@ -246,10 +244,10 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 const n = activeVariant.stockByBranch?.[b.key] ?? 0;
                 return (
                   <li key={b.key} className="flex items-center gap-2">
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${n > 3 ? "bg-success" : n > 0 ? "bg-warning" : "bg-ink-300"}`} />
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${n > 0 ? "bg-success" : "bg-ink-300"}`} />
                     <span className="text-ink-700">{b.city} · {b.area}</span>
                     <span className={n > 0 ? "text-ink-500" : "text-ink-400"}>
-                      {n > 3 ? "In stock" : n > 0 ? `Only ${n} left` : "Out of stock"}
+                      {n > 0 ? "In stock" : "Out of stock"}
                     </span>
                   </li>
                 );

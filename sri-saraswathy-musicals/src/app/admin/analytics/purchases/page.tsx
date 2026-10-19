@@ -88,7 +88,7 @@ export default function PurchaseAnalyticsPage() {
     const q = query.trim().toLowerCase();
     return (data?.vendors ?? []).filter((v) => !q || v.vendorName.toLowerCase().includes(q));
   }, [data, query]);
-  const pg = usePaged(vendorRows, `${query}|${key}`, 10);
+  const pg = usePaged(vendorRows, `${query}|${key}`);
 
   const years = useMemo(() => [...new Set((data?.months ?? []).map((m) => Number(m.month.slice(0, 4))))].sort((a, b) => b - a), [data]);
   const year = yearPick !== null && years.includes(yearPick) ? yearPick : (years[0] ?? new Date().getFullYear());

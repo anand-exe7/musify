@@ -2,17 +2,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock } from "lucide-react";
+import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock, ShoppingBag, Volume2, VolumeX } from "lucide-react";
 import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repair";
 import { useInquiry } from "@/lib/store/inquiry";
+import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { useBranchScope, BRANCHES, type BranchScope } from "@/lib/store/branch";
-import { cn } from "@/lib/utils";
+import { cn, formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 
 export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
   const router = useRouter();
   const tickets = useRepair((s) => s.tickets);
   const inquiries = useInquiry((s) => s.inquiries);
+  const orderCount = useOrderAlerts((s) => s.count);
+  const orderLatest = useOrderAlerts((s) => s.latest);
+  const muted = useOrderAlerts((s) => s.muted);
+  const setMuted = useOrderAlerts((s) => s.setMuted);
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -44,7 +49,7 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
     return { overdue, dueSoon, newInq };
   }, [tickets, inquiries]);
 
-  const count = mounted ? overdue.length + dueSoon.length + newInq.length : 0;
+  const count = mounted ? overdue.length + dueSoon.length + newInq.length + orderCount : 0;
 
   const go = (href: string) => {
     setOpen(false);
@@ -88,6 +93,14 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
             <div className="absolute right-0 top-11 z-50 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 shadow-2xl">
               <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
                 <p className="text-sm font-bold text-ink-900">Alerts</p>
+                <button
+                  onClick={() => setMuted(!muted)}
+                  aria-label={muted ? "Turn the new-order sound on" : "Turn the new-order sound off"}
+                  title={muted ? "New-order sound is off" : "New-order sound is on"}
+                  className="ml-auto mr-1 grid h-7 w-7 place-items-center rounded-lg text-ink-400 hover:bg-ink-900/5 hover:text-ink-900"
+                >
+                  {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </button>
                 <button onClick={() => setOpen(false)} className="grid h-7 w-7 place-items-center rounded-lg text-ink-400 hover:bg-ink-900/5 hover:text-ink-900">
                   <X className="h-4 w-4" />
                 </button>
@@ -96,6 +109,22 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
               <div className="max-h-[70vh] overflow-y-auto">
                 {count === 0 && (
                   <p className="px-4 py-10 text-center text-sm text-ink-400">You&apos;re all caught up 🎵</p>
+                )}
+
+                {orderCount > 0 && (
+                  <Section icon={<ShoppingBag className="h-3.5 w-3.5" />} label={`Online orders to ship · ${orderCount}`} tone="text-danger">
+                    {orderLatest.map((o) => (
+                      <AlertRow
+                        key={o.id}
+                        onClick={() => go(`/admin/orders/${encodeURIComponent(o.id)}`)}
+                        title={o.customerName || "Online customer"}
+                        sub={`${o.id} · ${branchLabel(o.branch)}`}
+                        badge={formatINR(o.total)}
+                        badgeTone="bg-gold-100 text-gold-700"
+                        note="Processing"
+                      />
+                    ))}
+                  </Section>
                 )}
 
                 {overdue.length > 0 && (
@@ -151,6 +180,9 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
               </div>
 
               <div className="grid grid-cols-2 gap-2 border-t border-ink-100 bg-[#FAF7EF] px-3 py-2.5">
+                <Link href="/admin/orders" onClick={() => setOpen(false)} className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-gold-500/40 bg-gold-50 py-2 text-[11px] font-bold uppercase tracking-wider text-gold-800 hover:bg-gold-100">
+                  <ShoppingBag className="h-3.5 w-3.5" /> Orders
+                </Link>
                 <Link href="/admin/service" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 py-2 text-[11px] font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
                   <Wrench className="h-3.5 w-3.5" /> Repairs
                 </Link>

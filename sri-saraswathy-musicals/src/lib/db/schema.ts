@@ -258,6 +258,11 @@ export const orders = pgTable("orders", {
   /** subtotal − discount + shipping. */
   total: integer("total").notNull().default(0),
   address: text("address").notNull().default(""),
+  /** Fulfilment details the shop fills in as the order moves on. */
+  courier: text("courier").notNull().default(""),
+  trackingNo: text("tracking_no").notNull().default(""),
+  shippedAt: text("shipped_at"),
+  deliveredAt: text("delivered_at"),
 }, (t) => [
   check("orders_status_check", oneOf(t.status, ORDER_STATUSES)),
   check("orders_branch_check", oneOf(t.branch, BRANCHES)),

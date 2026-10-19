@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { PackagePlus, Search, X, Truck, Trash2, Plus, FileText } from "lucide-react";
-import { usePOS, productStock, type InvProduct } from "@/lib/store/pos";
+import { usePOS, useInventory, productStock, type InvProduct } from "@/lib/store/pos";
 import { useVendors, vendorMatches } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
 import type { Vendor } from "@/types";
@@ -45,7 +45,7 @@ const LOW_MARGIN_PCT = 10;
 const toInt = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
 
 export default function PurchasesPage() {
-  const invProducts = usePOS((s) => s.invProducts);
+  const invProducts = useInventory();
   const hydratePOS = usePOS((s) => s.hydrate);
   const vendors = useVendors((s) => s.vendors);
   const hydrateVendors = useVendors((s) => s.hydrate);

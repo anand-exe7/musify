@@ -64,8 +64,8 @@ export function ApplyPaymentDialog({
   const cell = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-right text-sm tabular-nums focus:border-gold-500 focus:outline-none";
 
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] flex justify-center overflow-y-auto overscroll-contain bg-ink-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="my-auto w-full max-w-lg rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold text-ink-900">Apply payment to bills</h3>
         <p className="mt-1 text-xs text-ink-500">
           {formatINR(payment.amount)} · {branchLabel(payment.branch)} · {payment.mode || "—"} · {payment.paidAt.slice(0, 10)}{payment.reference ? ` · ${payment.reference}` : ""}

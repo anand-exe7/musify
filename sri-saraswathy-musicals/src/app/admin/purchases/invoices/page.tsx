@@ -17,7 +17,7 @@ import { BillDetailPanel, type BillDetail } from "@/components/purchases/BillDet
 import { VendorRollupView } from "@/components/purchases/VendorRollupView";
 import type { BillRow, BillsPage } from "@/lib/db/queries/purchaseBills";
 
-const PAGE_SIZES = [25, 50, 100];
+const PAGE_SIZES = [10, 25, 50, 100];
 type Status = "all" | "open" | "paid";
 
 const day = (d: string) => {
@@ -55,7 +55,7 @@ export default function VendorBillsPage() {
   const allowed = useBranchScope((s) => s.allowed);
   const isAdmin = useAuth((s) => s.isAdmin);
 
-  const [state, setState] = useState<Query>({ q: "", vendor: "", branch: "all", status: "all", from: "", to: "", sort: "newest", page: 1, pageSize: 25 });
+  const [state, setState] = useState<Query>({ q: "", vendor: "", branch: "all", status: "all", from: "", to: "", sort: "newest", page: 1, pageSize: 10 });
   const [qInput, setQInput] = useState("");
   const [data, setData] = useState<BillsPage | null>(null);
   const [loading, setLoading] = useState(true);

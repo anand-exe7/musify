@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { slicePage, type PageSlice } from "@/lib/paginate";
 
-export const ADMIN_PAGE_SIZES = [25, 50, 100];
+export const ADMIN_PAGE_SIZES = [10, 25, 50, 100];
 
 /**
  * Page through an in-memory list on an admin screen. Pass a `resetKey` made from the filters
@@ -10,7 +10,7 @@ export const ADMIN_PAGE_SIZES = [25, 50, 100];
  * clamped, so deleting the last row of the last page never leaves you on an empty page.
  * Spread `pager` onto `<Pager />`; render `items` instead of the whole list.
  */
-export function usePaged<T>(list: T[], resetKey = "", initialSize = 25) {
+export function usePaged<T>(list: T[], resetKey = "", initialSize = 10) {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(initialSize);
   useEffect(() => { setPage(1); }, [resetKey, size]);
