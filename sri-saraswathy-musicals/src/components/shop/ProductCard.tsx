@@ -88,13 +88,14 @@ export function ProductCard({ product: p, index = 0 }: Props) {
           <Heart className={cn("h-3.5 w-3.5 transition-all", wishlisted && "fill-maroon-500")} />
         </motion.button>
 
-        <div className="relative h-48 overflow-hidden bg-ink-100 sm:h-56">
+        <div className="relative h-48 overflow-hidden bg-white sm:h-56">
           <ProductImage
             product={p}
+            fit="contain"
+            className="relative h-full w-full overflow-hidden bg-white"
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 300px"
             imageClassName="transition-transform duration-700 group-hover:scale-105"
           />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-900/40 via-transparent to-transparent" />
         </div>
 
         <div className="flex flex-1 flex-col justify-between gap-3 border-t border-ink-100 p-4">

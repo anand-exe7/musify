@@ -10,7 +10,7 @@ import { useQuote } from "@/lib/client/quote";
 import { useShallow } from "zustand/react/shallow";
 import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
-import { findVariant, variantLabel } from "@/lib/catalog/variants";
+import { findVariant, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 import { ChevronRight, Check, Lock, MapPin } from "lucide-react";
@@ -454,7 +454,7 @@ export default function CheckoutPage() {
                   return (
                   <div key={`${i.productId}::${i.variantKey}`} className="flex items-center gap-4 p-4">
                     <div className="relative h-16 w-16 shrink-0 overflow-hidden bg-ink-100">
-                      <ProductImage product={i.product} sizes="64px" />
+                      <ProductImage product={withVariantPhoto(i.product, i.variant)} sizes="64px" />
                     </div>
                     <div className="flex-1">
                       <p className="text-[10px] uppercase tracking-widest text-gold-600">{i.product.brand}</p>

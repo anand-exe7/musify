@@ -8,7 +8,7 @@ import { ProductImage } from "@/components/ui/ProductImage";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { useCart } from "@/lib/store/cart";
 import { formatINR, cn } from "@/lib/utils";
-import { variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
+import { variantKey as keyOf, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { BUSINESS } from "@/lib/data/business";
 import { Minus, Plus, ChevronRight, Truck, Award, Store, ShoppingBag, Check, X, ArrowRight } from "lucide-react";
 
@@ -42,13 +42,8 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const unitPrice = activeVariant?.price ?? product?.price ?? 0;
   const variantStock = activeVariant?.stock ?? 0;
   const hasMultipleVariants = selectableVariants.length > 1;
-  // The chosen variant's own photo, when it has one, leads the gallery.
-  const shown = useMemo(() => {
-    const vp = activeVariant?.photo;
-    if (!product || !vp) return product;
-    const rest = (product.photos && product.photos.length > 0 ? product.photos : [product.photo]).filter((p): p is string => !!p && p !== vp);
-    return { ...product, photo: vp, photos: [vp, ...rest] };
-  }, [product, activeVariant]);
+  // The chosen variant's own photo, when it has one, is the only photo shown.
+  const shown = useMemo(() => (product ? withVariantPhoto(product, activeVariant) : product), [product, activeVariant]);
   const gallery = (shown?.photos && shown.photos.length > 0 ? shown.photos : [shown?.photo].filter(Boolean) as string[]).slice(0, 4);
 
   // A few more from the same category (one extra in case this product is among them).
@@ -409,7 +404,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
               <div className="mt-5 flex items-center gap-4 border-y border-ink-100 py-5">
                 <div className="relative h-20 w-20 shrink-0 overflow-hidden bg-ink-100">
-                  <ProductImage product={product} photoIndex={activePhoto} sizes="80px" />
+                  <ProductImage product={shown ?? product} photoIndex={activePhoto} sizes="80px" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] uppercase tracking-widest text-gold-600">{product.brand}</p>

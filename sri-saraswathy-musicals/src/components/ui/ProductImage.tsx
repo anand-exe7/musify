@@ -10,6 +10,8 @@ interface Props {
   priority?: boolean;
   className?: string;
   imageClassName?: string;
+  /** "contain" shows the whole photo (studio shots on white); "cover" fills and crops. */
+  fit?: "cover" | "contain";
 }
 
 const FALLBACK =
@@ -22,6 +24,7 @@ export function ProductImage({
   priority,
   className,
   imageClassName,
+  fit = "cover",
 }: Props) {
   const wanted = product.photos?.[photoIndex] ?? product.photo ?? FALLBACK;
   // Remember which photo failed to load (not the photo shown), so a different photo —
@@ -38,7 +41,7 @@ export function ProductImage({
         sizes={sizes}
         priority={priority}
         onError={() => wanted !== FALLBACK && setFailed(wanted)}
-        className={`object-cover ${imageClassName ?? ""}`}
+        className={`${fit === "contain" ? "object-contain" : "object-cover"} ${imageClassName ?? ""}`}
       />
     </div>
   );

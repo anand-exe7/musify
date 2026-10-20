@@ -6,7 +6,7 @@ import { useQuote, fetchQuote } from "@/lib/client/quote";
 import { useShallow } from "zustand/react/shallow";
 import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
-import { findVariant, variantLabel } from "@/lib/catalog/variants";
+import { findVariant, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { formatINR, cn } from "@/lib/utils";
 import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -190,7 +190,7 @@ export default function CartPage() {
                 className="flex gap-4 border border-ink-100 bg-ivory-50 p-4 md:p-5"
               >
                 <Link href={`/product/${i.product.slug}`} className="relative h-24 w-24 shrink-0 overflow-hidden bg-ink-100 md:h-32 md:w-32">
-                  <ProductImage product={i.product} sizes="128px" />
+                  <ProductImage product={withVariantPhoto(i.product, i.variant)} sizes="128px" />
                 </Link>
                 <div className="flex min-w-0 flex-1 flex-col justify-between">
                   <div className="flex justify-between gap-3">

@@ -1,0 +1,65 @@
+# Product photo sources
+
+Photos for the catalogue were taken from Wikimedia Commons, background removed, and resized. Most Commons files are CC BY / CC BY-SA, so keep a credit line (for example in the site footer or an About page). Check each file page for its exact licence and author.
+
+- https://commons.wikimedia.org/wiki/File:17_inch_pocket_ukulele_branded_%22ultnice%22_(right)_in_comparison_to_a_standard_soprano_ukulele_(partially_visible).jpg
+- https://commons.wikimedia.org/wiki/File:17_inch_pocket_ukulele_branded_%22ultnice%22.jpg
+- https://commons.wikimedia.org/wiki/File:2006-06-03_Congas1.JPG
+- https://commons.wikimedia.org/wiki/File:2006-07-06_snare_14.jpg
+- https://commons.wikimedia.org/wiki/File:A_Pambai.JPG
+- https://commons.wikimedia.org/wiki/File:AKG_C214_condenser_microphone_with_H85_shock_mount.jpg
+- https://commons.wikimedia.org/wiki/File:AcoustaGrip_Soloist.jpg
+- https://commons.wikimedia.org/wiki/File:Acoustic_Bass_(1242981904).jpg
+- https://commons.wikimedia.org/wiki/File:Acoustic_guitar_strings.jpg
+- https://commons.wikimedia.org/wiki/File:An_depiction_of_electronic_shruti_box.JPG
+- https://commons.wikimedia.org/wiki/File:Armenian_Dhol.jpg
+- https://commons.wikimedia.org/wiki/File:Bongos_(public_domain).jpg
+- https://commons.wikimedia.org/wiki/File:Bongos_-_Vladimir_Morozov.jpg
+- https://commons.wikimedia.org/wiki/File:Cajon_Drum_For_Sale.jpg
+- https://commons.wikimedia.org/wiki/File:Casio_CTK-496_keyboard.jpg
+- https://commons.wikimedia.org/wiki/File:Casio_CTK-531.jpg
+- https://commons.wikimedia.org/wiki/File:Casiotone_CT-430.jpg
+- https://commons.wikimedia.org/wiki/File:Casiotone_MT-65.jpg
+- https://commons.wikimedia.org/wiki/File:Classical_Guitar_two_views.jpg
+- https://commons.wikimedia.org/wiki/File:Classical_Guitar_two_views2.png
+- https://commons.wikimedia.org/wiki/File:D800_A4339_viool.jpg
+- https://commons.wikimedia.org/wiki/File:Damaru_instrument_2.jpg
+- https://commons.wikimedia.org/wiki/File:Damaru_instrument_5.jpg
+- https://commons.wikimedia.org/wiki/File:Damaru_instrument_6.jpg
+- https://commons.wikimedia.org/wiki/File:Dancing_bells_anklet_(ghunghru)%2C_India%2C_1800s%2C_gold_and_gilt_metal_-_Wallace_Collection_-_London%2C_UK_-_DSC06165.jpg
+- https://commons.wikimedia.org/wiki/File:Dhol_dholak%2C_one_of_numerous_types_of_drums%2C_Indian_musical_instrument.jpg
+- https://commons.wikimedia.org/wiki/File:Dholak_beats.jpg
+- https://commons.wikimedia.org/wiki/File:Dholak%2CTasha_drum.jpg
+- https://commons.wikimedia.org/wiki/File:Dholki_Nagpuri_musical_instrument.jpg
+- https://commons.wikimedia.org/wiki/File:Drum_cajon.jpg
+- https://commons.wikimedia.org/wiki/File:Drumhead_Coated_on_Snare_Drum.png
+- https://commons.wikimedia.org/wiki/File:Ghungroo.jpg
+- https://commons.wikimedia.org/wiki/File:Ginger_Smock's_violin%2C_at_the_Smithsonian.jpg
+- https://commons.wikimedia.org/wiki/File:Harmonium_20151009_(23914086965).jpg
+- https://commons.wikimedia.org/wiki/File:Harmonium_20160903.jpg
+- https://commons.wikimedia.org/wiki/File:Homemade_caj%C3%B3n.jpg
+- https://commons.wikimedia.org/wiki/File:Instrument_perkusyjny_TABLA_firmy_Meinl.jpg
+- https://commons.wikimedia.org/wiki/File:MAUGEIN_CAJON_01.jpg
+- https://commons.wikimedia.org/wiki/File:Melodica.jpg
+- https://commons.wikimedia.org/wiki/File:Melodicas.jpg
+- https://commons.wikimedia.org/wiki/File:Microphone_(Shure_SM58)_(4900485245).jpg
+- https://commons.wikimedia.org/wiki/File:Musical_Instrument-127-Musical_school-thalavaipatti-salem-India.jpg
+- https://commons.wikimedia.org/wiki/File:Mya-Moe_mahogany_ukulele.jpg
+- https://commons.wikimedia.org/wiki/File:Poggia_piede_per_chitarra_classica.jpg
+- https://commons.wikimedia.org/wiki/File:Shure_sm58.jpg
+- https://commons.wikimedia.org/wiki/File:Side_Drum_MET_DP109493.jpg
+- https://commons.wikimedia.org/wiki/File:Small_Mbira.jpg
+- https://commons.wikimedia.org/wiki/File:Snare_drum_diagram.png
+- https://commons.wikimedia.org/wiki/File:Tabla_set_Music_Instrument.jpg
+- https://commons.wikimedia.org/wiki/File:Tabla_set.jpg
+- https://commons.wikimedia.org/wiki/File:Taiwan_Casio_CTK-496_abandoned_20150829.jpg
+- https://commons.wikimedia.org/wiki/File:Tecladobh.JPG
+- https://commons.wikimedia.org/wiki/File:Thavil-DSC_3864.jpg
+- https://commons.wikimedia.org/wiki/File:The_Blackbird._Black_and_white_photo%2C_1.jpg
+- https://commons.wikimedia.org/wiki/File:Violin_%26_bow.jpg
+- https://commons.wikimedia.org/wiki/File:Violin_case_1.PNG
+- https://commons.wikimedia.org/wiki/File:Yamaha_P80_Digital_Piano_-_sustain_pedal.jpg
+- https://commons.wikimedia.org/wiki/File:Yamaha_PSR-270_61-Key_MIDI_Portable_Keyboard_on_stand_with_foot_sustain_pedal%2C_soft_case.jpg
+- https://commons.wikimedia.org/wiki/File:Yamaha_PSR-S910_(31620894757).jpg
+- https://commons.wikimedia.org/wiki/File:Bansuri_bamboo_flute_23inch.jpg (Flute 8 Holes)
+- https://commons.wikimedia.org/wiki/File:Tambourin_ouzbek.jpg (Ring)
