@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle, ok, notFound, badRequest, readJson } from "@/lib/api/http";
 import { getBillDetail } from "@/lib/db/queries/purchaseBills";
 import type { Branch } from "@/lib/stock";
-import { updatePurchase, deleteOpeningBalance, purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
+import { updatePurchase, deletePurchase,purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +33,13 @@ export function PATCH(request: NextRequest, { params }: { params: Promise<{ id: 
   });
 }
 
-/** Only an opening balance with no payments against it can be removed. */
-export function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+/** Delete a bill (admin only). `?stock=keep` (default) leaves stock alone; `?stock=reverse` also takes it back out. */
+export function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return handle("admin", async () => {
     const { id } = await params;
+    const stock = req.nextUrl.searchParams.get("stock") === "reverse" ? "reverse" : "keep";
     try {
-      return (await deleteOpeningBalance(id)) ? ok({ ok: true }) : notFound("Purchase not found");
+      return (await deletePurchase(id, stock)) ? ok({ ok: true }) : notFound("Purchase not found");
     } catch (e) {
       if (e instanceof PurchaseValidationError) return badRequest(e.message);
       throw e;

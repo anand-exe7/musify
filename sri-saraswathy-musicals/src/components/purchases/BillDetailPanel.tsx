@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Receipt } from "lucide-react";
+import { Pencil, Receipt, Trash2 } from "lucide-react";
 import { formatINR, cn } from "@/lib/utils";
 import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import type { BranchBill } from "@/lib/billShares";
@@ -19,7 +19,7 @@ const day = (d: string) => {
  * and every payment. Loaded only when the line is opened.
  */
 export function BillDetailPanel({
-  id, version, canEdit, onPay, onEdit,
+  id, version, canEdit, onPay, onEdit, onDeleted,
 }: {
   id: string;
   /** Changes whenever something was paid or edited, so the panel reloads. */
@@ -27,9 +27,33 @@ export function BillDetailPanel({
   canEdit: boolean;
   onPay: (d: BillDetail) => void;
   onEdit: (d: BillDetail) => void;
+  onDeleted: () => void;
 }) {
   const [d, setD] = useState<BillDetail | null>(null);
   const [error, setError] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [delError, setDelError] = useState("");
+  /** Whether deleting the bill also takes its stock back out; leaving stock alone is the safe default. */
+  const [stockMode, setStockMode] = useState<"keep" | "reverse">("keep");
+
+  const remove = async () => {
+    setDeleting(true);
+    setDelError("");
+    try {
+      const res = await fetch(`/api/purchases/${id}?stock=${stockMode}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        setDelError(body.error || body.message || "Couldn't delete this bill. Try again.");
+        return;
+      }
+      onDeleted();
+    } catch {
+      setDelError("Couldn't reach the server. Try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -196,7 +220,40 @@ export function BillDetailPanel({
             <Pencil className="h-4 w-4" /> Edit bill
           </button>
         )}
+        {canEdit && !confirming && (
+          <button onClick={() => { setConfirming(true); setDelError(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/10">
+            <Trash2 className="h-4 w-4" /> Delete bill
+          </button>
+        )}
       </div>
+      {confirming && (
+        <div className="rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm">
+          <p className="font-semibold text-ink-900">Delete this {d.openingBranch ? "old balance" : "bill"}?</p>
+          {d.openingBranch ? (
+            <p className="mt-1 text-xs text-ink-600">It disappears from the vendor&apos;s balance. It never touched stock, so nothing else changes.</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {([
+                ["keep", "Delete the bill only — keep the stock",
+                  `The bill, its items and what the branches owe on it are removed from the vendor's account. The ${items.reduce((n, i) => n + i.qty, 0)} pcs it brought in stay on the shelves exactly as they are, so inventory does not change. Choose this when the goods really arrived and only the paperwork is wrong or duplicated.`],
+                ["reverse", "Delete the bill and take its stock back out",
+                  "The bill is removed and the pieces it added are subtracted from each branch's stock, as if it was never received. Choose this when the goods never came in (a mistaken or cancelled purchase). If any of those pieces have already been sold or moved, this is refused and nothing changes."],
+              ] as const).map(([k, title, text]) => (
+                <label key={k} className={cn("flex cursor-pointer gap-2.5 rounded-lg border bg-white p-3", stockMode === k ? "border-danger/60" : "border-ink-100")}>
+                  <input type="radio" name={`stock-${id}`} checked={stockMode === k} onChange={() => setStockMode(k)} className="mt-0.5 accent-danger" />
+                  <span><b className="block text-xs text-ink-900">{title}</b><span className="mt-0.5 block text-[11px] leading-relaxed text-ink-600">{text}</span></span>
+                </label>
+              ))}
+            </div>
+          )}
+          {paidAll > 0 && <p className="mt-2 text-xs text-ink-600">Money already paid against this bill is not lost: payments recorded later stay on the vendor&apos;s account as unassigned payments you can apply to another bill.</p>}
+          {delError && <p className="mt-2 text-xs font-semibold text-danger">{delError}</p>}
+          <div className="mt-3 flex gap-2">
+            <button disabled={deleting} onClick={() => setConfirming(false)} className="rounded-lg border border-ink-200 px-4 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-900/5">Keep it</button>
+            <button disabled={deleting} onClick={() => void remove()} className="rounded-lg bg-danger px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{deleting ? "Deleting…" : "Yes, delete"}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

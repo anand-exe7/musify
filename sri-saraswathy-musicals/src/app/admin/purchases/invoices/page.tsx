@@ -254,7 +254,7 @@ export default function VendorBillsPage() {
       <div className={cn("space-y-3 transition-opacity", loading && data && "opacity-60")} aria-busy={loading}>
         {data?.rows.map((r) => (
           <BillLine key={r.id} r={r} open={open === r.id} onToggle={() => setOpen(open === r.id ? null : r.id)}>
-            {open === r.id && <BillDetailPanel id={r.id} version={version} canEdit={isAdmin} onPay={setPaying} onEdit={setEditing} />}
+            {open === r.id && <BillDetailPanel id={r.id} version={version} canEdit={isAdmin} onPay={setPaying} onEdit={setEditing} onDeleted={() => { setOpen(null); changed("Bill deleted."); }} />}
           </BillLine>
         ))}
         {!data && loading && Array.from({ length: 4 }, (_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-ink-100/60" />)}

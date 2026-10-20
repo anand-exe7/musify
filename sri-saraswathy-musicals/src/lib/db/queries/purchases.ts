@@ -24,8 +24,9 @@ import { genDocId } from "@/lib/ids";
 import { formatINR } from "@/lib/utils";
 import { checkPurchaseTax } from "@/lib/gst/purchaseTax";
 import { aggregateLines, shareFromAggregates } from "@/lib/billShares";
-import { BRANCH_KEYS, isBranch, type Branch, branchLabel } from "@/lib/stock";
-import { setVariantPrice } from "./stockOps";
+import { BRANCH_KEYS, isBranch, type Branch, type StockDelta, branchLabel } from "@/lib/stock";
+import { setVariantPrice, adjustProductStock } from "./stockOps";
+import { selectProduct } from "./variants";
 import { createInward, validateInwardBatch, type InwardBatchLine } from "./stock";
 import { definedOnly, row, rows } from "./_util";
 
@@ -1055,6 +1056,57 @@ export async function deleteOpeningBalance(id: string): Promise<boolean> {
   if (p.paymentsTotal > 0) throw new PurchaseValidationError("Payments are recorded against this balance; remove them first.");
   const r = await db.delete(purchases).where(eq(purchases.id, id)).returning({ id: purchases.id });
   return r.length > 0;
+}
+
+/**
+ * Delete a whole vendor bill, in one of two ways:
+ *  - "keep": only the bill (and its record of lines) goes; the stock already on the shelves is left exactly as it is.
+ *  - "reverse": what the bill brought into stock is also taken back out; if some of it has already been sold the
+ *    delete is refused and nothing changes.
+ * Payments made later survive either way as the vendor's unassigned payments (the money did leave), so they can be
+ * applied to another bill.
+ */
+export async function deletePurchase(id: string, stockMode: "keep" | "reverse" = "keep"): Promise<boolean> {
+  const p = await getPurchase(id);
+  if (!p) return false;
+  if (p.openingBranch) return deleteOpeningBalance(id);
+  if (stockMode === "keep") {
+    const r = await db.delete(purchases).where(eq(purchases.id, id)).returning({ id: purchases.id }); // its stock lines go with it
+    return r.length > 0;
+  }
+
+  // Take the stock back, one product at a time; if one is short, put back what was already taken.
+  const byProduct = new Map<string, typeof p.lines>();
+  for (const l of p.lines) byProduct.set(l.productId, [...(byProduct.get(l.productId) ?? []), l]);
+  const taken: { productId: string; deltas: StockDelta[] }[] = [];
+  try {
+    for (const [productId, lines] of byProduct) {
+      const prod = await selectProduct(productId);
+      if (!prod) continue; // the product is gone, so there is no stock to take back
+      const deltas: StockDelta[] = [];
+      for (const l of lines) {
+        const variantIndex = prod.variants.findIndex((v) => `${v.attr}${v.finish ? ` · ${v.finish}` : ""}` === l.variant);
+        if (variantIndex < 0) throw new PurchaseValidationError(`${l.productName} (${l.variant}) no longer exists, so its stock can't be taken back. Edit the product first.`);
+        deltas.push({ variantIndex, branch: l.branch as Branch, delta: -l.quantity });
+      }
+      try {
+        await adjustProductStock(productId, deltas);
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 409) {
+          throw new PurchaseValidationError(`Can't take the stock back: some of what this bill brought in has already been sold or moved (${e.message}). Choose "Delete the bill only" to keep the stock as it is.`);
+        }
+        throw e;
+      }
+      taken.push({ productId, deltas });
+    }
+    const r = await db.delete(purchases).where(eq(purchases.id, id)).returning({ id: purchases.id }); // its stock lines go with it
+    return r.length > 0;
+  } catch (err) {
+    for (const t of taken) {
+      await adjustProductStock(t.productId, t.deltas.map((d) => ({ ...d, delta: -d.delta }))).catch((e) => console.error("[purchase] couldn't restore stock after a failed delete", t.productId, e));
+    }
+    throw err;
+  }
 }
 
 /* ──────────────────  Applying an unassigned payment to bills  ─────── */

@@ -111,8 +111,8 @@ export default function InquiriesPage() {
       <LoadErrorBanner message={loadError} onRetry={() => void useInquiry.getState().hydrate()} />
       {/* Add Inquiry Modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setShowAdd(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setShowAdd(false)}>
+          <div className="my-auto w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-ink-900">Add Inquiry</h3>
             <div className="mt-4 space-y-4">
               <div>

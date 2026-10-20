@@ -189,7 +189,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                   {!isBillOfSupply && (
                     <td className="border-r border-ink-100 px-3 text-center tabular-nums text-ink-700">{l.gst > 0 ? `${l.gst}%` : "—"}</td>
                   )}
-                  <td className="border-r border-ink-100 px-3 text-right tabular-nums text-ink-500 line-through">{formatINR(Math.max(l.mrp ?? 0, l.rate))}</td>
+                  <td className="border-r border-ink-100 px-3 text-right tabular-nums text-ink-500">{formatINR(Math.max(l.mrp ?? 0, l.rate))}</td>
                   <td className="border-r border-ink-100 px-3 text-center tabular-nums font-semibold text-ink-800">{l.qty}</td>
                   <td className="border-r border-ink-100 px-3 text-right tabular-nums text-ink-800">{formatINR(l.rate)}</td>
                   {showDiscount && (
