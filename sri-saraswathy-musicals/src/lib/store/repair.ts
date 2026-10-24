@@ -54,6 +54,8 @@ export interface RepairTicket {
   gstRate: number; // %
   /** Products sold to the customer during the service; billed on the same invoice. */
   parts?: ServicePart[];
+  /** Server-kept: the products already taken out of stock for this ticket (see `stock_taken`). Never sent by the browser. */
+  stockTaken?: ServicePart[];
   // Audit
   events: RepairEvent[];
   whatsappSentAt?: string;

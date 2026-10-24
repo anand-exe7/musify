@@ -6,6 +6,7 @@ import { HttpError } from "@/lib/api/errors";
 import { isBranch } from "@/lib/stock";
 import { cleanPayments, paymentLabel, statusFor } from "@/lib/paymentSplit";
 import { row, rows, definedOnly } from "./_util";
+import { upsertCustomer } from "./customers";
 
 export async function getInvoices(): Promise<Invoice[]> {
   return rows<Invoice>(await db.select().from(invoices).orderBy(desc(invoices.date)));
@@ -47,9 +48,20 @@ export async function nextBranchReference(branch: string, dateIso: string): Prom
   return `INV-${year}-${code}${String(r?.value ?? 1).padStart(4, "0")}`;
 }
 
+/** File the buyer under their mobile number. The invoice is the legal record, so a problem here never stops it. */
+async function customerIdFor(phone: string | null | undefined, name: string, gstin: string | null | undefined): Promise<string | null> {
+  try {
+    return await upsertCustomer({ phone, name, gstin });
+  } catch (e) {
+    console.error("[customers] could not file the customer for an invoice:", e);
+    return null;
+  }
+}
+
 export async function createInvoice(inv: Invoice): Promise<Invoice> {
   const withRef = { ...inv, reference: inv.reference || (await nextBranchReference(inv.branch, inv.date)) };
-  const [r] = await db.insert(invoices).values(withRef).returning();
+  const customerId = await customerIdFor(inv.customerPhone, inv.customer, inv.customerGstin);
+  const [r] = await db.insert(invoices).values({ ...withRef, customerId }).returning();
   return row<Invoice>(r);
 }
 
@@ -122,7 +134,16 @@ export async function updateInvoice(
     if (dup) throw bad(`Invoice number ${set.number} is already in use.`);
   }
   const [r] = await db.update(invoices).set(set).where(eq(invoices.id, id)).returning();
-  return r ? row<Invoice>(r) : undefined;
+  if (!r) return undefined;
+  // A changed name, number or GSTIN may move the invoice to another customer (or give it one).
+  if (set.customer !== undefined || set.customerPhone !== undefined || set.customerGstin !== undefined) {
+    const customerId = await customerIdFor(r.customerPhone, r.customer, r.customerGstin);
+    if (customerId !== r.customerId) {
+      const [moved] = await db.update(invoices).set({ customerId }).where(eq(invoices.id, id)).returning();
+      return row<Invoice>(moved ?? r);
+    }
+  }
+  return row<Invoice>(r);
 }
 
 /**

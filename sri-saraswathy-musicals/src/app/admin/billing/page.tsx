@@ -12,6 +12,8 @@ import {
   MessageCircle,
   Search,
   X,
+  Eye,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
@@ -23,6 +25,7 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
 import { BRANCH_KEYS, isBranch, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
+import { normalizePhone } from "@/lib/customers/phone";
 
 interface Row {
   id: string;
@@ -76,6 +79,11 @@ export default function BillingPage() {
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [customerGstin, setCustomerGstin] = useState("");
+  // Result of pressing Lookup next to the mobile number (one request per press, never while typing).
+  const [lookup, setLookup] = useState<
+    | { kind: "idle" } | { kind: "loading" } | { kind: "new" } | { kind: "error"; message: string }
+    | { kind: "found"; bills: number; last: string | null }
+  >({ kind: "idle" });
   const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
@@ -173,6 +181,26 @@ export default function BillingPage() {
     });
   };
 
+  /** Ask the server whether this mobile number belongs to a returning customer, and fill in their name (and GST number if blank). */
+  const lookupCustomer = async () => {
+    if (!normalizePhone(phone)) {
+      setLookup({ kind: "error", message: "Enter a valid 10-digit mobile number." });
+      return;
+    }
+    setLookup({ kind: "loading" });
+    try {
+      const res = await fetch(`/api/customers/lookup?phone=${encodeURIComponent(phone)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `Lookup failed (${res.status})`);
+      const { customer: c } = (await res.json()) as { customer: { name: string; gstin: string | null; bills: number; lastPurchase: string | null } | null };
+      if (!c) return setLookup({ kind: "new" });
+      if (c.name) setCustomerName(c.name);
+      if (c.gstin && !customerGstin.trim()) setCustomerGstin(c.gstin);
+      setLookup({ kind: "found", bills: c.bills, last: c.lastPurchase });
+    } catch (e) {
+      setLookup({ kind: "error", message: e instanceof Error ? e.message : "Couldn't look the customer up." });
+    }
+  };
+
   const clearOrder = () => {
     setRows([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
     setCouponCode("");
@@ -239,6 +267,7 @@ export default function BillingPage() {
     setCustomerName("");
     setPhone("");
     setCustomerGstin("");
+    setLookup({ kind: "idle" });
   };
 
   const sendWhatsApp = () => {
@@ -341,7 +370,33 @@ export default function BillingPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Mobile Number (WhatsApp)</label>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Enter 10-digit number" inputMode="numeric" className={fieldCls} />
+                <div className="relative">
+                  <input
+                    value={phone}
+                    onChange={(e) => { setPhone(e.target.value); if (lookup.kind !== "idle") setLookup({ kind: "idle" }); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookupCustomer(); } }}
+                    placeholder="Enter 10-digit number"
+                    inputMode="numeric"
+                    className={fieldCls + " pr-11"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void lookupCustomer()}
+                    disabled={lookup.kind === "loading" || !phone.trim()}
+                    title="Look up this customer"
+                    aria-label="Look up customer by mobile number"
+                    className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-ink-500 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {lookup.kind === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {lookup.kind === "found" && (
+                  <p className="mt-1.5 text-xs font-medium text-success">
+                    Returning customer · {lookup.bills} earlier bill{lookup.bills === 1 ? "" : "s"}{lookup.last ? ` · last on ${new Date(lookup.last).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+                  </p>
+                )}
+                {lookup.kind === "new" && <p className="mt-1.5 text-xs text-ink-500">New customer — no earlier bills on this number.</p>}
+                {lookup.kind === "error" && <p className="mt-1.5 text-xs text-danger">{lookup.message}</p>}
               </div>
               <div>
                 <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">GST Number (optional)</label>

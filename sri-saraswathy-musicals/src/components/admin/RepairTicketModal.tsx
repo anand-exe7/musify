@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { X, User as UserIcon, Guitar, ClipboardList, Wrench, MessageCircle, Save } from "lucide-react";
+import { X, User as UserIcon, Guitar, ClipboardList, Wrench, MessageCircle, Save, Package } from "lucide-react";
 import {
   useRepair,
   genRepairId,
@@ -12,6 +12,7 @@ import type { Branch } from "@/lib/store/pos";
 import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { PartsEditor } from "@/components/admin/TicketParts";
 import { BRANCH_KEYS, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
 
@@ -121,10 +122,11 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
       problem: d.problem.trim(),
       estimate: Number(d.estimate) || 0,
       advance: Number(d.advance) || 0,
+      parts: (d.parts ?? []).filter((x) => x.name.trim() && x.qty > 0),
     };
     if (isNew) {
       clean.events = [
-        { at: new Date().toISOString(), label: `Ticket raised · received at ${branchLabel(clean.branch)}` },
+        { at: new Date().toISOString(), label: `Ticket raised · received at ${branchLabel(clean.branch)}${clean.parts?.length ? ` · ${clean.parts.length} product${clean.parts.length === 1 ? "" : "s"} noted` : ""}` },
       ];
       addTicket(clean);
     } else {
@@ -270,6 +272,17 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
               </p>
             )}
           </section>
+
+          {/* Products from inventory used in the repair (new tickets; on an existing ticket they are on its page) */}
+          {isNew && (
+            <section>
+              <SectionTitle icon={<Package className="h-4 w-4" />}>Products used (optional)</SectionTitle>
+              <p className="mb-3 text-[11px] text-ink-400">
+                Pick what the repair will use from inventory, such as strings. They are billed on the same invoice as the service charge and come out of {branchLabel(d.branch)}&apos;s stock when the repair is marked <b>Ready</b>. You can also add them later on the ticket.
+              </p>
+              <PartsEditor parts={d.parts ?? []} onChange={(parts) => set({ parts })} branch={d.branch} gstRate={d.gstRate} />
+            </section>
+          )}
 
           {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">{err}</p>}
         </div>

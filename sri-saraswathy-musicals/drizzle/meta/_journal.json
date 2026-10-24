@@ -246,6 +246,20 @@
       "when": 1792414860366,
       "tag": "0034_order_fulfilment",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792686635431,
+      "tag": "0035_customers",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792689210613,
+      "tag": "0036_repair_stock_taken",
+      "breakpoints": true
     }
   ]
 }

@@ -123,3 +123,45 @@ export async function applyPartsStock(branch: string, before: ServicePart[], aft
   }
   return undo;
 }
+
+/** The statuses from which a repair's products are out of stock: from Ready onwards (never once cancelled). */
+export const STOCK_TAKEN_FROM = ["ready", "completed"] as const;
+
+/** The products that should be out of stock for a ticket in this status. */
+export function partsDue(status: string, parts: ServicePart[] | undefined): ServicePart[] {
+  return (STOCK_TAKEN_FROM as readonly string[]).includes(status) ? (parts ?? []) : [];
+}
+
+interface TicketState { branch: string; status: string; parts?: ServicePart[] }
+
+/**
+ * Bring a ticket's stock in line with where the repair now is. Products come out of the branch's stock when the repair
+ * is marked Ready (or Completed), and go back if it is moved back, cancelled or its list or branch changes — measured
+ * against what was really taken (`before.stockTaken`), so nothing is ever taken or returned twice.
+ * Throws 409 if the branch is short; nothing has changed then. Otherwise returns what is now taken (store it on the
+ * ticket) and an `undo` for when the ticket write that follows fails.
+ */
+export async function syncPartsStock(
+  before: TicketState & { stockTaken?: ServicePart[] },
+  after: TicketState,
+): Promise<{ taken: ServicePart[]; undo: () => Promise<void> }> {
+  const taken = before.stockTaken ?? [];
+  const due = partsDue(after.status, after.parts);
+  if (before.branch === after.branch) {
+    return { taken: due, undo: await applyPartsStock(after.branch, taken, due) };
+  }
+  // The ticket moved branch: what it took comes back where it was taken, and is taken again from the new branch.
+  const back = await applyPartsStock(before.branch, taken, []);
+  try {
+    const out = await applyPartsStock(after.branch, [], due);
+    return { taken: due, undo: async () => { await out(); await back(); } };
+  } catch (e) {
+    await back();
+    throw e;
+  }
+}
+
+/** Put back whatever a ticket still holds in stock — before it is deleted. Returns an `undo`. */
+export async function releaseTicketStock(t: { branch: string; stockTaken?: ServicePart[] }): Promise<() => Promise<void>> {
+  return applyPartsStock(t.branch, t.stockTaken ?? [], []);
+}

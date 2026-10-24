@@ -12,11 +12,15 @@ import { DEFAULT_BRANCH, type Variant } from "@/lib/stock";
 
 type ProductColumns = typeof products.$inferSelect;
 
-/** Variants (with stock) for the given products, keyed by product id, in position order. */
+/**
+ * Variants (with stock) for the given products, keyed by product id, in position order.
+ * Two reads, not one join: a variant carries a photo (tens of KB), and joining it to its stock rows would send
+ * that photo once per branch, so a catalogue with photos grew past what one database response can carry.
+ */
 async function loadVariants(productIds: string[]): Promise<Map<string, VariantData[]>> {
   const out = new Map<string, VariantData[]>();
   if (productIds.length === 0) return out;
-  const r = await db
+  const vars = await db
     .select({
       id: productVariants.id,
       productId: productVariants.productId,
@@ -26,25 +30,27 @@ async function loadVariants(productIds: string[]): Promise<Map<string, VariantDa
       weight: productVariants.weight,
       photo: productVariants.photo,
       disabled: productVariants.disabled,
-      branch: variantStock.branch,
-      qty: variantStock.qty,
     })
     .from(productVariants)
-    .leftJoin(variantStock, eq(variantStock.variantId, productVariants.id))
     .where(inArray(productVariants.productId, productIds))
     .orderBy(asc(productVariants.productId), asc(productVariants.position));
+  const stock = await db
+    .select({ variantId: variantStock.variantId, branch: variantStock.branch, qty: variantStock.qty })
+    .from(variantStock)
+    .innerJoin(productVariants, eq(productVariants.id, variantStock.variantId))
+    .where(inArray(productVariants.productId, productIds));
 
   const byId = new Map<string, VariantData>();
-  for (const x of r) {
-    let v = byId.get(x.id);
-    if (!v) {
-      v = { id: x.id, attr: x.attr, finish: x.finish, price: x.price, weight: x.weight, photo: x.photo, disabled: x.disabled, stockByBranch: {} };
-      byId.set(x.id, v);
-      const list = out.get(x.productId) ?? [];
-      list.push(v);
-      out.set(x.productId, list);
-    }
-    if (x.branch) v.stockByBranch[x.branch] = x.qty ?? 0;
+  for (const x of vars) {
+    const v: VariantData = { id: x.id, attr: x.attr, finish: x.finish, price: x.price, weight: x.weight, photo: x.photo, disabled: x.disabled, stockByBranch: {} };
+    byId.set(x.id, v);
+    const list = out.get(x.productId) ?? [];
+    list.push(v);
+    out.set(x.productId, list);
+  }
+  for (const s of stock) {
+    const v = byId.get(s.variantId);
+    if (v) v.stockByBranch[s.branch] = s.qty ?? 0;
   }
   return out;
 }

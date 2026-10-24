@@ -271,6 +271,23 @@ export const orders = pgTable("orders", {
   uniqueIndex("orders_payment_id_unique").on(t.paymentId).where(sql`${t.paymentId} <> ''`),
 ]);
 
+/**
+ * People who have bought from (or had work done by) the shop, recognised by mobile number. One row per number;
+ * the name and GSTIN follow the latest bill that gave them. Created and kept up to date by `createInvoice`,
+ * so every tax invoice with a valid mobile lands on its customer (`invoices.customer_id`).
+ */
+export const customers = pgTable("customers", {
+  id: text("id").primaryKey(),
+  /** The 10-digit mobile number (no +91, spaces or dashes) — what identifies the customer. */
+  phone: text("phone").notNull(),
+  name: text("name").notNull().default(""),
+  gstin: text("gstin"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  uniqueIndex("customers_phone_unique").on(t.phone),
+]);
+
 /** GST sales invoices (see `data/invoices.ts`). */
 export const invoices = pgTable("invoices", {
   id: text("id").primaryKey(),
@@ -303,6 +320,8 @@ export const invoices = pgTable("invoices", {
   customerGstin: text("customer_gstin"),
   /** Buyer's phone — shown under "Billed To". */
   customerPhone: text("customer_phone"),
+  /** The customer this invoice belongs to (matched on the mobile number); null when it had no valid number. */
+  customerId: text("customer_id").references(() => customers.id, { onDelete: "set null" }),
   /** Delivery / shipping charge in paise (untaxed here) — included in `total`, not in `subtotal`. */
   /** Bill-level discount in paise (coupon + manual ₹/%), on top of the per-line discounts. */
   discount: integer("discount").notNull().default(0),
@@ -314,6 +333,7 @@ export const invoices = pgTable("invoices", {
   // GST: invoice numbers must be unique.
   uniqueIndex("invoices_number_unique").on(t.number).where(sql`${t.number} <> ''`),
   uniqueIndex("invoices_reference_unique").on(t.reference).where(sql`${t.reference} <> ''`),
+  index("invoices_customer_idx").on(t.customerId),
 ]);
 
 /** Quotations (price offers). Prices are GST-inclusive, like invoices; `number` runs per branch and year (QT-2026-V0001). */
@@ -585,6 +605,12 @@ export const repairTickets = pgTable("repair_tickets", {
   events: jsonb("events").$type<{ at: string; label: string }[]>().notNull().default([]),
   /** Products sold to the customer during the service (billed on the same invoice, on top of the service charge). */
   parts: jsonb("parts").$type<{ id: string; productId?: string; variantIndex?: number; name: string; hsn?: string; qty: number; price: number; gst: number }[]>().notNull().default([]),
+  /**
+   * The products already taken out of this branch's stock for this ticket. Stock only comes off once the repair is
+   * marked Ready (and goes back if it is cancelled, deleted or moved back), so this records exactly what has been
+   * taken — the ticket's stock is always brought in line with it, never adjusted twice.
+   */
+  stockTaken: jsonb("stock_taken").$type<{ id: string; productId?: string; variantIndex?: number; name: string; hsn?: string; qty: number; price: number; gst: number }[]>().notNull().default([]),
   whatsappSentAt: text("whatsapp_sent_at"),
   completedAt: text("completed_at"),
   invoiceNo: text("invoice_no"),
