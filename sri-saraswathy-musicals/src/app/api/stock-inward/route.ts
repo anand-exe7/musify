@@ -9,13 +9,13 @@ export const dynamic = "force-dynamic";
 
 /** Goods-received log — admin or branch staff (scoped to their branch). */
 export function GET() {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     return ok(scopeByBranch(await getInwards(), access));
   });
 }
 
 export function POST(request: NextRequest) {
-  return handle("staff", async ({ user, access }) => {
+  return handle("admin", async ({ user, access }) => {
     const body = await readJson<Partial<StockInwardInput> & { lines?: InwardBatchLine[]; batchId?: string }>(request);
     // Multi-line receipt with per-branch split.
     if (Array.isArray(body?.lines)) {

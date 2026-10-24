@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
  *  branch (the shared `scopeByBranch` reads the `branch` field, so this is
  *  filtered manually here by mapping to the source branch). */
 export function GET() {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const list = await getTransfers();
     // Branch users see transfers where one of their branches was source or destination.
     return ok(list.filter((r) => branchAllowed(access, r.fromBranch) || branchAllowed(access, r.toBranch)));
@@ -26,7 +26,7 @@ export function GET() {
 }
 
 export function POST(request: NextRequest) {
-  return handle("staff", async ({ user, access }) => {
+  return handle("admin", async ({ user, access }) => {
     const body = await readJson<Partial<StockTransferInput> & { lines?: TransferBatchLine[]; batchId?: string }>(request);
     if (Array.isArray(body?.lines)) {
       const from = (body.fromBranch as Branch) ?? BRANCH_KEYS[0];

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * to all of it. Branch staff only ever see their own branches.
  */
 export function GET(request: NextRequest) {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const sp = request.nextUrl.searchParams;
     return ok(await getPurchaseAnalytics({
       from: sp.get("from") || undefined,

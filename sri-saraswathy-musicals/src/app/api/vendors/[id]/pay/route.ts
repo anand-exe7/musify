@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /** Pay several of a vendor's bills at once: `rows` say which bill, which branch pays and how much. */
 export function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  return handle("staff", async ({ user, access }) => {
+  return handle("admin", async ({ user, access }) => {
     const { id } = await params;
     const body = await readJson<{ rows: { purchaseId: string; branch: string; amount: number }[]; mode: VendorPaymentInput["mode"]; reference?: string; notes?: string }>(request);
     try {

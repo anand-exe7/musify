@@ -22,6 +22,7 @@ import {
   ArrowRightLeft,
   Handshake,
   Wallet,
+  UsersRound,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ const sections: Section[] = [
       { href: "/admin/billing", label: "Billing", icon: CreditCard, staff: true },
       { href: "/admin/orders", label: "Orders", icon: ShoppingCart, staff: true },
       { href: "/admin/invoices", label: "Invoices", icon: FileText, staff: true },
+      { href: "/admin/customers", label: "Customers", icon: UsersRound, staff: true },
       { href: "/admin/quotations", label: "Quotations", icon: FileSignature, staff: true },
       { href: "/admin/service", label: "Service / Repairs", icon: Wrench, staff: true },
       { href: "/admin/inquiries", label: "Inquiries", icon: MessageSquare, staff: true },
@@ -54,14 +56,14 @@ const sections: Section[] = [
     items: [
       { href: "/admin/inventory", label: "Inventory", icon: Package },
       { href: "/admin/categories", label: "Categories", icon: Tags },
-      { href: "/admin/stock-transfers", label: "Stock Transfers", icon: ArrowRightLeft, staff: true },
+      { href: "/admin/stock-transfers", label: "Stock Transfers", icon: ArrowRightLeft },
     ],
   },
   {
     title: "Procurement",
     items: [
-      { href: "/admin/purchases", label: "Purchases", icon: PackagePlus, staff: true },
-      { href: "/admin/purchases/invoices", label: "Vendor Bills", icon: FileText, staff: true },
+      { href: "/admin/purchases", label: "Purchases", icon: PackagePlus },
+      { href: "/admin/purchases/invoices", label: "Vendor Bills", icon: FileText },
       { href: "/admin/vendors", label: "Vendors", icon: Handshake },
     ],
   },
@@ -84,6 +86,16 @@ const sections: Section[] = [
     ],
   },
 ];
+
+/**
+ * Whether a branch-scoped user may open this admin page: the dashboard root, or any page under a
+ * `staff` menu item. Everything else (purchases, vendor bills, stock transfers, analytics, setup…)
+ * is full-admin only, so typing its address doesn't get a branch user in.
+ */
+export function branchStaffMayOpen(pathname: string | null): boolean {
+  if (!pathname || pathname === "/admin") return true;
+  return sections.some((s) => s.items.some((i) => i.staff && (pathname === i.href || pathname.startsWith(i.href + "/"))));
+}
 
 function Brand() {
   return (

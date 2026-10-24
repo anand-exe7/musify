@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Payments made to this vendor that aren't against any bill yet (older, vendor-level payments). */
 export function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const { id } = await params;
     return ok((await unappliedPayments(id)).filter((p) => branchAllowed(access, p.branch)));
   });

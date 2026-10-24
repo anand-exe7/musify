@@ -15,7 +15,7 @@ const SORTS = ["newest", "oldest", "balance", "amount"] as const;
  * totals for the whole filter. Branch staff only ever see their own branches' part.
  */
 export function GET(request: NextRequest) {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const sp = request.nextUrl.searchParams;
     const scope = access === "all" ? null : (access as Branch[]);
     // ?view=vendors → one row per vendor instead of one per bill

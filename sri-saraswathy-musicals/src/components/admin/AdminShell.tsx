@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { AdminSidebar } from "./AdminSidebar";
+import { AdminSidebar, branchStaffMayOpen } from "./AdminSidebar";
 import { AdminTopbar } from "./AdminTopbar";
 import { AdminFooter } from "./AdminFooter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/store/auth";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { startOrderAlerts } from "@/lib/store/orderAlerts";
 import { OrderToasts } from "./OrderToasts";
 
@@ -16,6 +16,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const adminAccess = useAuth((s) => s.adminAccess);
   const hydrated = useAuth((s) => s.hydrated);
   const router = useRouter();
+  const pathname = usePathname();
 
   // Re-check the session from the DB on every admin page mount.
   // This ensures is_admin / branch changes are reflected immediately
@@ -32,6 +33,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, adminAccess, router]);
 
+  // A branch user typing the address of a full-admin page goes back to Billing.
+  const blocked = hydrated && adminAccess !== null && adminAccess !== "all" && !branchStaffMayOpen(pathname);
+  useEffect(() => {
+    if (blocked) router.replace("/admin/billing");
+  }, [blocked, router]);
+
   // Watch for new online orders for as long as the admin is open (and signed in with admin rights).
   const signedIn = hydrated && adminAccess !== null;
   useEffect(() => (signedIn ? startOrderAlerts() : undefined), [signedIn]);
@@ -44,7 +51,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // ── Loading gate — show spinner until DB check is done ──────────────────
   // This prevents the page content from flashing before access is confirmed,
   // whether you navigate to /admin or type the URL directly.
-  if (!hydrated || adminAccess === null) {
+  if (!hydrated || adminAccess === null || blocked) {
     return (
       <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-4 bg-[#F4F1EA]">
         <div className="relative h-14 w-14">

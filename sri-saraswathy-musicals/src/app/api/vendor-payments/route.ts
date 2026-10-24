@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 /** List vendor payments. `?vendorId=…` narrows to one vendor's ledger. Branch
  *  staff see only payments they recorded. */
 export function GET(request: NextRequest) {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const vendorId = request.nextUrl.searchParams.get("vendorId") ?? undefined;
     const list = await getVendorPayments(vendorId);
     const filtered = list.filter((p) => branchAllowed(access, p.branch));
@@ -25,7 +25,7 @@ export function GET(request: NextRequest) {
 
 /** Pay a vendor: every payment is against one bill (`purchaseId`), never the vendor in general. */
 export function POST(request: NextRequest) {
-  return handle("staff", async ({ user, access }) => {
+  return handle("admin", async ({ user, access }) => {
     const body = await readJson<VendorPaymentInput>(request);
     if (!body.purchaseId) return badRequest("Pick the invoice this payment is for.");
     const branch: Branch = access === "all" || branchAllowed(access, body.branch) ? body.branch : primaryBranchOf(access, DEFAULT_BRANCH);

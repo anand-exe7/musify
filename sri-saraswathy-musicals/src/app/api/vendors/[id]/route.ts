@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 export function GET(_request: NextRequest, ctx: Ctx) {
-  return handle("staff", async () => {
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     const v = await getVendor(id);
     return v ? ok(v) : notFound("Vendor not found");
@@ -16,7 +16,7 @@ export function GET(_request: NextRequest, ctx: Ctx) {
 }
 
 export function PATCH(request: NextRequest, ctx: Ctx) {
-  return handle("staff", async () => {
+  return handle("admin", async () => {
     const { id } = await ctx.params;
     const patch = await readJson<Partial<Vendor>>(request);
     const v = await updateVendor(id, patch);

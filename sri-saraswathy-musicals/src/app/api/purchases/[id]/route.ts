@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** One bill in full: its items, what each branch has to pay, and its payment history. */
 export function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const { id } = await params;
     const scope = access === "all" ? null : (access as Branch[]);
     if (!(await purchaseVisibleTo(id, scope))) return notFound("Purchase not found");

@@ -5,15 +5,15 @@ import type { Vendor } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-/** Vendor directory — admin or branch staff (both need it for stock-inward). */
+/** Vendor directory — full admin only (branch staff no longer handle procurement). */
 export function GET() {
-  return handle("staff", async () => {
+  return handle("admin", async () => {
     return ok(await getVendors());
   });
 }
 
 export function POST(request: NextRequest) {
-  return handle("staff", async () => {
+  return handle("admin", async () => {
     const body = await readJson<Vendor>(request);
     if (!body?.id || !body?.name) return badRequest("Vendor requires `id` and `name`");
     return created(await createVendor(body));

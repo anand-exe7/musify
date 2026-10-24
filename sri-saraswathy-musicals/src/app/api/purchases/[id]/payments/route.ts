@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  *  from the purchase header, so the caller only sends the money bit: either one
  *  `amount` + `branch`, or `allocations` (how much each branch pays). */
 export function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  return handle("staff", async ({ user, access }) => {
+  return handle("admin", async ({ user, access }) => {
     const { id } = await params;
     const header = await getPurchase(id);
     if (!header || !(await purchaseVisibleTo(id, access === "all" ? null : access))) return badRequest("Purchase not found");

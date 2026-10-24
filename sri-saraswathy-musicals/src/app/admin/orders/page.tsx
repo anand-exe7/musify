@@ -3,6 +3,7 @@ import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/lib/store/auth";
 import { usePOS } from "@/lib/store/pos";
 import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { inPeriod, type Period, type Source } from "@/lib/store/pos";
@@ -39,6 +40,8 @@ export default function OrdersPage() {
   const orderVersion = useOrderAlerts((s) => s.version);
   const { sales, loading, error: loadFailed, errorMessage } = useAllSales(orderVersion);
   const deleteBill = usePOS((s) => s.deleteBill);
+  // Deleting a bill is for the full admin only; branch users never see the button.
+  const isFullAdmin = useAuth((s) => s.adminAccess === "all");
 
   // Tax invoices keyed by the order/bill/ticket id they were raised for, so each
   // row can show its sequential GST number and link straight to it.
@@ -278,7 +281,7 @@ export default function OrdersPage() {
                       <Eye className="h-3.5 w-3.5" /> Invoice
                       <ExternalLink className="h-3 w-3 text-ink-300 group-hover/btn:text-gold-500" />
                     </Link>
-                    {b.source === "offline" ? (
+                    {b.source === "offline" && isFullAdmin ? (
                       <button
                         onClick={() => setConfirmId(b.id)}
                         title="Delete POS bill"

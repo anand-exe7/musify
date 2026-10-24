@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** List purchase headers. Branch staff only see purchases whose lines touched
  *  their branch. */
 export function GET(request: NextRequest) {
-  return handle("staff", async ({ access }) => {
+  return handle("admin", async ({ access }) => {
     const list = await getPurchases({ vendorId: request.nextUrl.searchParams.get("vendor") || undefined });
     if (access === "all") return ok(list);
     const visible = await purchaseIdsInBranch(access);
@@ -18,7 +18,7 @@ export function GET(request: NextRequest) {
 }
 
 export function POST(request: NextRequest) {
-  return handle("staff", async ({ user, access }) => {
+  return handle("admin", async ({ user, access }) => {
     const body = await readJson<PurchaseInput>(request);
     try {
       const rec = await createPurchase(body, user.id, access === "all" ? null : access);
