@@ -14,6 +14,8 @@ import { useBranchScope } from "@/lib/store/branch";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
+import { ExpenseReport } from "@/components/expenses/ExpenseReport";
+import { useAuth } from "@/lib/store/auth";
 import { DEFAULT_BRANCH, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
 const PERIODS: { value: Period; label: string }[] = [
@@ -59,6 +61,8 @@ export default function ExpensesPage() {
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
   const allowedBranches = useBranchScope((s) => s.allowed);
 
+  const fullAdmin = useAuth((s) => s.adminAccess === "all");
+  const [tab, setTab] = useState<"tracker" | "report">("tracker");
   const [period, setPeriod] = useState<Period>("month");
   const [custom, setCustom] = useState<{ from?: string; to?: string }>({});
   const [search, setSearch] = useState("");
@@ -213,6 +217,21 @@ export default function ExpensesPage() {
         </div>
       )}
 
+      <div className="mb-5 inline-flex rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+        {([["tracker", "Tracker"], ["report", "Report"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={cn("rounded-full px-4 py-1.5 text-xs font-semibold transition-all", tab === k ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>{l}</button>
+        ))}
+      </div>
+
+      {tab === "report" ? (
+        <ExpenseReport
+          expenses={periodExpenses}
+          periodLabel={period === "custom" ? `${custom.from || "start"} to ${custom.to || "today"}` : (PERIODS.find((x) => x.value === period)?.label ?? "")}
+          branchName={scopeSelected === "all" ? "All branches" : branchLabel(scopeSelected)}
+          revenue={fullAdmin ? revenue : null}
+        />
+      ) : (
+      <>
       {/* Net profit + KPIs */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className={cn("rounded-2xl border p-5", netProfit >= 0 ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5")}>
@@ -330,6 +349,8 @@ export default function ExpensesPage() {
           </div>
         </section>
       </div>
+      </>
+      )}
     </div>
   );
 }
