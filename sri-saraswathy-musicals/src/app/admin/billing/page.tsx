@@ -25,6 +25,7 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
 import { BRANCH_KEYS, isBranch, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
+import { useAuth } from "@/lib/store/auth";
 import { normalizePhone } from "@/lib/customers/phone";
 
 interface Row {
@@ -57,6 +58,8 @@ const LINE_GST_RATES: { label: string; value: number | null }[] = [
 ];
 
 export default function BillingPage() {
+  // Branch staff sell catalogue products at catalogue prices; only a full admin can type items or prices.
+  const fullAdmin = useAuth((s) => s.adminAccess === "all");
   const coupons = usePOS((s) => s.coupons);
   const loadError = usePOS((s) => s.loadError);
   const invProducts = useInventory();
@@ -425,9 +428,9 @@ export default function BillingPage() {
                 >
                   <List className="h-3.5 w-3.5" /> Catalog
                 </button>
-                <button onClick={addRow} className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
+                {fullAdmin && <button onClick={addRow} className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
                   <Plus className="h-3.5 w-3.5" /> Add Item
-                </button>
+                </button>}
               </div>
             </div>
 
@@ -442,7 +445,8 @@ export default function BillingPage() {
                       <input
                         value={r.name}
                         onChange={(e) => setRow(r.id, { name: e.target.value })}
-                        placeholder="Item name / description…"
+                        readOnly={!fullAdmin}
+                        placeholder={fullAdmin ? "Item name / description…" : "Choose a product from the Catalog"}
                         aria-label="Item name"
                         className={cn(cell, "min-w-0 flex-1 py-2.5 text-left font-medium")}
                       />
@@ -457,6 +461,7 @@ export default function BillingPage() {
                         <input
                           value={r.hsn ?? ""}
                           onChange={(e) => setRow(r.id, { hsn: e.target.value })}
+                          disabled={!fullAdmin}
                           placeholder="HSN"
                           aria-label="HSN code"
                           inputMode="numeric"
@@ -468,6 +473,7 @@ export default function BillingPage() {
                         <select
                           value={r.gstRate == null ? "none" : String(r.gstRate)}
                           onChange={(e) => setRow(r.id, { gstRate: e.target.value === "none" ? null : Number(e.target.value) })}
+                          disabled={!fullAdmin}
                           title="GST rate for this line (inclusive)"
                           aria-label="GST rate"
                           className={cn(cell, "text-left")}
@@ -484,6 +490,7 @@ export default function BillingPage() {
                         <MoneyInput
                           value={r.mrp || 0}
                           onChange={(paise) => setRow(r.id, { mrp: paise })}
+                          disabled={!fullAdmin}
                           placeholder={r.price > 0 ? String(r.price / 100) : "MRP"}
                           aria-label="MRP per unit"
                           title="MRP per unit — defaults to the catalog MRP; blank = same as price"
@@ -492,7 +499,7 @@ export default function BillingPage() {
                       </div>
                       <div>
                         <label className={lbl}>Price (₹)</label>
-                        <MoneyInput value={r.price || 0} onChange={(paise) => setRow(r.id, { price: paise })} placeholder="Price" aria-label="Price per unit" className={cell} />
+                        <MoneyInput value={r.price || 0} onChange={(paise) => setRow(r.id, { price: paise })} disabled={!fullAdmin} title={fullAdmin ? undefined : "Prices come from the catalog"} placeholder="Price" aria-label="Price per unit" className={cell} />
                       </div>
                       <div>
                         <label className={lbl}>Qty</label>

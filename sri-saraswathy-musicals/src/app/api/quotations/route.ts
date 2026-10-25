@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle, ok, created, readJson } from "@/lib/api/http";
 import { getQuotations, createQuotation, type QuotationInput } from "@/lib/db/queries/quotations";
 import { scopeByBranch } from "@/lib/auth/server";
+import { lockQuoteLines } from "@/lib/auth/catalogLines";
 import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
 import { DEFAULT_BRANCH } from "@/lib/stock";
 
@@ -17,6 +18,7 @@ export function POST(request: NextRequest) {
     const body = await readJson<QuotationInput>(request);
     // A branch user can only quote for one of their own branches.
     if (access !== "all" && !branchAllowed(access, body.branch)) body.branch = primaryBranchOf(access, DEFAULT_BRANCH);
+    if (body.items) body.items = await lockQuoteLines(body.items, access);
     return created(await createQuotation(body));
   });
 }

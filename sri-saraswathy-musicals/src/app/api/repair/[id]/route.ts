@@ -3,6 +3,7 @@ import { handle, ok, notFound, noContent, readJson } from "@/lib/api/http";
 import { getTicket, updateTicket, deleteTicket, cleanParts, syncPartsStock, releaseTicketStock } from "@/lib/db/queries/repair";
 import { recordServiceInvoice } from "@/lib/billing/ledger";
 import { scopeByBranch } from "@/lib/auth/server";
+import { lockRepairParts } from "@/lib/auth/catalogLines";
 import type { RepairTicket } from "@/lib/store/repair";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,8 @@ export function PATCH(request: NextRequest, ctx: Ctx) {
     const eventLabel = "eventLabel" in body ? body.eventLabel : undefined;
     // What has been taken out of stock is the server's record, never the browser's.
     delete patch.stockTaken;
-    if (patch.parts !== undefined) patch.parts = cleanParts(patch.parts);
+    // Branch staff add products from inventory only, at the catalogue price.
+    if (patch.parts !== undefined) patch.parts = cleanParts(await lockRepairParts(patch.parts, access, existing.parts ?? []));
     // Products used in the repair leave this branch's stock once it is marked Ready, and go back if it is moved back,
     // cancelled or its list changes. A shortfall refuses the change and nothing moves.
     let undoStock: (() => Promise<void>) | undefined;

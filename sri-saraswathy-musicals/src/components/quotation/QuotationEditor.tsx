@@ -8,6 +8,7 @@ import { BranchOptions } from "@/components/admin/BranchOptions";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { effectiveBranch, useBranchScope } from "@/lib/store/branch";
 import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
+import { useAuth } from "@/lib/store/auth";
 import { LineProductPicker } from "@/components/quotation/LineProductPicker";
 
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -31,6 +32,8 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
   onSaved?: (q: Quotation) => void;
 }) {
   const router = useRouter();
+  // Branch staff quote catalogue products at catalogue prices; only a full admin can edit names, GST, MRP or rates.
+  const fullAdmin = useAuth((s) => s.adminAccess === "all");
   const selected = useBranchScope((s) => s.selected);
   const [draft, setDraft] = useState<Quotation>(() =>
     quotation
@@ -202,7 +205,7 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
                   <td className="px-3 py-2">
                     {l.productId ? (
                       <>
-                        <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} placeholder="Item" />
+                        <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} readOnly={!fullAdmin} placeholder="Item" />
                         <input className={cn(inp, "mt-1 text-xs")} value={l.note ?? ""} onChange={(e) => setLine(i, { note: e.target.value })} placeholder="Note (optional)" />
                         <button type="button" onClick={() => setLine(i, { productId: undefined, variantKey: undefined })} className="mt-1 text-[11px] font-semibold text-ink-500 underline hover:text-gold-600">Change product</button>
                       </>
@@ -213,17 +216,17 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
                       </>
                     )}
                   </td>
-                  <td className="px-2 py-2"><input className={inp} value={l.hsn} onChange={(e) => setLine(i, { hsn: e.target.value })} /></td>
+                  <td className="px-2 py-2"><input className={inp} value={l.hsn} onChange={(e) => setLine(i, { hsn: e.target.value })} disabled={!fullAdmin} /></td>
                   <td className="px-2 py-2">
-                    <select className={cn(inp, "text-right tabular-nums")} value={l.gst} onChange={(e) => setLine(i, { gst: Number(e.target.value) })}>
+                    <select className={cn(inp, "text-right tabular-nums")} value={l.gst} onChange={(e) => setLine(i, { gst: Number(e.target.value) })} disabled={!fullAdmin}>
                       {[...new Set([...GST_RATES, l.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                     </select>
                   </td>
-                  <td className="px-2 py-2"><MoneyInput value={l.mrp ?? 0} onChange={(mrp) => setLine(i, { mrp })} className={cn(inp, "text-right tabular-nums")} placeholder={l.rate > 0 ? String(l.rate / 100) : "MRP"} /></td>
+                  <td className="px-2 py-2"><MoneyInput value={l.mrp ?? 0} onChange={(mrp) => setLine(i, { mrp })} disabled={!fullAdmin} className={cn(inp, "text-right tabular-nums")} placeholder={l.rate > 0 ? String(l.rate / 100) : "MRP"} /></td>
                   <td className="px-2 py-2">
                     <input type="number" min={1} className={cn(inp, "text-center tabular-nums")} value={l.qty} onChange={(e) => setLine(i, { qty: Math.max(0, Math.floor(Number(e.target.value)) || 0) })} />
                   </td>
-                  <td className="px-2 py-2"><MoneyInput value={l.rate} onChange={(rate) => setLine(i, { rate })} className={cn(inp, "text-right tabular-nums")} placeholder="0" /></td>
+                  <td className="px-2 py-2"><MoneyInput value={l.rate} onChange={(rate) => setLine(i, { rate })} disabled={!fullAdmin} title={fullAdmin ? undefined : "Prices come from the catalogue"} className={cn(inp, "text-right tabular-nums")} placeholder="0" /></td>
                   <td className="px-2 py-2"><MoneyInput value={l.discount ?? 0} onChange={(discount) => setLine(i, { discount: Math.min(discount, l.qty * l.rate) })} className={cn(inp, "text-right tabular-nums")} placeholder="0" /></td>
                   <td className="px-2 py-2 pt-4 text-right font-semibold tabular-nums text-ink-900">{formatINR(amounts[i] ?? 0)}</td>
                   <td className="px-1 py-2 text-right">

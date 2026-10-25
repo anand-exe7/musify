@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2, Save, Package, Search } from "lucide-react";
 import { useInventory } from "@/lib/store/pos";
+import { useAuth } from "@/lib/store/auth";
 import { useRepair, type RepairTicket, type RepairPart } from "@/lib/store/repair";
 import { variantStockAt, branchLabel } from "@/lib/stock";
 import { formatINR, cn } from "@/lib/utils";
@@ -25,6 +26,8 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
   locked?: boolean;
 }) {
   const catalog = useInventory();
+  // Branch staff add inventory products at the catalogue price; only a full admin can type items or change prices.
+  const fullAdmin = useAuth((s) => s.adminAccess === "all");
   const [term, setTerm] = useState("");
   const total = partsTotal(parts);
 
@@ -71,7 +74,7 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   {x.productId ? <p className="truncate text-sm font-medium text-ink-900">{x.name}</p> : (
-                    <input value={x.name} onChange={(e) => patch(x.id, { name: e.target.value })} placeholder="Item name" disabled={locked} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+                    <input value={x.name} onChange={(e) => patch(x.id, { name: e.target.value })} placeholder="Item name" disabled={locked || !fullAdmin} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
                   )}
                   {p && v && <p className="text-[11px] text-ink-400">{variantStockAt(v, branch)} in stock at {branchLabel(branch)}</p>}
                 </div>
@@ -84,10 +87,10 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
                   </select>
                 ) : <span />}
                 <div><label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Qty</label><input type="number" min={1} step={1} value={x.qty || ""} onChange={(e) => patch(x.id, { qty: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} className={cell} disabled={locked} /></div>
-                <div><label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Price ₹ (incl. GST)</label><MoneyInput value={x.price} onChange={(price) => patch(x.id, { price })} className={cell} disabled={locked} /></div>
+                <div><label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Price ₹ (incl. GST)</label><MoneyInput value={x.price} onChange={(price) => patch(x.id, { price })} className={cell} disabled={locked || !fullAdmin} title={fullAdmin ? undefined : "Prices come from the catalogue"} /></div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">GST</label>
-                  <select value={x.gst} onChange={(e) => patch(x.id, { gst: Number(e.target.value) })} className={cell} disabled={locked}>
+                  <select value={x.gst} onChange={(e) => patch(x.id, { gst: Number(e.target.value) })} className={cell} disabled={locked || !fullAdmin}>
                     {[...new Set([...GST_RATES, x.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                   </select>
                 </div>
@@ -119,7 +122,7 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
               </div>
             )}
           </div>
-          <button type="button" onClick={addOther} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-900/5"><Plus className="h-3.5 w-3.5" /> Other item</button>
+          {fullAdmin && <button type="button" onClick={addOther} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-900/5"><Plus className="h-3.5 w-3.5" /> Other item</button>}
         </div>
       )}
 
