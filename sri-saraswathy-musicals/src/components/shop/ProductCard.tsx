@@ -1,16 +1,14 @@
 "use client";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Heart, ShoppingBag } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ProductImage } from "@/components/ui/ProductImage";
 import type { Product } from "@/types";
 import { formatINR } from "@/lib/utils";
 import { useCart } from "@/lib/store/cart";
-import { useWishlist } from "@/lib/store/wishlist";
 import { defaultVariant, variantKey as keyOf } from "@/lib/catalog/variants";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 
 interface Props {
   product: Product;
@@ -20,8 +18,6 @@ interface Props {
 export function ProductCard({ product: p, index = 0 }: Props) {
   const router = useRouter();
   const addItem = useCart((s) => s.addItem);
-  const { toggle, has } = useWishlist();
-  const wishlisted = has(p.id);
   const [added, setAdded] = useState(false);
   // Quick-add is only unambiguous when there's a single option; otherwise we
   // send the shopper to the product page to pick a variant.
@@ -40,12 +36,6 @@ export function ProductCard({ product: p, index = 0 }: Props) {
     addItem(p.id, keyOf(singleVariant), 1);
     setAdded(true);
     setTimeout(() => setAdded(false), 1400);
-  };
-
-  const handleWishlist = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    toggle(p.id);
   };
 
   return (
@@ -74,20 +64,6 @@ export function ProductCard({ product: p, index = 0 }: Props) {
           </div>
         )}
 
-        <motion.button
-          aria-label={wishlisted ? "Remove from wishlist" : "Save to wishlist"}
-          onClick={handleWishlist}
-          whileTap={{ scale: 0.85 }}
-          className={cn(
-            "absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center border bg-ivory-50/80 transition-all backdrop-blur-sm group-hover:opacity-100",
-            wishlisted
-              ? "border-maroon-300 text-maroon-500 opacity-100"
-              : "border-transparent text-ink-400 opacity-0 hover:border-gold-300 hover:text-maroon-500",
-          )}
-        >
-          <Heart className={cn("h-3.5 w-3.5 transition-all", wishlisted && "fill-maroon-500")} />
-        </motion.button>
-
         <div className="relative h-48 overflow-hidden bg-white sm:h-56">
           <ProductImage
             product={p}
@@ -102,12 +78,9 @@ export function ProductCard({ product: p, index = 0 }: Props) {
           <div>
             <p className="text-[10px] uppercase tracking-[0.22em] text-gold-600">{p.brand}</p>
             <p className="heading-serif mt-1 text-base leading-tight text-ink-900">{p.name}</p>
-            <div className="mt-1 flex items-center gap-1 text-xs text-ink-400">
-              <span className="text-gold-500">★</span>
-              <span className="tabular">{p.rating}</span>
-              <span>·</span>
-              <span>{p.reviews} reviews</span>
-            </div>
+            {p.tagline && (
+              <p className="mt-1 line-clamp-1 text-xs text-ink-400">{p.tagline}</p>
+            )}
           </div>
 
           <div className="flex items-end justify-between gap-2 border-t border-ink-100 pt-3">

@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 
 const tabs = [
   { href: "/", icon: Home, label: "Home" },
-  { href: "/shop", icon: Search, label: "Shop" },
+  { href: "/shop", icon: Search, label: "Products" },
   { href: "/cart", icon: ShoppingBag, label: "Cart" },
   { href: "/profile", icon: User, label: "Profile" },
 ];

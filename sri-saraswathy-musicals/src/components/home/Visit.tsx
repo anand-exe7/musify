@@ -49,7 +49,7 @@ export function Visit() {
               Browse instruments
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
-            <Link href="#" className="btn-ghost">
+            <Link href="/#inquiry" className="btn-ghost">
               Book a fitting
             </Link>
           </div>

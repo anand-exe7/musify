@@ -31,7 +31,7 @@ const cols = [
       { href: "#", label: "Repair & tuning" },
       { href: "#", label: "Trade-in" },
       { href: "#", label: "Warranty" },
-      { href: "/inquiry", label: "Contact" },
+      { href: "/#inquiry", label: "Contact" },
     ],
   },
 ];
@@ -74,7 +74,16 @@ export function Footer() {
         <div className="mt-16 grid gap-3 border-t border-ivory-100/10 pt-8 text-[11px] uppercase tracking-[0.18em] text-ivory-100/50 md:grid-cols-3 md:items-center">
           <p className="md:justify-self-start">Sri Saraswathy Musicals</p>
           <p className="text-gold-400 md:justify-self-center md:text-center">
-            Powered by Cenexa Systems · © 2026
+            Powered by{" "}
+            <a
+              href="https://www.cenexasystems.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline-offset-2 transition-colors hover:text-gold-300 hover:underline"
+            >
+              Cenexa Systems
+            </a>{" "}
+            · © 2026
           </p>
           <p className="md:justify-self-end md:text-right">Tradition · Craft · Resonance</p>
         </div>

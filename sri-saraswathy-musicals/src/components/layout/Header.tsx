@@ -21,10 +21,9 @@ interface NavItem {
 
 const nav: NavItem[] = [
   { href: "/", label: "Home" },
-  { href: "/shop", label: "Shop", mega: "shop" },
-  { href: "/#featured", label: "Featured" },
+  { href: "/shop", label: "Products", mega: "shop" },
   { href: "/#play", label: "Play" },
-  { href: "/inquiry", label: "Inquiry" },
+  { href: "/#inquiry", label: "Inquiry" },
   { href: "/#visit", label: "Visit" },
 ];
 
@@ -202,85 +201,40 @@ export function Header() {
               onMouseEnter={() => setOpenMega("shop")}
               onMouseLeave={() => setOpenMega(null)}
             >
-              <div className="container-page grid gap-8 py-8 md:grid-cols-[1fr_1fr_1fr_1.3fr]">
+              <div className="container-page grid gap-8 py-8 lg:grid-cols-[2.4fr_1fr]">
+                {/* All categories, by name — no groupings, no clutter. */}
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-600">
-                    Indian
+                    Shop by category
                   </p>
-                  <ul className="mt-4 space-y-2">
-                    {categories
-                      .filter((c) =>
-                        ["indian-classical", "percussion"].includes(c.id),
-                      )
-                      .map((c) => (
-                        <li key={c.id}>
-                          <Link
-                            href={`/shop?category=${c.id}`}
-                            className="group flex items-baseline justify-between text-sm text-ink-700 hover:text-gold-600"
-                          >
-                            <span className="font-serif italic">{c.name}</span>
-                            <span className="text-[10px] uppercase tracking-widest text-ink-400 group-hover:text-gold-500">
-                              {c.count}
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
+                  <ul className="mt-5 grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-3">
+                    {categories.map((c) => (
+                      <li key={c.id}>
+                        <Link
+                          href={`/shop?category=${c.id}`}
+                          className="group flex items-center justify-between gap-3 rounded-md px-2 py-2 text-[15px] font-medium text-ink-800 transition-colors hover:bg-ink-900/[0.04] hover:text-gold-700"
+                        >
+                          <span>{c.name}</span>
+                          <span className="tabular text-[11px] text-ink-300 group-hover:text-gold-500">
+                            {c.count}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
                   </ul>
-                </div>
-
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-600">
-                    Western
-                  </p>
-                  <ul className="mt-4 space-y-2">
-                    {categories
-                      .filter((c) => ["string", "keyboard", "wind"].includes(c.id))
-                      .map((c) => (
-                        <li key={c.id}>
-                          <Link
-                            href={`/shop?category=${c.id}`}
-                            className="group flex items-baseline justify-between text-sm text-ink-700 hover:text-gold-600"
-                          >
-                            <span className="font-serif italic">{c.name}</span>
-                            <span className="text-[10px] uppercase tracking-widest text-ink-400 group-hover:text-gold-500">
-                              {c.count}
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-600">
-                    Also
-                  </p>
-                  <ul className="mt-4 space-y-2">
-                    <li>
-                      <Link
-                        href="/shop?category=accessories"
-                        className="text-sm text-ink-700 hover:text-gold-600"
-                      >
-                        <span className="font-serif italic">Accessories</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link href="/#featured" className="text-sm text-ink-700 hover:text-gold-600">
-                        <span className="font-serif italic">Featured</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link href="/#visit" className="text-sm text-ink-700 hover:text-gold-600">
-                        <span className="font-serif italic">Book a fitting</span>
-                      </Link>
-                    </li>
-                  </ul>
+                  <Link
+                    href="/shop"
+                    className="mt-5 inline-flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink-500 transition-colors hover:text-gold-600"
+                  >
+                    View all products
+                    <ChevronDown className="h-3 w-3 -rotate-90" />
+                  </Link>
                 </div>
 
                 {/* Feature card */}
                 <Link
                   href="/#play"
-                  className="group relative overflow-hidden border border-ink-100 bg-ink-900 text-ivory-100"
+                  className="group relative hidden overflow-hidden border border-ink-100 bg-ink-900 text-ivory-100 lg:block"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-gold-400/20 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                   <div className="relative flex h-full flex-col justify-between p-5">

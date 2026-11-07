@@ -260,8 +260,8 @@ export function Hero() {
               className="inline-block whitespace-nowrap font-sans font-black uppercase leading-none"
               style={{
                 y: wordScrollY,
-                fontSize: "clamp(2.5rem, 13vw, 15rem)",
-                letterSpacing: "-0.045em",
+                fontSize: "clamp(2rem, 10.5vw, 9.5rem)",
+                letterSpacing: "-0.05em",
                 color: "transparent",
                 backgroundImage:
                   "linear-gradient(180deg, rgba(64,49,34,0.72) 0%, rgba(104,86,62,0.56) 55%, rgba(120,102,78,0.40) 100%)",
@@ -287,7 +287,7 @@ export function Hero() {
                   alt="Musician at a professional drum kit"
                   width={1366}
                   height={768}
-                  quality={95}
+                  quality={90}
                   priority
                   sizes="(max-width: 1024px) 90vw, 62vw"
                   className="h-auto w-full object-contain drop-shadow-[0_36px_48px_rgba(10,9,8,0.2)]"

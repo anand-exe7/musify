@@ -30,59 +30,26 @@ export function Story() {
           </div>
         </motion.div>
 
-        {/* Video + text row */}
-        <div className="mt-12 grid gap-12 lg:grid-cols-2 lg:gap-16">
-          {/* Video */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.8 }}
-            className="relative"
-          >
-            <div className="relative aspect-video overflow-hidden rounded-md bg-ink-950 shadow-2xl">
-              <video
-                src="/hero-video.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-950/60 via-transparent to-transparent" />
-              <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex items-center justify-between text-ivory-100">
-                <span className="text-[10px] uppercase tracking-[0.24em] text-ivory-100/70">
-                  Filmed at the atelier
-                </span>
-                <span className="font-serif italic text-sm text-gold-400">Op. 47</span>
-              </div>
-            </div>
-            {/* Small gold caption strip */}
-            <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-ink-500">
-              <span className="h-px w-8 bg-gold-500" />
-              Bench · Mylapore, 1978
-            </div>
-          </motion.div>
-
-          {/* Text */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.8, delay: 0.1 }}
-            className="space-y-6 lg:pt-2"
-          >
-            <p className="text-base leading-relaxed text-ink-700 md:text-lg">
-              <span className="float-left mr-3 font-display text-6xl leading-[0.8] text-gold-500">A</span>n instrument you order from us is set up — not shipped. When a veena arrives from Tanjore or a piano crates in from Hamburg, our luthiers spend, on average, four hours with it. Bridges are fit. Sound posts are placed. Pegs are re-cut when the humidity has moved them. String heights are shaved down a fraction of a millimeter at a time.
-            </p>
+        {/* Atelier note — full width, no video */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.8, delay: 0.1 }}
+          className="mt-12 grid gap-6 md:grid-cols-2 md:gap-12"
+        >
+          <p className="text-base leading-relaxed text-ink-700 md:text-lg">
+            <span className="float-left mr-3 font-display text-6xl font-bold leading-[0.8] text-gold-500">A</span>n instrument you order from us is set up — not shipped. When a veena arrives from Tanjore or a piano crates in from Hamburg, our luthiers spend, on average, four hours with it. Bridges are fit. Sound posts are placed. Pegs are re-cut when the humidity has moved them. String heights are shaved down a fraction of a millimeter at a time.
+          </p>
+          <div className="space-y-6">
             <p className="text-base leading-relaxed text-ink-700 md:text-lg">
               None of this appears on an invoice. It is the difference between a good instrument and a good instrument that plays. We do not know how to sell one without doing the other.
             </p>
             <p className="text-base leading-relaxed text-ink-700 md:text-lg">
               You may also bring an instrument you already own into the shop for the same service. We call it set-up because it is what the instrument has been waiting for.
             </p>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
 
         {/* Stats strip */}
         <div className="mt-16 grid grid-cols-2 gap-x-4 gap-y-10 border-t border-ink-100 pt-12 md:grid-cols-4 md:gap-x-8">
