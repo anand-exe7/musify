@@ -7,29 +7,23 @@ import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { formatINR } from "@/lib/utils";
 import { useAuth } from "@/lib/store/auth";
-import { useWishlist } from "@/lib/store/wishlist";
-import { useCart } from "@/lib/store/cart";
-import { variantKey as keyOf } from "@/lib/catalog/variants";
 import type { Order, User as UserType, UserAddress } from "@/types";
 import {
   User,
   Package,
   MapPin,
-  Heart,
   LogOut,
   ChevronRight,
   Settings,
   Pencil,
   Plus,
   Trash2,
-  Star,
   X,
   Check,
-  ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Tab = "orders" | "profile" | "addresses" | "wishlist";
+type Tab = "orders" | "profile" | "addresses";
 
 /* ─── helpers ──────────────────────────────────────────────────── */
 
@@ -140,12 +134,14 @@ function AddressForm({
   const [d, setD] = useState<AddrForm>(initial);
   const set = (k: keyof AddrForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setD((p) => ({ ...p, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value }));
+  const setDigits = (k: "phone" | "pincode", max: number) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setD((p) => ({ ...p, [k]: e.target.value.replace(/\D/g, "").slice(0, max) }));
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
         <Input label="Recipient name" value={d.name} onChange={set("name")} required />
-        <Input label="Phone" value={d.phone} onChange={set("phone")} />
+        <Input label="Phone" value={d.phone} onChange={setDigits("phone", 10)} inputMode="numeric" maxLength={10} placeholder="10-digit mobile" />
       </div>
       <Select label="Address type" value={d.type} onChange={set("type")}>
         <option value="home">Home</option>
@@ -156,7 +152,7 @@ function AddressForm({
       <Input label="Address line 2 (optional)" value={d.line2} onChange={set("line2")} />
       <div className="grid gap-4 md:grid-cols-2">
         <Input label="City" value={d.city} onChange={set("city")} required />
-        <Input label="Pincode" value={d.pincode} onChange={set("pincode")} required />
+        <Input label="Pincode" value={d.pincode} onChange={setDigits("pincode", 6)} inputMode="numeric" maxLength={6} placeholder="6-digit PIN code" required />
       </div>
       <Input label="State" value={d.state} onChange={set("state")} />
       <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-700">
@@ -182,14 +178,11 @@ export default function ProfilePage() {
   const hydrated = useAuth((s) => s.hydrated);
   const logout = useAuth((s) => s.logout);
   const [tab, setTab] = useState<Tab>("orders");
-  const wishlistIds = useWishlist((s) => s.items);
-  const removeFromWishlist = useWishlist((s) => s.remove);
-  const addToCart = useCart((s) => s.addItem);
 
   const [me, setMe] = useState<UserType | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
-  // Only the products on the wishlist and in past orders are fetched, not the whole catalogue.
-  const { byId } = useProductsByIds([...wishlistIds, ...orders.flatMap((o) => o.items.map((i) => i.productId))]);
+  // Only the products in past orders are fetched, not the whole catalogue.
+  const { byId } = useProductsByIds(orders.flatMap((o) => o.items.map((i) => i.productId)));
   const [addresses, setAddresses] = useState<UserAddress[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -255,12 +248,10 @@ export default function ProfilePage() {
     { id: "orders", label: "My orders", icon: Package, count: orders.length },
     { id: "profile", label: "Profile", icon: User },
     { id: "addresses", label: "Addresses", icon: MapPin, count: addresses.length },
-    { id: "wishlist", label: "Wishlist", icon: Heart, count: wishlistIds.length },
   ];
 
   const stats = [
     { label: "Orders", value: orders.length },
-    { label: "Wishlist", value: wishlistIds.length },
     { label: "Addresses", value: addresses.length },
   ];
 
@@ -354,12 +345,9 @@ export default function ProfilePage() {
     }
   };
 
-  /* ── Wishlist products ── */
-  const wishlistProducts = wishlistIds.map((id) => byId.get(id)).filter((p): p is NonNullable<typeof p> => !!p);
-
   /* ─────────────────────────────────────────────────────────────────── */
   return (
-    <div className="container-page py-8 md:py-12">
+    <div className="container-page py-6 md:py-10">
       {/* Header card */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -419,7 +407,7 @@ export default function ProfilePage() {
         </div>
 
         {/* stats strip */}
-        <div className="relative grid grid-cols-3 border-t border-ivory-100/10">
+        <div className="relative grid grid-cols-2 border-t border-ivory-100/10">
           {stats.map((s) => (
             <div key={s.label} className="border-r border-ivory-100/10 px-6 py-4 last:border-r-0">
               <p className="tabular font-display text-2xl text-gold-300 md:text-3xl">{s.value}</p>
@@ -627,75 +615,6 @@ export default function ProfilePage() {
               </button>
             </div>
           )}
-
-          {/* ── Wishlist ── */}
-          {tab === "wishlist" && (
-            <div>
-              <h2 className="heading-serif text-2xl text-ink-900">Your wishlist</h2>
-              {wishlistProducts.length === 0 ? (
-                <div className="mt-6 border border-dashed border-ink-200 p-8 text-center">
-                  <Heart className="mx-auto mb-3 h-8 w-8 text-ink-300" />
-                  <p className="text-sm text-ink-500">Nothing saved yet.</p>
-                  <p className="mt-1 text-xs text-ink-400">
-                    Tap the heart on any instrument to save it here.
-                  </p>
-                  <Link href="/shop" className="btn-gold-solid mt-5 inline-flex">
-                    Discover instruments
-                  </Link>
-                </div>
-              ) : (
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  {wishlistProducts.map((p, i) => (
-                    <motion.div
-                      key={p.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      className="flex items-start gap-4 border border-ink-100 bg-ivory-50 p-4 transition-colors hover:border-gold-200"
-                    >
-                      <Link href={`/product/${p.slug}`} className="relative h-20 w-20 shrink-0 overflow-hidden bg-ink-100">
-                        <ProductImage product={p} sizes="80px" />
-                      </Link>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] uppercase tracking-widest text-gold-600">{p.brand}</p>
-                        <Link href={`/product/${p.slug}`} className="heading-serif block text-base text-ink-900 hover:text-gold-700">
-                          {p.name}
-                        </Link>
-                        <div className="mt-0.5 flex items-center gap-1 text-xs text-ink-400">
-                          <Star className="h-3 w-3 fill-gold-400 text-gold-400" />
-                          {p.rating} · {p.reviews} reviews
-                        </div>
-                        <p className="mt-1 tabular font-display text-base text-ink-900">{formatINR(p.price)}</p>
-                        <div className="mt-3 flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              const enabled = (p.variants ?? []).filter((v) => !v.disabled);
-                              if (enabled.length !== 1) {
-                                router.push(`/product/${p.slug}`);
-                                return;
-                              }
-                              addToCart(p.id, keyOf(enabled[0]), 1);
-                            }}
-                            disabled={p.stock === 0}
-                            className="flex items-center gap-1.5 border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-40"
-                          >
-                            <ShoppingBag className="h-3 w-3" />
-                            {p.stock === 0 ? "Out of stock" : "Add to cart"}
-                          </button>
-                          <button
-                            onClick={() => removeFromWishlist(p.id)}
-                            className="flex items-center gap-1 text-xs text-ink-400 hover:text-danger"
-                          >
-                            <X className="h-3 w-3" /> Remove
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -710,8 +629,10 @@ export default function ProfilePage() {
           <Input
             label="Phone"
             value={profileForm.phone}
-            onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))}
-            placeholder="+91 98765 43210"
+            onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="10-digit mobile"
           />
           <button
             disabled={savingProfile || !profileForm.name}

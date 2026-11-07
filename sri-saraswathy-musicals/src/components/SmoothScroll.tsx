@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Lenis from "lenis";
 
@@ -16,6 +16,17 @@ import Lenis from "lenis";
 export function SmoothScroll() {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin") ?? false;
+  const lenisRef = useRef<Lenis | null>(null);
+
+  // Every route change starts at the top. Next's scroll restoration fights with
+  // Lenis, which left new pages opening part-way down; force it to the top here.
+  // A plain hash link ("#play") is left alone so in-page anchors still work.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash) return;
+    if (lenisRef.current) lenisRef.current.scrollTo(0, { immediate: true });
+    else window.scrollTo(0, 0);
+  }, [pathname]);
 
   useEffect(() => {
     // Dashboard: let the browser scroll natively (no Lenis, no overflow lock).
@@ -33,6 +44,7 @@ export function SmoothScroll() {
       smoothWheel: true,
       touchMultiplier: 1.6,
     });
+    lenisRef.current = lenis;
 
     let raf = 0;
     const loop = (time: number) => {
@@ -61,6 +73,7 @@ export function SmoothScroll() {
       cancelAnimationFrame(raf);
       document.removeEventListener("click", onClick);
       lenis.destroy();
+      lenisRef.current = null;
     };
   }, [isAdmin]);
 

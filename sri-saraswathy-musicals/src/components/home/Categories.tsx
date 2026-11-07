@@ -10,13 +10,10 @@ export function Categories() {
   return (
     <section id="categories" className="py-20 md:py-28">
       <div className="container-page">
-        <div className="mb-12 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-          <div>
-            <p className="eyebrow">The Collection</p>
-            <h2 className="heading-serif mt-4 text-display-lg text-ink-900">
-              Six families,<br />one <em>house.</em>
-            </h2>
-          </div>
+        <div className="mb-10 flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
+          <h2 className="heading-serif text-display-md text-ink-900">
+            Shop by category
+          </h2>
           <Link href="/shop" className="group flex items-center gap-2 border-b border-gold-500 pb-1 text-xs font-semibold uppercase tracking-[0.22em] text-ink-700 transition-colors hover:text-gold-600">
             Browse the full library
             <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

@@ -21,7 +21,7 @@ export function Splash() {
     const t = setTimeout(() => {
       setShow(false);
       document.body.style.overflow = "";
-    }, 2600);
+    }, 1100);
     return () => {
       clearTimeout(t);
       document.body.style.overflow = "";
