@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "@/lib/store/cart";
 import { useAuth } from "@/lib/store/auth";
 import { useGst, IN_STATES } from "@/lib/store/gst";
@@ -67,6 +67,9 @@ export default function CheckoutPage() {
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [placing, setPlacing] = useState(false);
+  // True while we verify the Razorpay payment with our server — a blocking
+  // overlay keeps the shopper from refreshing (which would look like a failure).
+  const [confirming, setConfirming] = useState(false);
   const [addr, setAddr] = useState({
     name: "",
     phone: "",
@@ -266,6 +269,7 @@ export default function CheckoutPage() {
       modal: { ondismiss: () => setPlacing(false) },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handler: async (resp: any) => {
+        setConfirming(true);
         try {
           const vr = await fetch("/api/checkout/verify", {
             method: "POST",
@@ -287,6 +291,8 @@ export default function CheckoutPage() {
               : "Payment couldn't be verified. If you were charged, contact us and we'll sort it out.",
           );
           setPlacing(false);
+        } finally {
+          setConfirming(false);
         }
       },
     });
@@ -301,7 +307,31 @@ export default function CheckoutPage() {
   };
 
   return (
-    <div className="container-page py-8 md:py-12">
+    <div className="container-page py-6 md:py-10">
+      {/* Blocking overlay while the payment is being confirmed. */}
+      <AnimatePresence>
+        {confirming && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[90] grid place-items-center bg-ivory-50/95 backdrop-blur-sm"
+          >
+            <div className="flex flex-col items-center gap-5 px-6 text-center">
+              <span className="relative h-12 w-12">
+                <span className="absolute inset-0 animate-spin rounded-full border-2 border-ink-200 border-t-gold-500" />
+              </span>
+              <div>
+                <p className="heading-serif text-xl text-ink-900">Confirming your payment…</p>
+                <p className="mt-2 max-w-sm text-sm text-ink-500">
+                  Payment received. We&apos;re saving your order now — please don&apos;t close or refresh this page.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <p className="eyebrow">Checkout</p>
       <h1 className="heading-serif mt-3 text-display-md text-ink-900">Complete your <em>order</em></h1>
 
@@ -364,9 +394,23 @@ export default function CheckoutPage() {
               )}
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <Field label="Full name" value={addr.name} onChange={setAddrField("name")} />
-                <Field label="Phone" value={addr.phone} onChange={setAddrField("phone")} />
+                <Field
+                  label="Phone"
+                  value={addr.phone}
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="10-digit mobile"
+                  onChange={(e) => setAddr((a) => ({ ...a, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                />
                 <Field label="Email" type="email" value={addr.email} onChange={setAddrField("email")} />
-                <Field label="Pincode" value={addr.pincode} onChange={setAddrField("pincode")} />
+                <Field
+                  label="Pincode"
+                  value={addr.pincode}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="6-digit PIN code"
+                  onChange={(e) => setAddr((a) => ({ ...a, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                />
                 <div className="md:col-span-2"><Field label="Address line 1" value={addr.line1} onChange={setAddrField("line1")} /></div>
                 <div className="md:col-span-2"><Field label="Address line 2 (optional)" value={addr.line2} onChange={setAddrField("line2")} /></div>
                 <Field label="City" value={addr.city} onChange={setAddrField("city")} />
@@ -494,6 +538,14 @@ export default function CheckoutPage() {
                     const missing = !addr.name.trim() || !addr.phone.trim() || !addr.email.trim() || !addr.line1.trim() || !addr.city.trim() || !addr.pincode.trim();
                     if (missing) {
                       alert("Please fill in name, phone, email, and full address before continuing — we need the email to send your order confirmation.");
+                      return;
+                    }
+                    if (!/^\d{10}$/.test(addr.phone)) {
+                      alert("Please enter a valid 10-digit mobile number.");
+                      return;
+                    }
+                    if (!/^\d{6}$/.test(addr.pincode)) {
+                      alert("Please enter a valid 6-digit PIN code.");
                       return;
                     }
                     if (!/^\S+@\S+\.\S+$/.test(addr.email.trim())) {

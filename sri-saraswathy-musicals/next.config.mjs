@@ -8,6 +8,9 @@ const nextConfig = {
     return [{ source: "/admin", destination: "/admin/billing", permanent: false }];
   },
   images: {
+    // Allowed `quality` values for next/image (silences the unconfigured-quality
+    // warning and keeps hero art crisp without shipping the largest variant).
+    qualities: [75, 90, 95],
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "plus.unsplash.com" },

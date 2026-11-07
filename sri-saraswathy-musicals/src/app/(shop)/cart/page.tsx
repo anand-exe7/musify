@@ -14,6 +14,37 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const BURST_NOTES = ["♪", "♫", "♩", "♬", "𝅘𝅥𝅮"];
 
+/** A single shimmering placeholder cart line, shown while product details load. */
+function CartLineSkeleton() {
+  return (
+    <div className="flex animate-pulse gap-4 border border-ink-100 bg-ivory-50 p-4 md:p-5">
+      <div className="h-24 w-24 shrink-0 rounded bg-ink-100 md:h-32 md:w-32" />
+      <div className="flex-1 space-y-3 py-1">
+        <div className="h-2.5 w-20 rounded bg-ink-100" />
+        <div className="h-4 w-40 rounded bg-ink-100" />
+        <div className="h-3 w-24 rounded bg-ink-100" />
+        <div className="mt-6 flex justify-between">
+          <div className="h-9 w-28 rounded bg-ink-100" />
+          <div className="h-5 w-20 rounded bg-ink-100" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Full cart skeleton shown before the browser-stored cart has hydrated. */
+function CartSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <div className="space-y-4">
+        <CartLineSkeleton />
+        <CartLineSkeleton />
+      </div>
+      <div className="h-72 animate-pulse rounded border border-ink-100 bg-ivory-50" />
+    </div>
+  );
+}
+
 /** A small burst of gold musical notes + a ring — plays when a coupon lands. */
 function CouponBurst() {
   const notes = useMemo(
@@ -99,17 +130,19 @@ export default function CartPage() {
   );
 
   // Every number below comes from the server — there is no price, tax, shipping
-  // or coupon maths on this page.
+  // or coupon maths on this page. Priced straight from the cart items so the
+  // quote request fires in parallel with the product-details fetch (not after).
   const quoteInput = {
-    items: cartItems.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
+    items: items.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
     delivery,
     shipState,
     couponCode,
   };
-  const { quote, loading: quoting, error: quoteError, refresh } = useQuote(quoteInput, mounted && !productsLoading);
+  const { quote, loading: quoting, error: quoteError, refresh } = useQuote(quoteInput, mounted);
 
-  if (!mounted || productsLoading) {
-    return <div className="container-narrow py-32 text-center text-ink-400">Loading your cart…</div>;
+  // Before hydration, render nothing (the cart lives in the browser).
+  if (!mounted) {
+    return <div className="container-page py-10"><CartSkeleton /></div>;
   }
 
   const quoteLines = new Map((quote?.items ?? []).map((l) => [`${l.productId}::${l.variantKey}`, l]));
@@ -148,7 +181,7 @@ export default function CartPage() {
     setError("");
   };
 
-  if (cartItems.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="container-narrow py-20 text-center md:py-32">
         <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-ivory-100">
@@ -164,18 +197,22 @@ export default function CartPage() {
     );
   }
 
+  const lineCount = productsLoading ? items.length : cartItems.length;
+
   return (
-    <div className="container-page py-8 md:py-14">
+    <div className="container-page py-6 md:py-10">
       <div className="mb-8 flex items-baseline justify-between">
         <div>
           <p className="eyebrow">Your cart</p>
-          <h1 className="heading-serif mt-3 text-display-md text-ink-900">{cartItems.length} {cartItems.length === 1 ? "piece" : "pieces"} <em>reserved</em></h1>
+          <h1 className="heading-serif mt-3 text-display-md text-ink-900">{lineCount} {lineCount === 1 ? "piece" : "pieces"} <em>reserved</em></h1>
         </div>
         <button onClick={clear} className="text-xs uppercase tracking-[0.18em] text-ink-500 hover:text-danger">Clear cart</button>
       </div>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-4">
+          {productsLoading && cartItems.length === 0 &&
+            items.map((i) => <CartLineSkeleton key={`${i.productId}::${i.variantKey}`} />)}
           <AnimatePresence mode="popLayout">
             {cartItems.map((i) => {
               const ql = quoteLines.get(`${i.productId}::${i.variantKey}`);

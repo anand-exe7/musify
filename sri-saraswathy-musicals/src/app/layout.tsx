@@ -1,24 +1,14 @@
 import type { Metadata } from "next";
-import { Fraunces, Instrument_Serif, Inter } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { SmoothScroll } from "@/components/SmoothScroll";
 import { Splash } from "@/components/Splash";
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-display",
-  axes: ["SOFT", "opsz"],
-  display: "swap",
-});
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  variable: "--font-serif",
-  weight: ["400"],
-  style: ["normal", "italic"],
-  display: "swap",
-});
-
+// One typeface across the whole storefront. Weight — not a different family —
+// carries the hierarchy: regular for body, semibold/bold/black for headings.
+// `--font-display` and `--font-serif` are remapped to this same font in
+// globals.css, so any stray `font-display` / `font-serif` token still renders
+// in Inter.
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -39,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${instrumentSerif.variable} ${inter.variable}`}>
+    <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-ivory-50 text-ink-900 antialiased">
         <SmoothScroll />
         <Splash />

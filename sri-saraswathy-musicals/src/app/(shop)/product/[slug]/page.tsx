@@ -17,7 +17,6 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const { product, loading, notFound: missing, error, refresh } = useProductBySlug(slug);
 
   const [qty, setQty] = useState(1);
-  const [tab, setTab] = useState<"description" | "specs" | "shipping">("description");
   const [activePhoto, setActivePhoto] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState(false);
@@ -167,14 +166,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
             {product.new && <span className="border border-gold-400 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gold-600">New</span>}
           </div>
           <h1 className="heading-serif text-display-md text-ink-900">{product.name}</h1>
-          <p className="mt-3 font-serif italic text-lg text-ink-500">{product.tagline}</p>
-
-          <div className="mt-4 flex items-center gap-2 text-sm">
-            <span className="text-gold-500 tracking-widest">{"★".repeat(Math.round(product.rating))}{"☆".repeat(5 - Math.round(product.rating))}</span>
-            <span className="text-ink-500">{product.rating.toFixed(1)}</span>
-            <span className="text-ink-300">·</span>
-            <span className="text-ink-500">{product.reviews} reviews</span>
-          </div>
+          <p className="mt-3 text-lg text-ink-500">{product.tagline}</p>
 
           {/* Price */}
           <div className="mt-6 flex items-end gap-3 border-y border-ink-100 py-6">
@@ -283,68 +275,55 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
         </motion.div>
       </div>
 
-      {/* Details — description / specs / shipping */}
-      <div className="mt-16 border-t border-ink-100 pt-10">
-        <div className="mb-0 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar sm:mx-0 sm:px-0">
-          {(["description", "specs", "shipping"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`relative shrink-0 whitespace-nowrap rounded-t-lg px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors sm:px-5 sm:text-xs sm:tracking-[0.2em] ${tab === t ? "bg-ink-900 text-gold-300" : "text-ink-400 hover:bg-ivory-100 hover:text-ink-700"}`}
-            >
-              {t === "description" ? "Description" : t === "specs" ? "Specifications" : "Shipping"}
-            </button>
-          ))}
-        </div>
+      {/* About this instrument — description + what's notable, no tabs */}
+      {(product.description || product.features.length > 0 || specRows.length > 0) && (
+        <div className="mt-16 grid gap-10 border-t border-ink-100 pt-12 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
+          <div>
+            <h2 className="heading-serif text-display-md text-ink-900">About this instrument</h2>
+            {product.description && (
+              <p className="mt-5 max-w-2xl text-base leading-relaxed text-ink-700 md:text-lg">
+                {product.description}
+              </p>
+            )}
+            {product.features.length > 0 && (
+              <ul className="mt-8 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                {product.features.map((f) => (
+                  <li key={f} className="flex items-start gap-3 text-sm text-ink-700">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-        <div className="rounded-lg rounded-tl-none border border-ink-100 bg-ivory-50 p-6 md:p-10">
-          <motion.div
-            key={tab}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-          >
-              {tab === "description" && (
-                <div className="space-y-6">
-                  <p className="max-w-3xl text-base leading-relaxed text-ink-700 md:text-lg">{product.description}</p>
-                  <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                    {product.features.map((f) => (
-                      <li key={f} className="flex items-start gap-3 text-sm text-ink-700">
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {tab === "specs" && (
-                <div className="grid gap-x-10 gap-y-0 md:grid-cols-2">
-                  {specRows.map((s) => (
-                    <div key={s.label} className="flex items-baseline justify-between gap-4 border-b border-ink-100 py-3.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">{s.label}</span>
-                      <span className="text-right text-sm text-ink-900">{s.value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {tab === "shipping" && (
-                <div className="grid max-w-3xl gap-4 text-sm leading-relaxed text-ink-700 sm:grid-cols-2">
-                  <p><strong className="text-ink-900">White-glove delivery</strong> — free across India for orders above ₹5,000. International rates on request.</p>
-                  <p><strong className="text-ink-900">Set-up included</strong> — every instrument leaves the atelier tuned and ready to play.</p>
-                  <p><strong className="text-ink-900">Insured in transit</strong> — each piece is packed and couriered fully insured to your door.</p>
-                  <p><strong className="text-ink-900">Support</strong> — visit us at our {BUSINESS.branches.map((b) => b.area).join(", ")} branches for a hands-on fitting any time.</p>
-                </div>
-              )}
-          </motion.div>
+          {/* Specifications — clean inline table */}
+          {specRows.length > 0 && (
+            <div className="lg:border-l lg:border-ink-100 lg:pl-16">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-700">
+                Specifications
+              </p>
+              <dl className="mt-5">
+                {specRows.map((s) => (
+                  <div key={s.label} className="flex items-baseline justify-between gap-4 border-b border-ink-100 py-3">
+                    <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">{s.label}</dt>
+                    <dd className="text-right text-sm text-ink-900">{s.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Related */}
+      {/* Related — strictly from the same category */}
       {related.length > 0 && (
         <div className="mt-20">
           <div className="mb-8 flex items-baseline justify-between">
-            <h2 className="heading-serif text-display-md text-ink-900">You may also <em>consider</em></h2>
-            <Link href="/shop" className="text-xs uppercase tracking-[0.2em] text-gold-600 hover:underline">See all →</Link>
+            <h2 className="heading-serif text-display-md text-ink-900">
+              More in <em>{product.category}</em>
+            </h2>
+            <Link href={`/shop?category=${product.category}`} className="text-xs uppercase tracking-[0.2em] text-gold-600 hover:underline">See all →</Link>
           </div>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
             {related.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
