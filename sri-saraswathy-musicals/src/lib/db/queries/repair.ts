@@ -89,7 +89,13 @@ export function cleanParts(parts: unknown): ServicePart[] {
  * the ticket's branch, units removed go back. Returns a function that undoes it, for
  * when the ticket write that follows fails. Throws 409 if the branch is short.
  */
-export async function applyPartsStock(branch: string, before: ServicePart[], after: ServicePart[]): Promise<() => Promise<void>> {
+export async function applyPartsStock(
+  branch: string,
+  before: ServicePart[],
+  after: ServicePart[],
+  /** Stock-history entry for each move: the ticket it was for, and what happened (e.g. "Repair cancelled"). */
+  log?: { ref: string; returned: string; taken: string },
+): Promise<() => Promise<void>> {
   const net = new Map<string, { productId: string; variantIndex: number; delta: number }>();
   const add = (p: ServicePart, sign: 1 | -1) => {
     if (!p.productId) return;
@@ -114,7 +120,7 @@ export async function applyPartsStock(branch: string, before: ServicePart[], aft
   try {
     // Take-outs first so a shortfall fails before anything is put back.
     for (const d of [...net.values()].filter((x) => x.delta !== 0).sort((a, b) => a.delta - b.delta)) {
-      await adjustProductStock(d.productId, [{ variantIndex: d.variantIndex, branch, delta: d.delta }]);
+      await adjustProductStock(d.productId, [{ variantIndex: d.variantIndex, branch, delta: d.delta }], log ? { log: { reason: "repair", ref: log.ref, note: d.delta > 0 ? log.returned : log.taken } } : {});
       done.push(d);
     }
   } catch (e) {
@@ -142,18 +148,26 @@ interface TicketState { branch: string; status: string; parts?: ServicePart[] }
  * ticket) and an `undo` for when the ticket write that follows fails.
  */
 export async function syncPartsStock(
-  before: TicketState & { stockTaken?: ServicePart[] },
+  before: TicketState & { stockTaken?: ServicePart[]; id?: string },
   after: TicketState,
 ): Promise<{ taken: ServicePart[]; undo: () => Promise<void> }> {
   const taken = before.stockTaken ?? [];
   const due = partsDue(after.status, after.parts);
+  // Every move is written to the stock history against the ticket.
+  const log = before.id
+    ? {
+        ref: before.id,
+        returned: after.status === "cancelled" ? "Repair cancelled — products returned to stock" : "Repair products returned to stock",
+        taken: "Used in repair",
+      }
+    : undefined;
   if (before.branch === after.branch) {
-    return { taken: due, undo: await applyPartsStock(after.branch, taken, due) };
+    return { taken: due, undo: await applyPartsStock(after.branch, taken, due, log) };
   }
   // The ticket moved branch: what it took comes back where it was taken, and is taken again from the new branch.
-  const back = await applyPartsStock(before.branch, taken, []);
+  const back = await applyPartsStock(before.branch, taken, [], log);
   try {
-    const out = await applyPartsStock(after.branch, [], due);
+    const out = await applyPartsStock(after.branch, [], due, log);
     return { taken: due, undo: async () => { await out(); await back(); } };
   } catch (e) {
     await back();
@@ -162,6 +176,6 @@ export async function syncPartsStock(
 }
 
 /** Put back whatever a ticket still holds in stock — before it is deleted. Returns an `undo`. */
-export async function releaseTicketStock(t: { branch: string; stockTaken?: ServicePart[] }): Promise<() => Promise<void>> {
-  return applyPartsStock(t.branch, t.stockTaken ?? [], []);
+export async function releaseTicketStock(t: { branch: string; stockTaken?: ServicePart[]; id?: string }): Promise<() => Promise<void>> {
+  return applyPartsStock(t.branch, t.stockTaken ?? [], [], t.id ? { ref: t.id, returned: "Repair ticket deleted — products returned to stock", taken: "" } : undefined);
 }

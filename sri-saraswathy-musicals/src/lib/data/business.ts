@@ -74,6 +74,15 @@ export const BUSINESS = {
   ] as BranchInfo[],
 } as const;
 
+/** "+91 99406 38409" / "9940638409" / "099406 38409" → "919940638409". Empty when it isn't a usable number. */
+export function toWhatsAppNumber(phone: string): string {
+  let d = (phone || "").replace(/\D/g, "");
+  if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) return `91${d}`;
+  if (d.length === 12 && d.startsWith("91")) return d;
+  return "";
+}
+
 export function branchInfo(key: string): BranchInfo {
   return BUSINESS.branches.find((b) => b.key === key) ?? BUSINESS.branches[0];
 }

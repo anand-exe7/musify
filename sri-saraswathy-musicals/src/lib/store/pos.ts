@@ -163,7 +163,8 @@ interface POSState {
   /** Resolves once the server has saved the bill: `ok` false if it was rejected (and rolled back), with the
    *  bill's tax invoice when it was recorded in the same request. */
   addBill: (b: Bill) => Promise<{ ok: boolean; invoice: import("@/types").Invoice | null }>;
-  deleteBill: (id: string) => void;
+  /** Cancel a counter bill: stock back, invoice marked cancelled. Resolves once the server has done it. */
+  deleteBill: (id: string) => Promise<boolean>;
   /** `stockChanges` are the stock figures the editor changed (what it saw → what it wants);
    *  the server applies those as differences, so concurrent sales aren't overwritten. */
   updateProduct: (id: string, patch: Partial<InvProduct>, stockChanges?: { variantIndex: number; branch: Branch; from: number; to: number }[]) => void;
@@ -284,10 +285,14 @@ export const usePOS = create<POSState>()((set, get) => ({
       return { ok: false, invoice: null };
     }
   },
-  deleteBill: (id) => {
+  deleteBill: async (id) => {
     const prev = get().bills;
-    set((s) => ({ bills: s.bills.filter((x) => x.id !== id) }));
-    void send(`/api/pos/bills/${id}`, "DELETE", null, get().hydrate, () => set({ bills: prev })).then((ok) => ok && void get().hydrate());
+    const ok = await send(`/api/pos/bills/${id}`, "DELETE", null, get().hydrate, () => set({ bills: prev }));
+    if (ok) {
+      set((s) => ({ bills: s.bills.filter((x) => x.id !== id) }));
+      void get().hydrate(); // stock and the invoice status changed on the server too
+    }
+    return ok;
   },
 
   updateProduct: (id, patch, stockChanges) => {

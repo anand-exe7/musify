@@ -4,8 +4,7 @@ import { ticketPayments, dominantMode } from "@/lib/billing/repairPayments";
 import { usePOS, type Bill } from "@/lib/store/pos";
 import { useRepair } from "@/lib/store/repair";
 import { fetchJson, errMsg } from "@/lib/client/api";
-import type { Order, Product } from "@/types";
-import { useProducts } from "@/lib/client/catalog";
+import type { Order } from "@/types";
 import { grossTotal, balanceDue, isFixed, type RepairTicket } from "@/lib/store/repair";
 
 /**
@@ -24,7 +23,7 @@ function toIso(dateStr: string): string {
 }
 
 /** Convert a storefront order into the unified sale shape. */
-export function orderToBill(order: Order, productById?: Map<string, Product>): UnifiedBill {
+export function orderToBill(order: Order, names?: Record<string, string>): UnifiedBill {
   return {
     id: order.id,
     createdAt: toIso(order.date),
@@ -33,7 +32,7 @@ export function orderToBill(order: Order, productById?: Map<string, Product>): U
     source: "online",
     branch: order.branch ?? "Branch 1",
     items: order.items.map((it) => ({
-      name: productById?.get(it.productId)?.name ?? it.productId,
+      name: names?.[it.productId] ?? it.productId,
       price: it.price,
       qty: it.quantity,
     })),
@@ -100,30 +99,47 @@ export function ticketToBill(t: RepairTicket): UnifiedBill {
 }
 
 /**
- * REP-03: part-payments already taken on a repair that isn't billable yet — a payment against the job, not an
- * advance order. (Historically called the "advance".) It counts as revenue on the day it was received, as its own "Advance"
- * row; once the repair is ready/completed the ticket's full charge replaces it, so
- * nothing is counted twice. Cancelled tickets don't count.
+ * REP-03: part-payments taken on a repair that isn't billable yet. Each is a payment against the job — not an
+ * advance order — and shows as its own row, dated the day it was received and carrying its own mode (cash at intake,
+ * GPay later…), so revenue and the payment-mode split are right. Once the repair is ready/completed the ticket's
+ * full charge replaces these rows, so nothing is counted twice. Cancelled tickets don't count.
  */
-export function ticketAdvanceBill(t: RepairTicket): UnifiedBill | null {
-  if (t.status === "cancelled" || isServiceRevenue(t)) return null;
-  const advance = Math.max(0, t.advance || 0);
-  if (advance <= 0) return null;
-  return {
-    id: `${t.id}-ADV`,
-    createdAt: t.createdAt,
-    customerName: t.customerName || "Service customer",
-    phone: t.phone || "",
-    source: "service",
-    branch: t.branch,
-    items: [{ name: `Part payment — ${t.productName}`, price: advance, qty: 1 }],
-    subtotal: advance,
-    discount: 0,
-    delivery: 0,
-    total: advance,
-    status: "completed",
-    payment: `${dominantMode(ticketPayments(t), t.paymentMode || "CASH")} · part payment`,
-  };
+export function ticketPartPaymentBills(t: RepairTicket): UnifiedBill[] {
+  if (t.status === "cancelled" || isServiceRevenue(t)) return [];
+  return ticketPayments(t)
+    .filter((p) => p.amount > 0)
+    .map((p, n) => ({
+      id: `${t.id}-P${n + 1}`,
+      createdAt: p.at,
+      customerName: t.customerName || "Service customer",
+      phone: t.phone || "",
+      source: "service" as const,
+      branch: t.branch,
+      items: [{ name: `Part payment ${n + 1} — ${t.productName}`, price: p.amount, qty: 1 }],
+      subtotal: p.amount,
+      discount: 0,
+      delivery: 0,
+      total: p.amount,
+      status: "completed" as const,
+      payment: `${p.mode} · part payment`,
+    }));
+}
+
+/** The sales row a ticket's part payment came from → the ticket id (REP-…-P2 → REP-…). */
+export function ticketIdOfSaleRow(id: string): string {
+  return id.replace(/-P\d+$/, "");
+}
+
+let cachedNames: Record<string, string> | null = null;
+let namesPromise: Promise<Record<string, string>> | null = null;
+/** Product names. A screen shows the last list straight away and refreshes it in the background (one request at a time). */
+function loadNames(): Promise<Record<string, string>> {
+  namesPromise ??= fetchJson<Record<string, string>>("/api/pos/product-names")
+    .then((n) => (cachedNames = n ?? {}))
+    .finally(() => {
+      namesPromise = null;
+    });
+  return namesPromise;
 }
 
 /**
@@ -147,7 +163,15 @@ export function useAllSales(reloadKey = 0): { sales: UnifiedBill[]; loading: boo
   const tickets = useRepair((s) => s.tickets);
   const repairHydrated = useRepair((s) => s.hydrated);
   const repairError = useRepair((s) => s.loadError);
-  const { products } = useProducts();
+  // Product names for online-order lines — a small list, not the whole catalogue (whose photos take ~30 s to load).
+  const [names, setNames] = useState<Record<string, string>>(() => cachedNames ?? {});
+  useEffect(() => {
+    let alive = true;
+    loadNames().then((n) => alive && setNames(n), () => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -172,16 +196,15 @@ export function useAllSales(reloadKey = 0): { sales: UnifiedBill[]; loading: boo
   const errorMessage = ordersError ?? posError ?? repairError;
 
   const sales = useMemo(() => {
-    const byId = new Map(products.map((p) => [p.id, p]));
-    const webBills: UnifiedBill[] = orders.map((o) => orderToBill(o, byId));
+    const webBills: UnifiedBill[] = orders.map((o) => orderToBill(o, names));
     const serviceBills: UnifiedBill[] = [
       ...tickets.filter(isServiceRevenue).map(ticketToBill),
-      ...tickets.map(ticketAdvanceBill).filter((b): b is UnifiedBill => b !== null),
+      ...tickets.flatMap(ticketPartPaymentBills),
     ];
     return [...webBills, ...posBills, ...serviceBills].sort(
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     );
-  }, [orders, posBills, tickets, products]);
+  }, [orders, posBills, tickets, names]);
 
   return { sales, loading, error: errorMessage !== null, errorMessage };
 }

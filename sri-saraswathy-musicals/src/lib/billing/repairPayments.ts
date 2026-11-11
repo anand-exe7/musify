@@ -71,6 +71,19 @@ export function dominantMode(list: Pick<RepairPayment, "amount" | "mode">[], fal
   return best;
 }
 
+/** The modes the money came in by, in the order first used — e.g. "Cash + GPay / UPI". Empty when nothing is paid. */
+export function modesLabel(list: Pick<RepairPayment, "mode">[]): string {
+  return [...new Set(list.map((p) => PAY_MODE_LABEL[p.mode] ?? p.mode))].join(" + ");
+}
+
+/** One line per payment for documents: "12 Nov 2026 · Cash · REP-…/R1". */
+export function paymentLines(list: RepairPayment[]): { label: string; amount: number }[] {
+  return list.map((p) => ({
+    label: `${new Date(p.at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · ${PAY_MODE_LABEL[p.mode] ?? p.mode}${p.receiptNo ? ` · ${p.receiptNo}` : ""}`,
+    amount: p.amount,
+  }));
+}
+
 /** Add a payment to a ticket: returns the new history and the matching `advance` (total paid). */
 export function withPayment(t: PayableTicket, p: { amount: number; mode: string; note?: string; at?: string }): { payments: RepairPayment[]; advance: number } {
   const prev = ticketPayments(t);

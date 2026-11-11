@@ -120,7 +120,7 @@ export function taxLabel(kind: "CGST" | "SGST" | "IGST", s: GstSummary): string 
 }
 
 /** Invoice row → print model. `payment` carries live paid/balance for part-paid (repair) invoices. */
-export function invoiceToDoc(inv: Invoice, payment?: { paid: number; balance: number }): PrintDoc {
+export function invoiceToDoc(inv: Invoice, payment?: { paid: number; balance: number; history?: { label: string; amount: number }[] }): PrintDoc {
   const tax = (inv.cgst ?? 0) + (inv.sgst ?? 0) + (inv.igst ?? 0);
   const meta: PrintDoc["meta"] = [];
   if (inv.reference) meta.push({ label: "Ref", value: inv.reference });
@@ -143,7 +143,11 @@ export function invoiceToDoc(inv: Invoice, payment?: { paid: number; balance: nu
     paid: payment?.paid,
     balance: payment?.balance,
     paymentMode: inv.paymentMode,
-    payments: (inv.payments ?? []).length > 1 ? inv.payments!.map((p) => ({ label: p.method, amount: p.amount })) : undefined,
+    payments: payment?.history?.length
+      ? payment.history
+      : (inv.payments ?? []).length > 1
+        ? inv.payments!.map((p) => ({ label: p.method, amount: p.amount }))
+        : undefined,
     cancelled: inv.status === "cancelled",
   };
 }

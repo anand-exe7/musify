@@ -4,8 +4,8 @@
  */
 import type { RepairTicket } from "@/lib/store/repair";
 import { serviceInvoiceBreakup } from "@/lib/billing/serviceInvoice";
-import { ticketPayments, paymentsTotal, PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
-import { fmtDate, type PrintDoc } from "@/lib/print/doc";
+import { ticketPayments, paymentsTotal, paymentLines, modesLabel } from "@/lib/billing/repairPayments";
+import type { PrintDoc } from "@/lib/print/doc";
 
 export const RECEIPT_NOTICE = "Payment receipt — not a tax invoice. The GST tax invoice is issued on full payment.";
 
@@ -34,7 +34,8 @@ export function ticketReceiptDoc(t: RepairTicket): PrintDoc {
     total: bk.total,
     paid,
     balance: t.status === "cancelled" ? 0 : Math.max(0, bk.total - paid),
-    payments: payments.map((p) => ({ label: `${fmtDate(p.at)} · ${PAY_MODE_LABEL[p.mode] ?? p.mode}${p.receiptNo ? ` · ${p.receiptNo}` : ""}`, amount: p.amount })),
+    paymentMode: modesLabel(payments) || undefined,
+    payments: paymentLines(payments),
     notice: RECEIPT_NOTICE,
     cancelled: t.status === "cancelled",
   };

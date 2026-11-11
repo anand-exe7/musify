@@ -189,7 +189,18 @@ interface RepairState {
   addPayment: (id: string, p: { amount: number; mode: string; note?: string }) => void;
   removePayment: (id: string, paymentId: string) => void;
   nextInvoiceNo: () => Promise<string>;
+  /** Resolves once every change sent so far has reached the server — wait on it before opening a page that reads the
+   *  ticket from the database (receipt / invoice), so it never shows the amounts from before the last payment. */
+  flush: () => Promise<void>;
   resetDemo: () => void;
+}
+
+/** Saves still on their way to the server. */
+const inFlight = new Set<Promise<unknown>>();
+function track<T>(p: Promise<T>): Promise<T> {
+  inFlight.add(p);
+  void p.finally(() => inFlight.delete(p));
+  return p;
 }
 
 export const useRepair = create<RepairState>()((set, get) => ({
@@ -208,7 +219,7 @@ export const useRepair = create<RepairState>()((set, get) => ({
   addTicket: (t) => {
     const prev = get().tickets;
     set((s) => ({ tickets: [t, ...s.tickets] }));
-    void send("/api/repair", "POST", t, get().hydrate, () => set({ tickets: prev }));
+    void track(send("/api/repair", "POST", t, get().hydrate, () => set({ tickets: prev })));
   },
   updateTicket: (id, patch, eventLabel) => {
     const prev = get().tickets;
@@ -224,7 +235,7 @@ export const useRepair = create<RepairState>()((set, get) => ({
           : t,
       ),
     }));
-    void send(`/api/repair/${id}`, "PATCH", { patch, eventLabel }, get().hydrate, () => set({ tickets: prev }));
+    void track(send(`/api/repair/${id}`, "PATCH", { patch, eventLabel }, get().hydrate, () => set({ tickets: prev })));
   },
   deleteTicket: (id) => {
     const prev = get().tickets;
@@ -261,6 +272,9 @@ export const useRepair = create<RepairState>()((set, get) => ({
     if (!res.ok) throw new Error("Couldn't generate a service invoice number");
     const { invoiceNo } = (await res.json()) as { invoiceNo: string };
     return invoiceNo;
+  },
+  flush: async () => {
+    await Promise.allSettled([...inFlight]);
   },
   resetDemo: () => void get().hydrate(),
 }));

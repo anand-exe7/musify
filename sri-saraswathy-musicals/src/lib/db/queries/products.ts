@@ -115,6 +115,19 @@ export async function getAllProducts(): Promise<Product[]> {
   return (await selectProducts()).map(toProduct);
 }
 
+/**
+ * Just id → name (+ brand), for screens that only label order lines. The full product list carries every photo
+ * (stored in the database), which takes many seconds to read; this reads two short columns.
+ */
+export async function getProductNames(ids?: string[]): Promise<Record<string, string>> {
+  if (ids && ids.length === 0) return {};
+  const q = db.select({ id: products.id, name: products.name }).from(products);
+  const list = ids ? await q.where(inArray(products.id, ids)) : await q;
+  const out: Record<string, string> = {};
+  for (const r of list) out[r.id] = r.name;
+  return out;
+}
+
 /** What server-side pricing needs per product: money, tax flags and the RAW
  *  variants (with per-branch stock), which `toProduct` flattens away. */
 export interface PricingProduct {

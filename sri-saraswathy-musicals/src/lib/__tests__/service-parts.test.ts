@@ -138,5 +138,9 @@ describe("repair tax invoice only on full payment (REP-02)", () => {
     await recordServiceInvoice({ ...part, advance: 118000, payments: [cash, upi] });
     const inv = await getInvoiceByRefId("REP-PAY");
     expect(inv).toMatchObject({ status: "paid", total: 118000, paymentMode: "Cash + GPay / UPI", source: "service" });
+
+    // Cancelled afterwards: the invoice stays on record but is marked Cancelled (out of every total).
+    await recordServiceInvoice({ ...part, status: "cancelled", advance: 118000, payments: [cash, upi] });
+    expect((await getInvoiceByRefId("REP-PAY"))?.status).toBe("cancelled");
   });
 });
