@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Plus, Trash2, Save, Package, Search } from "lucide-react";
+import { Plus, Minus, Trash2, Save, Package, Search } from "lucide-react";
 import { useInventory } from "@/lib/store/pos";
 import { useAuth } from "@/lib/store/auth";
 import { useRepair, type RepairTicket, type RepairPart } from "@/lib/store/repair";
@@ -60,46 +60,69 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
     patch(part.id, { variantIndex: vi, name: p.variants.length > 1 ? `${p.name} — ${v.attr}` : p.name, price: v.price > 0 ? v.price : p.basePrice });
   };
 
-  const cell = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-right text-sm tabular-nums focus:border-gold-500 focus:outline-none disabled:opacity-60";
+  // Every control is the same height, so a row reads as one neat line.
+  const cell = "h-10 w-full rounded-lg border border-ink-200 bg-ivory-50 px-2.5 text-sm tabular-nums focus:border-gold-500 focus:outline-none disabled:opacity-60";
+  const lab = "mb-1 block text-[9px] font-semibold uppercase tracking-wider text-ink-400";
 
   return (
     <div>
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {parts.map((x) => {
           const p = x.productId ? catalog.find((c) => c.id === x.productId) : undefined;
           const v = p?.variants[x.variantIndex ?? 0];
           const enabled = p ? p.variants.map((vv, vi) => ({ vv, vi })).filter((o) => !o.vv.disabled || o.vi === x.variantIndex) : [];
+          const onHand = p && v ? variantStockAt(v, branch) : null;
           return (
-            <div key={x.id} className="rounded-xl border border-ink-100 bg-white p-3">
-              <div className="flex items-start gap-2">
+            <div key={x.id} className="rounded-xl border border-ink-100 bg-white p-3.5">
+              {/* Name + stock, remove on the right */}
+              <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  {x.productId ? <p className="truncate text-sm font-medium text-ink-900">{x.name}</p> : (
-                    <input value={x.name} onChange={(e) => patch(x.id, { name: e.target.value })} placeholder="Item name" disabled={locked || !fullAdmin} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+                  {x.productId ? <p className="truncate text-sm font-semibold text-ink-900">{x.name}</p> : (
+                    <input value={x.name} onChange={(e) => patch(x.id, { name: e.target.value })} placeholder="Item name" disabled={locked || !fullAdmin} className={cn(cell, "text-left")} />
                   )}
-                  {p && v && <p className="text-[11px] text-ink-400">{variantStockAt(v, branch)} in stock at {branchLabel(branch)}</p>}
+                  {onHand !== null && (
+                    <p className={cn("mt-0.5 text-[11px]", onHand > 0 ? "text-ink-400" : "text-danger")}>{onHand} in stock at {branchLabel(branch)}</p>
+                  )}
                 </div>
-                <button onClick={() => onChange(parts.filter((o) => o.id !== x.id))} disabled={locked} aria-label="Remove product" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
+                <button onClick={() => onChange(parts.filter((o) => o.id !== x.id))} disabled={locked} aria-label="Remove product" title="Remove" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {enabled.length > 1 ? (
-                  <select value={x.variantIndex ?? 0} onChange={(e) => pickVariant(x, Number(e.target.value))} className={cn(cell, "text-left")} disabled={locked}>
-                    {enabled.map(({ vv, vi }) => <option key={vi} value={vi}>{vv.attr}{vv.finish ? ` · ${vv.finish}` : ""} — {variantStockAt(vv, branch)} in stock</option>)}
-                  </select>
-                ) : <span />}
-                <div><label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Qty</label><input type="number" min={1} step={1} value={x.qty || ""} onChange={(e) => patch(x.id, { qty: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} className={cell} disabled={locked} /></div>
-                <div><label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Price ₹ (incl. GST)</label><MoneyInput value={x.price} onChange={(price) => patch(x.id, { price })} className={cell} disabled={locked || !fullAdmin} title={fullAdmin ? undefined : "Prices come from the catalogue"} /></div>
+
+              {/* Variant · Qty · Price · GST · Line total — one aligned row (two rows on a phone) */}
+              <div className="mt-3 grid grid-cols-2 items-end gap-2.5 sm:grid-cols-[minmax(0,1.4fr)_7.5rem_minmax(0,1fr)_5.5rem_6.5rem]">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className={lab}>Variant</label>
+                  {enabled.length > 1 ? (
+                    <select value={x.variantIndex ?? 0} onChange={(e) => pickVariant(x, Number(e.target.value))} className={cn(cell, "truncate text-left")} disabled={locked}>
+                      {enabled.map(({ vv, vi }) => <option key={vi} value={vi}>{vv.attr}{vv.finish ? ` · ${vv.finish}` : ""} ({variantStockAt(vv, branch)} in stock)</option>)}
+                    </select>
+                  ) : (
+                    <p className={cn(cell, "flex items-center truncate border-dashed bg-transparent text-left text-ink-400")}>{v ? [v.attr, v.finish].filter(Boolean).join(" · ") || "Standard" : "—"}</p>
+                  )}
+                </div>
                 <div>
-                  <label className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">GST</label>
+                  <label className={lab}>Qty</label>
+                  <div className={cn(cell, "flex items-center justify-between px-1")}>
+                    <button type="button" onClick={() => patch(x.id, { qty: Math.max(1, x.qty - 1) })} disabled={locked || x.qty <= 1} aria-label="One less" className="grid h-8 w-8 place-items-center rounded-md text-ink-600 hover:bg-ink-900/5 disabled:opacity-30"><Minus className="h-3.5 w-3.5" /></button>
+                    <input type="number" min={1} step={1} value={x.qty || ""} onChange={(e) => patch(x.id, { qty: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} disabled={locked} aria-label="Quantity" className="w-8 bg-transparent text-center text-sm font-semibold tabular-nums focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+                    <button type="button" onClick={() => patch(x.id, { qty: x.qty + 1 })} disabled={locked} aria-label="One more" className="grid h-8 w-8 place-items-center rounded-md text-ink-600 hover:bg-ink-900/5 disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button>
+                  </div>
+                </div>
+                <div>
+                  <label className={lab}>Price ₹ (incl. GST)</label>
+                  <MoneyInput value={x.price} onChange={(price) => patch(x.id, { price })} className={cn(cell, "text-right")} disabled={locked || !fullAdmin} title={fullAdmin ? undefined : "Prices come from the catalogue"} />
+                </div>
+                <div>
+                  <label className={lab}>GST</label>
                   <select value={x.gst} onChange={(e) => patch(x.id, { gst: Number(e.target.value) })} className={cell} disabled={locked || !fullAdmin}>
                     {[...new Set([...GST_RATES, x.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                   </select>
                 </div>
                 <div className="text-right">
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Line total</p>
-                  <p className="mt-1.5 text-sm font-bold tabular-nums text-ink-900">{formatINR(x.qty * x.price)}</p>
-                  {x.productId && x.price === 0 && <p className="text-[9px] text-ink-400">Used, not billed</p>}
+                  <label className={lab}>Line total</label>
+                  <p className="flex h-10 items-center justify-end text-base font-bold tabular-nums text-ink-900">{formatINR(x.qty * x.price)}</p>
                 </div>
               </div>
+              {x.productId && x.price === 0 && <p className="mt-1 text-right text-[10px] text-ink-400">Used, not billed</p>}
             </div>
           );
         })}
@@ -109,8 +132,8 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
       {!locked && (
         <div className="relative mt-3 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[14rem] flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-ink-400" />
-            <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search inventory to add a product…" className="w-full rounded-lg border border-ink-200 bg-ivory-50 py-2 pl-8 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
+            <Search className="pointer-events-none absolute left-2.5 top-3 h-4 w-4 text-ink-400" />
+            <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search inventory to add a product…" className="h-10 w-full rounded-lg border border-ink-200 bg-ivory-50 pl-8 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
             {matches.length > 0 && (
               <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-lg">
                 {matches.map((m) => (
@@ -122,7 +145,7 @@ export function PartsEditor({ parts, onChange, branch, gstRate, locked = false }
               </div>
             )}
           </div>
-          {fullAdmin && <button type="button" onClick={addOther} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-900/5"><Plus className="h-3.5 w-3.5" /> Other item</button>}
+          {fullAdmin && <button type="button" onClick={addOther} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-ink-200 px-3 text-xs font-semibold text-ink-700 hover:bg-ink-900/5"><Plus className="h-3.5 w-3.5" /> Other item</button>}
         </div>
       )}
 

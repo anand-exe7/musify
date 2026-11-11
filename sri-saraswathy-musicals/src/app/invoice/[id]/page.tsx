@@ -10,6 +10,7 @@ import type { Invoice } from "@/types";
 import { InvoiceShareView } from "./InvoiceShareView";
 import { ReceiptShareView } from "./ReceiptShareView";
 import { ticketReceiptDoc } from "@/lib/billing/repairReceipt";
+import { ticketPayments, paymentLines } from "@/lib/billing/repairPayments";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   if (!invoice) notFound();
   // Repairs can be part-paid, so show paid vs. balance from the live ticket.
-  let payment: { paid: number; balance: number } | undefined;
+  let payment: { paid: number; balance: number; history?: { label: string; amount: number }[] } | undefined;
   if (invoice.source === "service") {
     const ticket = await getTicket(id);
     if (ticket) {
@@ -70,7 +71,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       invoice = (await getInvoiceByRefId(id)) ?? invoice;
       const total = invoice.total;
       const paid = Math.min(total, ticket.advance || 0);
-      payment = { paid, balance: ticket.status === "cancelled" ? 0 : Math.max(0, total - paid) };
+      payment = { paid, balance: ticket.status === "cancelled" ? 0 : Math.max(0, total - paid), history: paymentLines(ticketPayments(ticket)) };
       // An invoice minted before this rule existed, but the ticket still has a balance: show the receipt.
       if (payment.balance > 0) return <ReceiptShareView doc={ticketReceiptDoc(ticket)} />;
     }

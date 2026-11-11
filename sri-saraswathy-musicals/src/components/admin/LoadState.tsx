@@ -49,3 +49,12 @@ export function OfflinePanel({
     </div>
   );
 }
+
+/** Small spinner + label for a table row or section that is still loading. */
+export function LoadingInline({ label = "Loading…", className = "" }: { label?: string; className?: string }) {
+  return (
+    <span role="status" className={`inline-flex items-center justify-center gap-2 text-sm font-medium text-ink-500 ${className}`}>
+      <Loader2 className="h-4 w-4 animate-spin text-gold-500" aria-hidden /> {label}
+    </span>
+  );
+}

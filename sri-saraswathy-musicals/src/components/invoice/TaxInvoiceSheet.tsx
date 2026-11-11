@@ -47,7 +47,7 @@ const SOURCE_LABEL: Record<string, string> = {
  * raised in Non-GST mode), the title switches to "Bill of Supply" and the tax
  * columns/rows are dropped per Rule 49 of the CGST Rules.
  */
-export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; payment?: { paid: number; balance: number } }) {
+export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; payment?: { paid: number; balance: number; history?: { label: string; amount: number }[] } }) {
   const totalTax = (invoice.cgst ?? 0) + (invoice.sgst ?? 0) + (invoice.igst ?? 0);
   const isBillOfSupply = totalTax === 0;
   const intra = (invoice.igst ?? 0) === 0;
@@ -299,6 +299,18 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                     <dt>Balance due</dt>
                     <dd className="tabular-nums">{formatINR(payment.balance)}</dd>
                   </div>
+                  {/* Each payment against the job, with how it was paid (e.g. cash at intake, GPay on pickup). */}
+                  {(payment.history?.length ?? 0) > 0 && (
+                    <div className="px-3 py-2.5">
+                      <dt className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">Payment history</dt>
+                      {payment.history!.map((h, i) => (
+                        <div key={i} className="flex items-baseline justify-between gap-3 py-0.5 text-[12px] text-ink-700">
+                          <dd className="min-w-0">{h.label}</dd>
+                          <dd className="shrink-0 tabular-nums">{formatINR(h.amount)}</dd>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </dl>

@@ -5,17 +5,22 @@ import {
   useRepair,
   genRepairId,
   REPAIR_CATEGORIES,
+  grossTotal,
+  balanceDue,
+  statusMeta,
   type RepairTicket,
   type RepairPriority,
 } from "@/lib/store/repair";
 import type { Branch } from "@/lib/store/pos";
-import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
+import { BUSINESS, waLink, serviceInvoiceUrl, branchInfo } from "@/lib/data/business";
+import { useBranchContacts, phoneFor } from "@/lib/client/branchContacts";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { PartsEditor } from "@/components/admin/TicketParts";
+import { partsTotal } from "@/lib/billing/serviceInvoice";
 import { BRANCH_KEYS, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
-import { REPAIR_PAY_MODES, PAY_MODE_LABEL, withPayment } from "@/lib/billing/repairPayments";
+import { REPAIR_PAY_MODES, PAY_MODE_LABEL, withPayment, ticketPayments, modesLabel } from "@/lib/billing/repairPayments";
 import { E } from "@/lib/whatsapp";
 
 /** Date input helper — ISO ⇄ yyyy-mm-dd */
@@ -67,19 +72,38 @@ function blank(): RepairTicket {
   };
 }
 
-export function repairIntakeMessage(t: RepairTicket): string {
-  const balance = Math.max(0, t.estimate - t.advance);
+/**
+ * The ticket-details WhatsApp message, built from the ticket as it is NOW — service charge (final cost once set,
+ * otherwise the estimate), every product used, what has been paid and by which mode, and the balance. "Resend ticket
+ * details" therefore always sends today's figures, never the ones from intake. `contactPhone`: the branch's number
+ * as saved on Admin → Branches.
+ */
+export function repairIntakeMessage(t: RepairTicket, contactPhone?: string): string {
+  const charge = t.finalCost > 0 ? t.finalCost : t.estimate;
+  const parts = (t.parts ?? []).filter((p) => p.name.trim() && p.qty > 0);
+  const total = grossTotal(t);
+  const paid = t.advance || 0;
+  const balance = balanceDue(t);
+  const modes = modesLabel(ticketPayments(t));
+  const money =
+    `${E.money} ${t.finalCost > 0 ? "Service charge" : "Service estimate"}: ${formatINR(charge)}\n` +
+    (parts.length
+      ? `${E.package} Products used:\n${parts.map((p) => `  • ${p.name} × ${p.qty} — ${formatINR(p.qty * p.price)}`).join("\n")}\n`
+      : "") +
+    (parts.length ? `*Total: ${formatINR(total)}* (incl GST)\n` : "") +
+    (paid > 0 ? `${E.check} Paid so far: ${formatINR(paid)}${modes ? ` (${modes})` : ""}\n` : "") +
+    (t.status === "cancelled" ? "" : paid > 0 || parts.length ? (balance > 0 ? `${E.hourglass} Balance due: ${formatINR(balance)}\n` : `Fully paid ${E.check}\n`) : "");
   return (
     `*${BUSINESS.name} — Service Ticket*\n` +
-    `Hi ${t.customerName || "there"}, we've received your instrument for repair.\n\n` +
+    `Hi ${t.customerName || "there"}, ${t.status === "received" ? "we've received your instrument for repair." : `here are the latest details of your repair (${statusMeta(t.status).label}).`}\n\n` +
     `${E.ticket} Ticket: ${t.id}\n` +
     `${E.guitar} Item: ${t.productName}${t.brand ? ` (${t.brand})` : ""}\n` +
     `${E.wrench} Reported issue: ${t.problem}\n\n` +
-    `${E.money} Estimate: ${formatINR(t.estimate)}${t.advance > 0 ? `\nPaid so far: ${formatINR(t.advance)}\nBalance (approx): ${formatINR(balance)}` : ""}\n` +
+    money +
     `${E.calendar} Ready by: ${fmtDeadline(t.deadline)}\n\n` +
     // The invoice only exists once the repair is billable — don't send a dead link at intake.
-    (t.invoiceNo || t.status === "ready" || t.status === "completed" ? `${E.doc} Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n\n` : "") +
-    `We'll keep you posted. Reply here for any questions.\n${BUSINESS.branches[0].phone}`
+    (t.invoiceNo || t.status === "ready" || t.status === "completed" || paid > 0 ? `${E.doc} Track your repair / receipt:\n${serviceInvoiceUrl(t.id)}\n\n` : "") +
+    `We'll keep you posted. Reply here for any questions.\n${contactPhone || branchInfo(t.branch).phone}`
   );
 }
 
@@ -92,18 +116,29 @@ function SectionTitle({ icon, children }: { icon: React.ReactNode; children: Rea
   );
 }
 
+/** Mobile number as typed or pasted: digits only, a leading +91 / 0 dropped, never more than 10 digits. */
+function tenDigits(v: string): string {
+  let n = v.replace(/\D/g, "");
+  if (n.length > 10 && n.startsWith("91")) n = n.slice(2);
+  if (n.length > 10 && n.startsWith("0")) n = n.slice(1);
+  return n.slice(0, 10);
+}
+
 export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | null; onClose: () => void }) {
   const addTicket = useRepair((s) => s.addTicket);
   const updateTicket = useRepair((s) => s.updateTicket);
+  const contacts = useBranchContacts();
   const isNew = !ticket;
   const [d, setD] = useState<RepairTicket>(ticket ? structuredClone(ticket) : blank());
+  // Products used are charged on top of the service estimate — the balance and the WhatsApp message include them.
+  const partsSum = partsTotal((d.parts ?? []).filter((x) => x.name.trim() && x.qty > 0));
   const [err, setErr] = useState<string | null>(null);
 
   const set = (patch: Partial<RepairTicket>) => setD((prev) => ({ ...prev, ...patch }));
 
   const validate = () => {
     if (!d.customerName.trim()) return "Customer name is required.";
-    if (!/\d{10}/.test(d.phone.replace(/\D/g, ""))) return "Enter a valid 10-digit mobile number.";
+    if (!/^\d{10}$/.test(d.phone.replace(/\D/g, ""))) return "Enter a valid 10-digit mobile number.";
     if (!d.productName.trim()) return "Product / instrument name is required.";
     if (!d.problem.trim()) return "Describe the reported problem.";
     if (d.customerGstin?.trim() && !GSTIN_RE.test(d.customerGstin.trim().toUpperCase())) return "GST number must be a valid 15-character GSTIN (or leave it blank).";
@@ -152,7 +187,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
     if (!t) return;
     if (!isNew) updateTicket(t.id, { whatsappSentAt: new Date().toISOString() }, "Intake message sent via WhatsApp");
     else updateTicket(t.id, { whatsappSentAt: new Date().toISOString() });
-    window.open(waLink(t.phone, repairIntakeMessage(t)), "_blank", "noopener,noreferrer");
+    window.open(waLink(t.phone, repairIntakeMessage(t, phoneFor(contacts, t.branch))), "_blank", "noopener,noreferrer");
     onClose();
   };
 
@@ -183,7 +218,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
               </div>
               <div>
                 <label className={label}>Mobile / WhatsApp *</label>
-                <input value={d.phone} onChange={(e) => set({ phone: e.target.value })} inputMode="numeric" className={field} placeholder="10-digit number" />
+                <input value={d.phone} onChange={(e) => set({ phone: tenDigits(e.target.value) })} inputMode="numeric" pattern="[0-9]{10}" className={field} placeholder="10-digit number" />
               </div>
               <div>
                 <label className={label}>Email (optional)</label>
@@ -287,11 +322,13 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
                 </div>
               )}
             </div>
-            {d.estimate > 0 && (
+            {(d.estimate > 0 || partsSum > 0) && (
               <p className="mt-3 rounded-lg bg-[#FAF7EF] px-3 py-2 text-xs text-ink-500">
-                Estimate {formatINR(d.estimate)} · Paid {formatINR(d.advance || 0)} ·{" "}
-                <span className="font-semibold text-ink-900">Balance approx {formatINR(Math.max(0, d.estimate - (d.advance || 0)))}</span>
-                <span className="text-ink-400"> (GST added on final invoice)</span>
+                Service {formatINR(d.estimate)}
+                {partsSum > 0 && <> + products {formatINR(partsSum)} = <span className="font-semibold text-ink-900">total {formatINR(d.estimate + partsSum)}</span></>}
+                {" · "}Paid {formatINR(d.advance || 0)} ·{" "}
+                <span className="font-semibold text-ink-900">Balance {formatINR(Math.max(0, d.estimate + partsSum - (d.advance || 0)))}</span>
+                <span className="text-ink-400"> (prices include GST)</span>
               </p>
             )}
           </section>

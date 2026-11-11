@@ -26,7 +26,7 @@ import { products } from "@/lib/db/schema";
 import { insertVariants, stockAt } from "@/lib/db/queries/variants";
 import { applyPartsStock, cleanParts } from "@/lib/db/queries/repair";
 import { serviceInvoiceBreakup, partsTotal } from "@/lib/billing/serviceInvoice";
-import { ticketAdvanceBill, isServiceRevenue, serviceEarned, serviceEarnedAt } from "@/lib/client/sales";
+import { ticketPartPaymentBills, ticketIdOfSaleRow, isServiceRevenue, serviceEarned, serviceEarnedAt } from "@/lib/client/sales";
 import { grossTotal, balanceDue, type RepairTicket } from "@/lib/store/repair";
 
 beforeAll(async () => {
@@ -93,26 +93,50 @@ describe("parts leave the branch's stock", () => {
   });
 });
 
-describe("advance counts as revenue", () => {
-  it("counts an advance on an unfinished repair on the day it was taken", () => {
-    const b = ticketAdvanceBill(ticket({ advance: 50000 }));
-    expect(b).toMatchObject({ id: "REP-1-ADV", total: 50000, source: "service", payment: "CASH · part payment", createdAt: "2026-10-01T10:00:00.000Z" });
+describe("part payments count as revenue", () => {
+  it("counts a part payment on an unfinished repair on the day it was taken", () => {
+    const [b] = ticketPartPaymentBills(ticket({ advance: 50000 }));
+    expect(b).toMatchObject({ id: "REP-1-P1", total: 50000, source: "service", payment: "CASH · part payment", createdAt: "2026-10-01T10:00:00.000Z" });
   });
 
-  it("stops once the repair is billable (the full charge replaces it), and ignores cancelled or no-advance tickets", () => {
+  it("gives each payment its own row with its own mode and date", () => {
+    const rows = ticketPartPaymentBills(ticket({
+      advance: 80000,
+      payments: [
+        { id: "a", at: "2026-10-01T10:00:00.000Z", amount: 50000, mode: "CASH", receiptNo: "REP-1/R1" },
+        { id: "b", at: "2026-10-05T12:00:00.000Z", amount: 30000, mode: "UPI", receiptNo: "REP-1/R2" },
+      ],
+    }));
+    expect(rows.map((r) => [r.id, r.total, r.payment, r.createdAt])).toEqual([
+      ["REP-1-P1", 50000, "CASH · part payment", "2026-10-01T10:00:00.000Z"],
+      ["REP-1-P2", 30000, "UPI · part payment", "2026-10-05T12:00:00.000Z"],
+    ]);
+    expect(ticketIdOfSaleRow("REP-1-P2")).toBe("REP-1");
+  });
+
+  it("stops once the repair is billable (the full charge replaces it), and ignores cancelled or unpaid tickets", () => {
     expect(isServiceRevenue(ticket({ status: "ready", advance: 50000 }))).toBe(true);
-    expect(ticketAdvanceBill(ticket({ status: "ready", advance: 50000 }))).toBeNull();
-    expect(ticketAdvanceBill(ticket({ status: "cancelled", advance: 50000 }))).toBeNull();
-    expect(ticketAdvanceBill(ticket({ advance: 0 }))).toBeNull();
+    expect(ticketPartPaymentBills(ticket({ status: "ready", advance: 50000 }))).toEqual([]);
+    expect(ticketPartPaymentBills(ticket({ status: "cancelled", advance: 50000 }))).toEqual([]);
+    expect(ticketPartPaymentBills(ticket({ advance: 0 }))).toEqual([]);
   });
+});
 
-  it("serviceEarned: advance while open, full charge once ready, nothing if cancelled", () => {
-    const open = ticket({ advance: 50000 });
-    expect(serviceEarned(open)).toBe(50000);
-    expect(serviceEarnedAt(open)).toBe(open.createdAt);
-    const ready = ticket({ status: "ready", advance: 50000 });
-    expect(serviceEarned(ready)).toBeGreaterThan(50000);
-    expect(serviceEarned(ticket({ status: "cancelled", advance: 50000 }))).toBe(0);
-    expect(serviceEarned(ticket({ advance: 0 }))).toBe(0);
+describe("repair tax invoice only on full payment (REP-02)", () => {
+  it("issues no tax invoice while part-paid, then one recording every payment mode once fully paid", async () => {
+    const { recordServiceInvoice } = await import("@/lib/billing/ledger");
+    const { getInvoiceByRefId } = await import("@/lib/db/queries/invoices");
+    const cash = { id: "c", at: "2026-11-03T10:00:00.000Z", amount: 100000, mode: "CASH", receiptNo: "REP-PAY/R1" };
+    const upi = { id: "u", at: "2026-11-08T10:00:00.000Z", amount: 18000, mode: "UPI", receiptNo: "REP-PAY/R2" };
+
+    // Completed, ₹1,180 charge, ₹1,000 paid in cash: a receipt only.
+    const part = ticket({ id: "REP-PAY", status: "completed", finalCost: 118000, advance: 100000, payments: [cash] });
+    await recordServiceInvoice(part);
+    expect(await getInvoiceByRefId("REP-PAY")).toBeUndefined();
+
+    // The balance comes in by GPay: now the tax invoice is minted, paid, and says how it was paid.
+    await recordServiceInvoice({ ...part, advance: 118000, payments: [cash, upi] });
+    const inv = await getInvoiceByRefId("REP-PAY");
+    expect(inv).toMatchObject({ status: "paid", total: 118000, paymentMode: "Cash + GPay / UPI", source: "service" });
   });
 });

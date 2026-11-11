@@ -11,7 +11,7 @@ import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/Tax
  * Public share wrapper for the tax invoice. Anyone with the link (opaque ref
  * id) can open it without signing in. Admin-only routes get their own toolbar.
  */
-export function InvoiceShareView({ invoice, payment, receipt }: { invoice: Invoice; payment?: { paid: number; balance: number }; receipt?: PrintDoc }) {
+export function InvoiceShareView({ invoice, payment, receipt }: { invoice: Invoice; payment?: { paid: number; balance: number; history?: { label: string; amount: number }[] }; receipt?: PrintDoc }) {
   const [copied, setCopied] = useState(false);
   const isBillOfSupply = (invoice.cgst ?? 0) + (invoice.sgst ?? 0) + (invoice.igst ?? 0) === 0;
 

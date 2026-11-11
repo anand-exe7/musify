@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
@@ -24,6 +24,7 @@ import {
   Wallet,
   UsersRound,
   X,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRepair, alertLevel } from "@/lib/store/repair";
@@ -95,6 +96,19 @@ const sections: Section[] = [
 export function branchStaffMayOpen(pathname: string | null): boolean {
   if (!pathname || pathname === "/admin") return true;
   return sections.some((s) => s.items.some((i) => i.staff && (pathname === i.href || pathname.startsWith(i.href + "/"))));
+}
+
+/** The item's icon — a spinner while its page is opening, so a click is answered at once. */
+function NavIcon({ icon: Icon, active }: { icon: Item["icon"]; active: boolean }) {
+  const { pending } = useLinkStatus();
+  if (pending) return <Loader2 className="h-[18px] w-[18px] animate-spin text-gold-500" aria-hidden />;
+  return <Icon className={cn("h-[18px] w-[18px] transition-colors", active ? "text-gold-400" : "text-ink-500 group-hover:text-ink-800")} strokeWidth={active ? 2.2 : 1.8} />;
+}
+
+/** "Opening…" beside the item while its page loads. */
+function NavPendingNote() {
+  const { pending } = useLinkStatus();
+  return pending ? <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gold-600">Opening…</span> : null;
 }
 
 function Brand() {
@@ -182,11 +196,9 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                 {active && (
                   <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-x-1 -translate-y-1/2 rounded-r-full bg-gold-400" />
                 )}
-                <Icon
-                  className={cn("h-[18px] w-[18px] transition-colors", active ? "text-gold-400" : "text-ink-500 group-hover:text-ink-800")}
-                  strokeWidth={active ? 2.2 : 1.8}
-                />
+                <NavIcon icon={Icon} active={active} />
                 <span className="flex-1 truncate">{i.label}</span>
+                <NavPendingNote />
                 {badge && (
                   <span
                     className={cn(

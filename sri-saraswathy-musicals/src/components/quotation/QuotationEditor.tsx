@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Save, X } from "lucide-react";
+import { Plus, Trash2, Save, X, PackageSearch } from "lucide-react";
 import type { Quotation, QuotationLine } from "@/types";
 import { cn, formatINR } from "@/lib/utils";
 import { BranchOptions } from "@/components/admin/BranchOptions";
@@ -9,7 +9,8 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { effectiveBranch, useBranchScope } from "@/lib/store/branch";
 import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
 import { useAuth } from "@/lib/store/auth";
-import { LineProductPicker } from "@/components/quotation/LineProductPicker";
+import type { PickedLine } from "@/components/quotation/LineProductPicker";
+import { ProductCatalogModal } from "@/components/quotation/ProductCatalogModal";
 import { isValidGstin } from "@/lib/gst/gstin";
 
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -48,7 +49,7 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
           customerPhone: "",
           customerGstin: "",
           branch: effectiveBranch(selected),
-          items: [emptyLine()],
+          items: [],
           subtotal: 0, cgst: 0, sgst: 0, igst: 0, total: 0,
           discount: 0, advance: 0, status: "open", notes: "",
         },
@@ -61,7 +62,34 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
   const setLine = (i: number, patch: Partial<QuotationLine>) =>
     setDraft((d) => ({ ...d, items: d.items.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
 
+  // The product pop-up: `line` set = choosing the product for that one line; otherwise adding any number of products.
+  const [catalog, setCatalog] = useState<{ line?: number } | null>(null);
+  const sameItem = (l: QuotationLine, productId: string, vk: string) => l.productId === productId && (l.variantKey ?? "") === vk;
+  const qtyOf = (productId: string, vk: string) => draft.items.reduce((n, l) => n + (sameItem(l, productId, vk) ? l.qty : 0), 0);
+  const setCatalogQty = (picked: PickedLine, qty: number) => {
+    const vk = picked.variantKey ?? "";
+    const pid = picked.productId ?? "";
+    setDraft((d) => {
+      if (catalog?.line !== undefined) {
+        return { ...d, items: d.items.map((l, j) => (j === catalog.line ? { ...l, ...picked, qty: Math.max(1, l.qty || 1) } : l)) };
+      }
+      const at = d.items.findIndex((l) => sameItem(l, pid, vk));
+      if (at >= 0) {
+        return { ...d, items: qty <= 0 ? d.items.filter((_, j) => j !== at) : d.items.map((l, j) => (j === at ? { ...l, qty } : l)) };
+      }
+      if (qty <= 0) return d;
+      // Reuse a blank row if there is one, else add a new row.
+      const blank = d.items.findIndex((l) => !l.productId && !l.name.trim());
+      const line: QuotationLine = { ...emptyLine(), ...picked, qty };
+      return { ...d, items: blank >= 0 ? d.items.map((l, j) => (j === blank ? line : l)) : [...d.items, line] };
+    });
+  };
+
   async function save() {
+    if (draft.items.length === 0) {
+      setError("Add at least one product — use “Add products”.");
+      return;
+    }
     const loose = draft.items.findIndex((l) => !l.productId || !l.variantKey);
     if (loose >= 0) {
       setError(`Line ${loose + 1}: pick a product from the catalogue, so this quotation can become a real order later.`);
@@ -110,6 +138,15 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 rounded-2xl border border-ink-100 bg-white p-6 shadow-card md:p-8">
+      {catalog && (
+        <ProductCatalogModal
+          branch={draft.branch}
+          single={catalog.line !== undefined}
+          qtyOf={qtyOf}
+          onChange={setCatalogQty}
+          onClose={() => setCatalog(null)}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 pb-4">
         <div>
           <h2 className="text-xl font-bold text-ink-900">{quotation ? `Edit quotation ${quotation.number}` : "New quotation"}</h2>
@@ -194,10 +231,10 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
         <div className="mb-2 flex items-center justify-between">
           <p className="text-sm font-bold text-ink-900">Items</p>
           <button
-            onClick={() => setDraft((d) => ({ ...d, items: [...d.items, emptyLine()] }))}
-            className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ivory-100"
+            onClick={() => setCatalog({})}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-ink-900 px-3.5 py-2 text-xs font-semibold text-ivory-50 hover:bg-ink-800"
           >
-            <Plus className="h-3.5 w-3.5" /> Add line
+            <Plus className="h-3.5 w-3.5" /> Add products
           </button>
         </div>
         <div className="overflow-x-auto rounded-xl border border-ink-100">
@@ -223,12 +260,14 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
                       <>
                         <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} readOnly={!fullAdmin} placeholder="Item" />
                         <input className={cn(inp, "mt-1 text-xs")} value={l.note ?? ""} onChange={(e) => setLine(i, { note: e.target.value })} placeholder="Note (optional)" />
-                        <button type="button" onClick={() => setLine(i, { productId: undefined, variantKey: undefined })} className="mt-1 text-[11px] font-semibold text-ink-500 underline hover:text-gold-600">Change product</button>
+                        <button type="button" onClick={() => setCatalog({ line: i })} className="mt-1 text-[11px] font-semibold text-ink-500 underline hover:text-gold-600">Change product</button>
                       </>
                     ) : (
                       <>
-                        <LineProductPicker branch={draft.branch} onPick={(p) => setLine(i, p)} />
-                        <p className="mt-1 text-[11px] text-danger">{l.name ? `“${l.name}” isn't linked to a product yet — search and pick it.` : "Pick a product from the catalogue."}</p>
+                        <button type="button" onClick={() => setCatalog({ line: i })} className="flex w-full min-w-[200px] items-center gap-2 rounded-lg border border-dashed border-gold-500/60 bg-gold-50/50 px-3 py-2 text-left text-sm font-semibold text-gold-800 hover:bg-gold-50">
+                          <PackageSearch className="h-4 w-4" /> Choose product…
+                        </button>
+                        <p className="mt-1 text-[11px] text-danger">{l.name ? `“${l.name}” isn't linked to a product yet — choose it.` : "Pick a product from the catalogue."}</p>
                       </>
                     )}
                   </td>
@@ -257,7 +296,13 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
                 </tr>
               ))}
               {draft.items.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-ink-400">No items. Click “Add line”.</td></tr>
+                <tr>
+                  <td colSpan={9} className="px-3 py-10 text-center">
+                    <button onClick={() => setCatalog({})} className="inline-flex items-center gap-2 rounded-xl border border-dashed border-gold-500/60 bg-gold-50/50 px-5 py-3 text-sm font-semibold text-gold-800 hover:bg-gold-50">
+                      <PackageSearch className="h-4 w-4" /> Browse products to add
+                    </button>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
