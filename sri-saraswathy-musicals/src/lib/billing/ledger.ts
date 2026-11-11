@@ -132,9 +132,13 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
  *  The bill's own random id (shown to the customer on the receipt) stays the
  *  invoice's `refId`/`id`; the GST `number` is a separate sequential series
  *  that is never shown to the customer. */
-export async function recordBillInvoice(bill: Bill): Promise<void> {
+export async function recordBillInvoice(bill: Bill, opts: { fresh?: boolean } = {}): Promise<Invoice | undefined> {
   try {
-    if (await getInvoiceByRefId(bill.id)) return;
+    // `fresh`: the bill was inserted a moment ago in this same request, so it can't have an invoice yet.
+    if (!opts.fresh) {
+      const existing = await getInvoiceByRefId(bill.id);
+      if (existing) return existing;
+    }
     const taxed = Boolean(bill.gstEnabled);
     const gstTotal = taxed ? Math.round(bill.gst ?? 0) : 0;
     const cgst = taxed ? Math.round(bill.cgst ?? gstTotal / 2) : 0;
@@ -156,10 +160,9 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       instruction: i.instruction?.trim() || undefined,
     }));
 
-    const number = await nextInvoiceNumber(bill.createdAt);
-    await insertInvoice({
+    return await createInvoice({
       id: bill.id,
-      number,
+      number: "",
       date: bill.createdAt,
       customer: bill.customerName || "Walk-in",
       branch: bill.branch,
@@ -178,9 +181,10 @@ export async function recordBillInvoice(bill: Bill): Promise<void> {
       customerPhone: bill.phone || null,
       delivery,
       discount: overall,
-    });
+    }, nextInvoiceNumber(bill.createdAt));
   } catch (err) {
     console.error("[ledger] recordBillInvoice failed:", err);
+    return undefined;
   }
 }
 
@@ -210,6 +214,8 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
     const { total, cgst, sgst } = bk;
     const taxable = bk.subtotal;
     const paid = total - (t.advance || 0) <= 0;
+    // REP-02: a part-paid repair gets a payment receipt, not a tax invoice — the invoice is minted on full payment.
+    if (!existing && !paid) return;
 
     if (existing) {
       // The invoice is minted once (at ready/completed, often off the intake

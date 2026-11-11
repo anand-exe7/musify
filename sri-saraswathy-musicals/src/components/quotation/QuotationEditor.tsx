@@ -10,6 +10,7 @@ import { effectiveBranch, useBranchScope } from "@/lib/store/branch";
 import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
 import { useAuth } from "@/lib/store/auth";
 import { LineProductPicker } from "@/components/quotation/LineProductPicker";
+import { isValidGstin } from "@/lib/gst/gstin";
 
 const GST_RATES = [0, 5, 12, 18, 28];
 const emptyLine = (): QuotationLine => ({ name: "", hsn: "", qty: 1, rate: 0, gst: 18, amount: 0 });
@@ -64,6 +65,11 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
     const loose = draft.items.findIndex((l) => !l.productId || !l.variantKey);
     if (loose >= 0) {
       setError(`Line ${loose + 1}: pick a product from the catalogue, so this quotation can become a real order later.`);
+      return;
+    }
+    // QUO-03: reject a malformed GSTIN before hitting the server.
+    if ((draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin)) {
+      setError("Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5), or leave it blank.");
       return;
     }
     setSaving(true);
@@ -140,7 +146,17 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
         </div>
         <div>
           <label className={lbl}>GSTIN (optional)</label>
-          <input className={inp} value={draft.customerGstin ?? ""} onChange={(e) => set("customerGstin", e.target.value.toUpperCase())} />
+          <input
+            className={cn(inp, (draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin) && "border-danger focus:border-danger")}
+            value={draft.customerGstin ?? ""}
+            onChange={(e) => set("customerGstin", e.target.value.toUpperCase())}
+            maxLength={15}
+            aria-invalid={!!((draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin))}
+            placeholder="33ABCDE1234F1Z5"
+          />
+          {(draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin) && (
+            <p className="mt-1 text-[11px] text-danger">Must be a valid 15-character GSTIN.</p>
+          )}
         </div>
         <div>
           <label className={lbl}>Branch</label>

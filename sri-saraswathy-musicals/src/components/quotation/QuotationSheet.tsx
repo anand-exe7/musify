@@ -2,6 +2,7 @@ import type { Quotation } from "@/types";
 import { BUSINESS, branchInfo } from "@/lib/data/business";
 import { amountInWords, formatINR } from "@/lib/utils";
 import { QUOTE_TERMS } from "@/lib/quotation";
+import { gstSummary, taxLabel } from "@/lib/print/doc";
 
 /** Isolates `#quotation-sheet` so Print / Save-PDF captures only the quotation. */
 export const QUOTATION_PRINT_CSS = `
@@ -27,6 +28,8 @@ export function QuotationSheet({ quotation: q }: { quotation: Quotation }) {
   const showDiscount = q.items.some((l) => (l.discount ?? 0) > 0);
   const itemsTotal = q.items.reduce((n, l) => n + l.amount, 0);
   const advance = Math.min(q.advance ?? 0, q.total);
+  // QUO-02: GST percentage + CGST / SGST split, as on the invoice.
+  const gs = gstSummary(q.items, q.cgst, q.sgst, q.igst ?? 0);
 
   return (
     <div id="quotation-sheet" className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
@@ -139,13 +142,14 @@ export function QuotationSheet({ quotation: q }: { quotation: Quotation }) {
               <>
                 <div className="flex justify-between px-3 text-ink-600"><dt>Taxable value</dt><dd className="tabular-nums">{formatINR(q.subtotal)}</dd></div>
                 {(q.igst ?? 0) > 0 ? (
-                  <div className="flex justify-between px-3 text-ink-600"><dt>IGST</dt><dd className="tabular-nums">{formatINR(q.igst ?? 0)}</dd></div>
+                  <div className="flex justify-between px-3 text-ink-600"><dt>{taxLabel("IGST", gs)}</dt><dd className="tabular-nums">{formatINR(q.igst ?? 0)}</dd></div>
                 ) : (
                   <>
-                    <div className="flex justify-between px-3 text-ink-600"><dt>CGST</dt><dd className="tabular-nums">{formatINR(q.cgst)}</dd></div>
-                    <div className="flex justify-between px-3 text-ink-600"><dt>SGST</dt><dd className="tabular-nums">{formatINR(q.sgst)}</dd></div>
+                    <div className="flex justify-between px-3 text-ink-600"><dt>{taxLabel("CGST", gs)}</dt><dd className="tabular-nums">{formatINR(q.cgst)}</dd></div>
+                    <div className="flex justify-between px-3 text-ink-600"><dt>{taxLabel("SGST", gs)}</dt><dd className="tabular-nums">{formatINR(q.sgst)}</dd></div>
                   </>
                 )}
+                <div className="flex justify-between px-3 font-semibold text-ink-700"><dt>Total GST{gs.singleRate === null ? "" : ` (${gs.singleRate}%)`}</dt><dd className="tabular-nums">{formatINR(gs.totalTax)}</dd></div>
               </>
             )}
             <div className="mt-1 flex justify-between rounded-lg bg-ink-900 px-3 py-2.5 text-base font-bold text-ivory-50"><dt>Total</dt><dd className="tabular-nums">{formatINR(q.total)}</dd></div>

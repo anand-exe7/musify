@@ -96,7 +96,7 @@ describe("parts leave the branch's stock", () => {
 describe("advance counts as revenue", () => {
   it("counts an advance on an unfinished repair on the day it was taken", () => {
     const b = ticketAdvanceBill(ticket({ advance: 50000 }));
-    expect(b).toMatchObject({ id: "REP-1-ADV", total: 50000, source: "service", payment: "Advance", createdAt: "2026-10-01T10:00:00.000Z" });
+    expect(b).toMatchObject({ id: "REP-1-ADV", total: 50000, source: "service", payment: "CASH · part payment", createdAt: "2026-10-01T10:00:00.000Z" });
   });
 
   it("stops once the repair is billable (the full charge replaces it), and ignores cancelled or no-advance tickets", () => {

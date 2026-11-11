@@ -3,6 +3,8 @@
  * the customer inquiry form. Update the numbers/GSTIN here in one place.
  */
 
+import { waUrl } from "@/lib/whatsapp";
+
 export interface BranchInfo {
   /** Stable id stored in every `branch` column, e.g. "Branch 3". */
   key: string;
@@ -11,7 +13,7 @@ export interface BranchInfo {
   street: string;
   zip: string;
   phone: string;
-  // 12-digit dialable WhatsApp number (91 + 10 digits), used for wa.me links.
+  // 12-digit dialable WhatsApp number (91 + 10 digits), used for WhatsApp links.
   whatsapp: string;
   // Google Maps share link for the branch.
   maps: string;
@@ -77,14 +79,11 @@ export function branchInfo(key: string): BranchInfo {
 }
 
 /**
- * Build a wa.me deep-link. Indian 10-digit numbers get a 91 prefix; anything
- * already carrying a country code is used as-is. Text is fully URL-encoded so
- * newlines survive as %0A.
+ * WhatsApp link for `text` to `phone` — `https://api.whatsapp.com/send/?phone=…&text=…` (not `wa.me`, whose
+ * redirect breaks emojis). Indian 10-digit numbers get a 91 prefix. See `@/lib/whatsapp`.
  */
 export function waLink(phone: string, text: string): string {
-  const digits = (phone || "").replace(/\D/g, "");
-  const full = digits.length === 10 ? `91${digits}` : digits;
-  return `https://wa.me/${full}?text=${encodeURIComponent(text)}`;
+  return waUrl(phone, text);
 }
 
 /**
