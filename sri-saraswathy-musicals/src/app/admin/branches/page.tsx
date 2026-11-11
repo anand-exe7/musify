@@ -1,4 +1,5 @@
 "use client";
+import { LoadingInline } from "@/components/admin/LoadState";
 import { branchLabel } from "@/lib/stock";
 import { useEffect, useState } from "react";
 import { Building2, ShieldCheck, Check } from "lucide-react";
@@ -76,7 +77,7 @@ export default function BranchesPage() {
         <p className="mt-1 text-sm text-ink-500">Address and per-branch GSTIN used on invoices &amp; reports</p>
       </div>
 
-      {loading && <p className="text-sm text-ink-400">Loading branches…</p>}
+      {loading && <p className="py-6"><LoadingInline label="Loading branches…" /></p>}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {branches.map((b) => (

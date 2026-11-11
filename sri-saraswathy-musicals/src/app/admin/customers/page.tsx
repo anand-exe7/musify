@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Download, ExternalLink, Search, UsersRound } from "lucide-react";
 import { Pager } from "@/components/ui/Pager";
-import { LoadErrorBanner } from "@/components/admin/LoadState";
+import { LoadErrorBanner, LoadingInline } from "@/components/admin/LoadState";
 import { fetchJson, errMsg } from "@/lib/client/api";
 import { downloadCsv, rupees, stamp } from "@/lib/csv";
 import { formatPhone } from "@/lib/customers/phone";
@@ -64,7 +64,7 @@ function CustomerDetail({ id, fullAdmin }: { id: string; fullAdmin: boolean }) {
   }, [id]);
 
   if (error) return <p className="px-5 py-5 text-sm text-danger">{error}. Close it and open it again.</p>;
-  if (!d) return <p className="px-5 py-5 text-sm text-ink-400">Loading…</p>;
+  if (!d) return <p className="px-5 py-5"><LoadingInline label="Loading customer history…" /></p>;
 
   const c = d.customer;
   const counted = d.invoices.filter((i) => i.status !== "cancelled");
@@ -269,7 +269,7 @@ export default function CustomersPage() {
                 </td>
               </tr>
             )}
-            {loading && items.length === 0 && <tr><td colSpan={6} className="px-4 py-14 text-center text-sm text-ink-400">Loading…</td></tr>}
+            {loading && items.length === 0 && <tr><td colSpan={6} className="px-4 py-14 text-center text-sm text-ink-400"><LoadingInline label="Loading customers…" /></td></tr>}
           </tbody>
         </table>
       </div>

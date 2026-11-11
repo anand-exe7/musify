@@ -1,4 +1,5 @@
 "use client";
+import { LoadingPanel } from "@/components/admin/LoadState";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -111,9 +112,7 @@ function ReportInner() {
       </div>
 
       {state === "loading" ? (
-        <div className="grid place-items-center rounded-2xl border border-ink-100 bg-ivory-50 py-24 text-center text-ink-400">
-          Loading ledger…
-        </div>
+        <LoadingPanel label="Loading GST report…" />
       ) : state === "error" ? (
         <div className="grid place-items-center rounded-2xl border border-ink-100 bg-ivory-50 py-24 text-center">
           <p className="text-sm font-bold text-ink-900">You appear to be offline</p>
@@ -139,7 +138,7 @@ function ReportInner() {
 
 export default function GstReportPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-ink-400">Loading…</div>}>
+    <Suspense fallback={<div className="p-5 md:p-8"><LoadingPanel label="Opening GST report…" /></div>}>
       <ReportInner />
     </Suspense>
   );

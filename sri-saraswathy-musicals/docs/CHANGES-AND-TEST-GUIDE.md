@@ -337,6 +337,67 @@ IDs below match the client's *Detailed Requirements* document. Migrations **0037
 - **What:** a cancelled bill stays in the ledger marked *Cancelled*. It is left out of *Total billed* and out of all analytics. Its stock goes back to the branch, and every stock return is written to a new **Stock log**. The ledger has a **Paid / Pending / Cancelled** filter next to the date range.
 - **Where:** `/admin/invoices`; **Inventory → Stock log** button (`src/components/admin/StockLogModal.tsx`, table `stock_movements`, API `/api/stock-movements`).
 - **How to check:** cancel a counter bill and confirm (a) it still shows as Cancelled, (b) *Total billed* dropped, (c) Inventory → *Stock log* shows "Bill cancelled +N" for each item, (d) Analytics totals dropped.
+- **Checked live (11 Nov 2026):** `scripts/check-cancel-flow.ts` raised a 1-item bill (Guitar String Acoustic, Branch 1; invoice SSM/2026-27/0013) and cancelled it from the ledger. Stock went 4 → 3 → 4; the stock log entry "bill_cancelled Branch 1 +1" was written; the bill left the bills list; the invoice stayed as Cancelled; Total billed dropped by the bill amount. That test invoice stays in the ledger as Cancelled, because invoice numbers are never reused.
+- **Also fixed:**
+  - Choosing *Cancelled* in the invoice **Edit** form now does the full cancel (stock back + log), the same as the Cancel button. Before, it only changed the label.
+  - A cancelled invoice can't be switched back to Paid or Pending.
+  - After a cancel, the open Orders and Analytics screens refresh without a reload.
+  - The ledger's count tiles (Invoices, Online, In-store) now leave cancelled invoices out, like Total billed. The Invoices tile shows "+ N cancelled (not counted)".
+  - Switching the Source filter now goes back to page 1.
+
+### 7.7a Orders and Invoices tables tidied; print in place
+- **Orders** (`src/app/admin/orders/page.tsx`):
+  - No cell wraps any more, so "In-store", the tax-invoice number and the status stay on one line.
+  - The coupon now shows under its discount amount instead of in its own column.
+  - The Customer column takes the spare width, so there are no wide gaps between Coupon/Discount or Status/Actions.
+  - The bin button is now worded **Cancel bill**, and it explains that the stock goes back.
+- **Invoices ledger** (`src/app/admin/invoices/page.tsx`):
+  - Click anywhere on a row to open that invoice. The separate "View" link is gone.
+  - Cells don't wrap, so the "In-store" badge stays on one line.
+  - Cancelled rows are greyed, with the total struck through.
+- **Print from the ⋯ menu** (`src/components/print/RowOutputMenu.tsx`): Thermal 80 / 58 mm, A4 sheet and Download PDF now run on the same page, without opening the invoice in a new tab first. Quotations get the same.
+- **How to check:** on `/admin/invoices`, use ⋯ → Thermal · 80 mm. The print dialog opens straight away, with an 80 mm page size.
+
+### 7.7b Orders actions stacked; loading screens; faster Manage
+- **Orders actions:** the actions are one column of buttons, all the same width. **Invoice** is on top. Under it is **Manage** for online orders, or **Cancel** for counter bills (full admin only). While the server works, the cancel box shows "Cancelling…".
+- **Loading screens:**
+  - Every admin page has a `loading.tsx` with its own label, e.g. "Opening Orders…", shown the moment you click.
+  - The sidebar item you click shows a spinner and "Opening…" (`AdminSidebar.tsx`).
+  - Manage shows "Opening…", and a clicked Invoices row shows "Opening…".
+  - The Manage page buttons say what they are doing ("Marking as shipped…", "Cancelling order…").
+  - Plain "Loading…" text on Customers, Inventory, Users, Quotations, Branches and the GST report now has a spinner (`LoadingInline` / `LoadingPanel` in `src/components/admin/LoadState.tsx`).
+- **Speed:** reading the full product list takes about 35 s (3 MB), because the photos are stored in the database.
+  - The order **Manage** page now reads only the names of that order's products, in under 1 s.
+  - Orders and Analytics now read names from `/api/pos/product-names` (1 KB) instead of the whole catalogue.
+  - The service invoice page makes one fewer database call.
+- **Still slow:** the website's product list (`/api/products`) still carries the photos. It needs the same photo-by-URL change as the billing catalogue.
+
+### 7.7c Quotation product pop-up; Service list, report and payments (round 3)
+- **Quotation → Add products** (`src/components/quotation/ProductCatalogModal.tsx`, `QuotationEditor.tsx`):
+  - A pop-up shows every product with its photo, category chips, search, price and stock at the quotation's branch.
+  - Products with variants open a list of their variants. **+** adds an item and becomes **− qty +**; at 1, the − is a bin.
+  - The pop-up stays open, so you can add several products, then press Done.
+  - A line without a product has **Choose product…**, which opens the same pop-up for that one line.
+  - A quotation can't be saved with no items.
+- **Service → Tickets list** (`src/app/admin/service/page.tsx`):
+  - Filter by when the ticket was raised: All, Today, This week, This month, This year, or Custom (from/to dates).
+  - Other filters: status, payment mode ("Paid by Cash / GPay / Card / Bank / Other", or "Nothing paid yet") and branch.
+  - Sort by deadline, newest, oldest, amount high → low, amount low → high, or priority.
+  - New **Payment** column with the modes used (e.g. "Cash + GPay / UPI") and the number of payments. Charge and balance are merged into one **Amount** column.
+- **Service → Report** (`src/components/admin/ServiceReport.tsx`):
+  - The Ticket Intake graph shows bars again; before, every bar had zero height.
+  - It counts only the shown year, and each bar has its number on top.
+  - Hovering or tapping a month shows tickets raised and revenue in a box that stays inside the card.
+  - "This year" was added to the date filter, and "Advance collected" is now "Payments collected".
+- **Repair payments:**
+  - **Mark Completed** with money still owed no longer takes an invoice number. The tax invoice is issued only when the last payment comes in; until then the ticket has a payment receipt.
+  - Opening the receipt or invoice waits for the last payment to finish saving, with "Opening…" shown meanwhile. Paid, balance and history are always current.
+  - The repair's ledger invoice records the real modes (e.g. "Cash + GPay / UPI") instead of always "cash", and updates as payments are added.
+  - The tax invoice (A4 and thermal) lists every payment with its date, mode and receipt number. The payment receipt already did.
+  - In Orders and Analytics, each part payment is its own row (REP-…-P1, -P2), dated the day it was paid and carrying its own mode. Its Invoice button opens the ticket's payment receipt.
+- **Printing:** the ticket page button reads "Payment receipt · Print" or "Tax invoice · Print". The next screen has Thermal 80 / 58 mm, A4, PDF and WhatsApp.
+- **New ticket:** the mobile number takes digits only and stops at 10 (a pasted +91 / 0 is dropped).
+- **Checked:** both documents were viewed on a local test page (A4 and thermal 80 / 58), as were the intake graph with its hover box and the quotation pop-up. A new automated test confirms that a part-paid repair gets no tax invoice, and that full payment mints one recording "Cash + GPay / UPI".
 
 ### 7.8 Repair payments (REP-01, REP-02, REP-03, REP-04)
 - **What:**
