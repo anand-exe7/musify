@@ -1,14 +1,16 @@
 "use client";
+import { LoadingInline } from "@/components/admin/LoadState";
 import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { FileText, Search, Globe, Store, Wrench, ExternalLink, Receipt, Banknote } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { FileText, Search, Globe, Store, Wrench, ChevronRight, Receipt, Banknote, Loader2 } from "lucide-react";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 import { RowOutputMenu } from "@/components/print/RowOutputMenu";
 import { invoiceToDoc } from "@/lib/print/doc";
+import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 import { useBranchScope } from "@/lib/store/branch";
 import { AdminStat } from "@/components/admin/AdminStat";
 
@@ -45,6 +47,14 @@ export default function InvoicesLedgerPage() {
   const [to, setTo] = useState("");
   const [branch, setBranch] = useState("all");
   const allowed = useBranchScope((s) => s.allowed);
+  const router = useRouter();
+  // Which row is opening, so it shows a spinner until the invoice page takes over.
+  const [opening, setOpening] = useState<string | null>(null);
+  const [navPending, startNav] = useTransition();
+  const openInvoice = (id: string) => {
+    setOpening(id);
+    startNav(() => router.push(`/admin/invoices/${encodeURIComponent(id)}`));
+  };
 
   useEffect(() => {
     let alive = true;
@@ -97,17 +107,19 @@ export default function InvoicesLedgerPage() {
           v.id.toLowerCase().includes(q)),
     );
   }, [inScope, source, status, query]);
-  const pg = usePaged(rows, `${query}|${from}|${to}|${branch}|${status}`);
+  const pg = usePaged(rows, `${query}|${from}|${to}|${branch}|${status}|${source}`);
 
   const stats = useMemo(() => {
     const sum = (list: Invoice[]) => list.reduce((n, v) => n + v.total, 0);
     // LED-03: cancelled bills stay visible in the ledger but are never counted in "Total billed".
+    // The count tiles leave them out too, so every tile describes the same set of live sales.
     const live = inScope.filter((v) => v.status !== "cancelled");
     return {
-      count: inScope.length,
+      count: live.length,
+      cancelled: inScope.length - live.length,
       total: sum(live),
-      web: inScope.filter((v) => v.source === "web").length,
-      pos: inScope.filter((v) => v.source === "pos").length,
+      web: live.filter((v) => v.source === "web").length,
+      pos: live.filter((v) => v.source === "pos").length,
     };
   }, [inScope]);
   const hasFilter = !!(from || to || branch !== "all");
@@ -140,7 +152,7 @@ export default function InvoicesLedgerPage() {
 
       {/* Stats */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <AdminStat label="Invoices" value={stat(stats.count)} icon={<Receipt className="h-4 w-4" />} accent="ink" />
+        <AdminStat label="Invoices" value={stat(stats.count)} hint={!loading && !error && stats.cancelled > 0 ? `+ ${stats.cancelled} cancelled (not counted)` : undefined} icon={<Receipt className="h-4 w-4" />} accent="ink" />
         <AdminStat label="Total billed" value={loading ? "…" : error ? "—" : formatINR(stats.total)} icon={<Banknote className="h-4 w-4" />} accent="gold" />
         <AdminStat label="Online" value={stat(stats.web)} icon={<Globe className="h-4 w-4" />} accent="green" />
         <AdminStat label="In-store" value={stat(stats.pos)} icon={<Store className="h-4 w-4" />} accent="info" />
@@ -211,14 +223,14 @@ export default function InvoicesLedgerPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table — click a row to open its invoice. Cells don't wrap; Customer takes the spare width. */}
       <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[860px] text-sm">
           <thead>
-            <tr className="border-b border-ink-100 text-left [&>th]:px-4 [&>th]:py-3 [&>th]:text-[10px] [&>th]:font-bold [&>th]:uppercase [&>th]:tracking-[0.14em] [&>th]:text-ink-500">
+            <tr className="border-b border-ink-100 text-left [&>th]:whitespace-nowrap [&>th]:px-4 [&>th]:py-3 [&>th]:text-[10px] [&>th]:font-bold [&>th]:uppercase [&>th]:tracking-[0.14em] [&>th]:text-ink-500">
               <th>Invoice</th>
               <th>Date</th>
-              <th>Customer</th>
+              <th className="w-full">Customer</th>
               <th>Branch</th>
               <th>Source</th>
               <th>Payment</th>
@@ -229,7 +241,7 @@ export default function InvoicesLedgerPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">Loading ledger…</td></tr>
+              <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400"><LoadingInline label="Loading invoices…" /></td></tr>
             ) : error ? (
               <tr>
                 <td colSpan={9} className="px-4 py-16 text-center">
@@ -238,40 +250,57 @@ export default function InvoicesLedgerPage() {
                 </td>
               </tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">No invoices yet.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">{invoices.length === 0 ? "No invoices yet." : "No invoices match these filters."}</td></tr>
             ) : (
               pg.items.map((v) => (
-                <tr key={v.id} className="border-b border-ink-100 last:border-0 hover:bg-ivory-100/60">
-                  <td className="px-4 py-3 font-semibold text-ink-900">{v.number}{v.reference && <span className="block text-[11px] font-normal text-ink-400">{v.reference}</span>}</td>
-                  <td className="px-4 py-3 text-ink-600">{fmtDate(v.date)}</td>
-                  <td className="px-4 py-3 text-ink-700">{v.customer}</td>
-                  <td className="px-4 py-3 text-ink-600">{branchLabel(v.branch)}</td>
-                  <td className="px-4 py-3">
+                <tr
+                  key={v.id}
+                  onClick={() => openInvoice(v.id)}
+                  onKeyDown={(e) => e.key === "Enter" && openInvoice(v.id)}
+                  tabIndex={0}
+                  title="Open invoice"
+                  className={cn(
+                    "group cursor-pointer border-b border-ink-100 last:border-0 hover:bg-ivory-100/70 focus:bg-ivory-100/70 focus:outline-none [&>td]:whitespace-nowrap [&>td]:px-4 [&>td]:py-3 [&>td]:align-middle",
+                    v.status === "cancelled" && "text-ink-400 [&_.amt]:line-through",
+                  )}
+                >
+                  <td>
+                    <p className="font-semibold text-ink-900 group-hover:text-gold-700">{v.number}</p>
+                    {v.reference && <p className="text-[11px] text-ink-400">{v.reference}</p>}
+                  </td>
+                  <td className="text-ink-600">{fmtDate(v.date)}</td>
+                  <td className="max-w-[16rem] truncate text-ink-700">{v.customer}</td>
+                  <td className="text-ink-600">{branchLabel(v.branch)}</td>
+                  <td>
                     <span className={cn(
-                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                      "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
                       v.source === "web" ? "bg-info/10 text-info" : v.source === "pos" ? "bg-gold-100 text-gold-700" : v.source === "service" ? "bg-[#8B5CF6]/15 text-[#6D28D9]" : "bg-ink-100 text-ink-600",
                     )}>
                       {v.source === "web" ? <Globe className="h-3 w-3" /> : v.source === "pos" ? <Store className="h-3 w-3" /> : v.source === "service" ? <Wrench className="h-3 w-3" /> : null}
                       {v.source === "web" ? "Online" : v.source === "pos" ? "In-store" : v.source === "service" ? "Service" : "Manual"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 uppercase text-ink-600">{v.paymentMode}</td>
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-ink-900">{formatINR(v.total)}</td>
-                  <td className="px-4 py-3">
+                  <td className="max-w-[10rem] truncate uppercase text-ink-600">{v.paymentMode}</td>
+                  <td className="amt text-right font-semibold tabular-nums text-ink-900">{formatINR(v.total)}</td>
+                  <td>
                     <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[v.status] ?? "bg-ink-100 text-ink-600")}>{v.status}</span>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Link href={`/admin/invoices/${v.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-gold-600 hover:text-gold-700">
-                        View <ExternalLink className="h-3 w-3" />
-                      </Link>
-                      {/* LED-01: WhatsApp / thermal / A4 / download, straight from the ledger. */}
+                  <td className="text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      {/* LED-01: thermal / A4 / PDF print right here; WhatsApp sends from here. */}
                       <RowOutputMenu
                         href={`/admin/invoices/${v.id}`}
                         doc={invoiceToDoc(v)}
                         phone={v.customerPhone}
                         shareLink={v.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(v.refId)}` : undefined}
+                        sheet={{ node: <TaxInvoiceSheet invoice={v} />, css: TAX_INVOICE_PRINT_CSS, id: "invoice-sheet" }}
+                        pdfName={`Invoice-${v.number}`}
                       />
+                      {navPending && opening === v.id ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gold-600"><Loader2 className="h-4 w-4 animate-spin" /> Opening…</span>
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-ink-300 group-hover:text-gold-600" aria-hidden />
+                      )}
                     </div>
                   </td>
                 </tr>

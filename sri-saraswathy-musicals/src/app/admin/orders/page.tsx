@@ -7,12 +7,17 @@ import { useAuth } from "@/lib/store/auth";
 import { usePOS } from "@/lib/store/pos";
 import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { inPeriod, type Period, type Source } from "@/lib/store/pos";
-import { useAllSales } from "@/lib/client/sales";
+import { useAllSales, ticketIdOfSaleRow } from "@/lib/client/sales";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
-import { ShoppingCart, Trash2, Download, ExternalLink, Eye, Truck } from "lucide-react";
+import { ShoppingCart, Ban, Download, ExternalLink, Eye, Truck, Ticket, Loader2 } from "lucide-react";
+import { LinkIcon, LinkLabel } from "@/components/admin/LinkPending";
 import { branchLabel } from "@/lib/stock";
+
+/** The Orders table's action buttons: all the same size, stacked in one column. */
+const actBtn = (tone: string) =>
+  cn("inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors disabled:opacity-60", tone);
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -72,6 +77,14 @@ export default function OrdersPage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"new" | "old" | "high" | "low">("new");
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelBill = async () => {
+    if (!confirmId) return;
+    setCancelling(true);
+    const ok = await deleteBill(confirmId);
+    setCancelling(false);
+    if (ok) setConfirmId(null);
+  };
 
   const rows = useMemo(() => {
     let list = sales.filter(
@@ -110,13 +123,15 @@ export default function OrdersPage() {
     <div className="p-5 md:p-8">
       {/* Confirm modal */}
       {confirmId && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setConfirmId(null)}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => !cancelling && setConfirmId(null)}>
           <div className="w-full max-w-sm rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-ink-900">Delete POS bill?</h3>
-            <p className="mt-2 text-sm text-ink-500">{confirmId} will be removed and its revenue/coupon impact will disappear from Analytics. This cannot be undone.</p>
+            <h3 className="text-lg font-bold text-ink-900">Cancel this bill?</h3>
+            <p className="mt-2 text-sm text-ink-500">{refOf(confirmId).toUpperCase()} is taken off the orders list and out of Analytics. Its items go back into the branch stock (logged in the stock history), and its tax invoice stays in the ledger marked Cancelled. This can&apos;t be undone.</p>
             <div className="mt-5 flex gap-2">
-              <button onClick={() => setConfirmId(null)} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-              <button onClick={() => { deleteBill(confirmId); setConfirmId(null); }} className="flex-1 rounded-xl bg-danger py-2.5 text-sm font-semibold text-white hover:opacity-90">Delete</button>
+              <button onClick={() => setConfirmId(null)} disabled={cancelling} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:opacity-50">Keep bill</button>
+              <button onClick={() => void cancelBill()} disabled={cancelling} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-danger py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-80">
+                {cancelling ? <><Loader2 className="h-4 w-4 animate-spin" /> Cancelling…</> : "Cancel bill"}
+              </button>
             </div>
           </div>
         </div>
@@ -176,17 +191,16 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Table — generous cell padding + two-line Order / Customer cells so the
-          row reads like a card instead of a crammed grid. */}
+      {/* Table — every cell stays on one line; the Customer column takes the spare width so the
+          other columns sit close together. Coupon is shown with the discount it gave. */}
       <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50 shadow-[0_1px_2px_rgba(10,9,8,0.03)]">
-        <table className="w-full min-w-[1120px] text-sm">
+        <table className="w-full min-w-[980px] text-sm">
           <thead>
-            <tr className="border-b border-ink-100 bg-[#F4F1EA]/60 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500 [&>th]:px-4 [&>th]:py-3.5">
+            <tr className="border-b border-ink-100 bg-[#F4F1EA]/60 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500 [&>th]:whitespace-nowrap [&>th]:px-4 [&>th]:py-3.5">
               <th className="!pl-6">Order</th>
-              <th>Customer</th>
+              <th className="w-full">Customer</th>
               <th>Type</th>
-              <th>Tax Invoice</th>
-              <th>Coupon</th>
+              <th>Tax invoice</th>
               <th className="text-right">Discount</th>
               <th className="text-right">Delivery</th>
               <th className="text-right">Total</th>
@@ -195,113 +209,86 @@ export default function OrdersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100/70">
-            {pg.items.map((b) => (
-              <tr key={b.id} className="text-ink-800 transition-colors hover:bg-[#FAF7EF]/70 [&>td]:px-4 [&>td]:py-4 [&>td]:align-middle">
-                {/* Order id — the id is primary, date lives right under it so
-                    the "Date" column doesn't need its own cramped slot. */}
-                <td className="!pl-6">
-                  <p className="font-semibold tracking-tight text-ink-900">{refOf(b.id).toUpperCase()}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-400">{fmtDate(b.createdAt)}</p>
-                </td>
-                {/* Customer + phone stacked — reads at a glance. */}
-                <td>
-                  <p className="font-medium text-ink-900">{b.customerName}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-500">{b.phone || "—"}</p>
-                </td>
-                <td>
-                  <span className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider",
-                    b.source === "online"
-                      ? "bg-success/15 text-success"
-                      : b.source === "service"
-                        ? "bg-[#8B5CF6]/15 text-[#6D28D9]"
-                        : "bg-gold-100 text-gold-700",
-                  )}>
-                    <span className={cn("h-1.5 w-1.5 rounded-full",
-                      b.source === "online" ? "bg-success" : b.source === "service" ? "bg-[#8B5CF6]" : "bg-gold-500",
-                    )} />
-                    {b.source === "online" ? "Online" : b.source === "service" ? "Service" : "In-store"}
-                  </span>
-                </td>
-                <td>
-                  {invByRef[b.id] ? (
-                    <Link
-                      href={`/admin/invoices/${invByRef[b.id].id}`}
-                      target="_blank"
-                      title="Open GST tax invoice"
-                      className="inline-flex items-center gap-1 font-semibold text-gold-700 hover:text-gold-800"
-                    >
-                      {invByRef[b.id].number}
-                      <ExternalLink className="h-3 w-3 text-ink-300" />
-                    </Link>
-                  ) : (
-                    <span className="text-ink-300">—</span>
-                  )}
-                </td>
-                <td className="text-gold-700">{b.coupon || <span className="text-ink-300">—</span>}</td>
-                <td className="text-right tabular-nums text-ink-600">
-                  {b.discount ? formatINR(b.discount) : <span className="text-ink-300">—</span>}
-                </td>
-                <td className="text-right tabular-nums text-ink-600">
-                  {b.delivery ? formatINR(b.delivery) : <span className="text-ink-300">—</span>}
-                </td>
-                <td className="text-right text-base font-bold tabular-nums tracking-tight text-ink-900">
-                  {formatINR(b.total)}
-                </td>
-                <td>
-                  {(() => {
-                    const st = statusPill(b);
-                    return (
-                      <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider", st.tone)}>
-                        <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
-                        {st.label}
-                      </span>
-                    );
-                  })()}
-                </td>
-                {/* Actions — icon buttons grouped in a soft hairline pill so
-                    hovering a row doesn't light up unrelated areas. */}
-                <td className="!pr-6">
-                  <div className="flex items-center justify-end gap-1">
-                    {b.source === "online" && (
-                      <Link
-                        href={`/admin/orders/${encodeURIComponent(b.id)}`}
-                        title="Open order — status, courier and tracking"
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-gold-500/50 bg-gold-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gold-800 transition-colors hover:bg-gold-100"
-                      >
-                        <Truck className="h-3.5 w-3.5" /> Manage
+            {pg.items.map((b) => {
+              const st = statusPill(b);
+              const inv = invByRef[b.id];
+              return (
+                <tr key={b.id} className="text-ink-800 transition-colors hover:bg-[#FAF7EF]/70 [&>td]:whitespace-nowrap [&>td]:px-4 [&>td]:py-3.5 [&>td]:align-middle">
+                  <td className="!pl-6">
+                    <p className="font-semibold tracking-tight text-ink-900">{refOf(b.id).toUpperCase()}</p>
+                    <p className="mt-0.5 text-[11px] text-ink-400">{fmtDate(b.createdAt)}</p>
+                  </td>
+                  <td className="max-w-[18rem]">
+                    <p className="truncate font-medium text-ink-900">{b.customerName}</p>
+                    <p className="mt-0.5 text-[11px] text-ink-500">{b.phone || "—"}</p>
+                  </td>
+                  <td>
+                    <span className={cn(
+                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider",
+                      b.source === "online" ? "bg-success/15 text-success" : b.source === "service" ? "bg-[#8B5CF6]/15 text-[#6D28D9]" : "bg-gold-100 text-gold-700",
+                    )}>
+                      <span className={cn("h-1.5 w-1.5 rounded-full", b.source === "online" ? "bg-success" : b.source === "service" ? "bg-[#8B5CF6]" : "bg-gold-500")} />
+                      {b.source === "online" ? "Online" : b.source === "service" ? "Service" : "In-store"}
+                    </span>
+                  </td>
+                  <td>
+                    {inv ? (
+                      <Link href={`/admin/invoices/${inv.id}`} target="_blank" title="Open GST tax invoice" className="inline-flex items-center gap-1 font-semibold text-gold-700 hover:text-gold-800">
+                        {inv.number}
+                        <ExternalLink className="h-3 w-3 text-ink-300" />
                       </Link>
-                    )}
-                    <Link
-                      href={`/invoice/${b.id}`}
-                      target="_blank"
-                      title="View invoice"
-                      className="group/btn inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-700 transition-colors hover:border-gold-500 hover:bg-gold-50 hover:text-gold-700"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> Invoice
-                      <ExternalLink className="h-3 w-3 text-ink-300 group-hover/btn:text-gold-500" />
-                    </Link>
-                    {b.source === "offline" && isFullAdmin ? (
-                      <button
-                        onClick={() => setConfirmId(b.id)}
-                        title="Delete POS bill"
-                        aria-label="Delete bill"
-                        className="grid h-8 w-8 place-items-center rounded-lg border border-transparent text-ink-400 transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     ) : (
-                      <span className="h-8 w-8" aria-hidden />
+                      <span className="text-ink-300">—</span>
                     )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="text-right tabular-nums text-ink-600">
+                    {b.discount ? formatINR(b.discount) : <span className="text-ink-300">—</span>}
+                    {b.coupon && (
+                      <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-700" title="Coupon used">
+                        <Ticket className="h-3 w-3" /> {b.coupon}
+                      </p>
+                    )}
+                  </td>
+                  <td className="text-right tabular-nums text-ink-600">
+                    {b.delivery ? formatINR(b.delivery) : <span className="text-ink-300">—</span>}
+                  </td>
+                  <td className="text-right text-base font-bold tabular-nums tracking-tight text-ink-900">{formatINR(b.total)}</td>
+                  <td>
+                    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider", st.tone)}>
+                      <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
+                      {st.label}
+                    </span>
+                  </td>
+                  {/* Actions — one column of equal-width buttons: Invoice on top, then Manage (online) or Cancel (counter bill). */}
+                  <td className="!pr-6">
+                    <div className="ml-auto flex w-[8.5rem] flex-col gap-1.5">
+                      <Link href={`/invoice/${b.source === "service" ? ticketIdOfSaleRow(b.id) : b.id}`} target="_blank" title={b.source === "service" && b.id !== ticketIdOfSaleRow(b.id) ? "Payment receipt" : "View invoice"} className={actBtn("border-ink-200 bg-ivory-50 text-ink-700 hover:border-gold-500 hover:bg-gold-50 hover:text-gold-700")}>
+                        <Eye className="h-3.5 w-3.5" /> Invoice
+                      </Link>
+                      {b.source === "online" && (
+                        <Link href={`/admin/orders/${encodeURIComponent(b.id)}`} title="Open order — status, courier and tracking" className={actBtn("border-gold-500/50 bg-gold-50 text-gold-800 hover:bg-gold-100")}>
+                          <LinkIcon icon={<Truck className="h-3.5 w-3.5" />} className="h-3.5 w-3.5" />
+                          <LinkLabel label="Manage" />
+                        </Link>
+                      )}
+                      {b.source === "offline" && isFullAdmin && (
+                        <button onClick={() => setConfirmId(b.id)} title="Cancel this bill — stock goes back" className={actBtn("border-danger/25 bg-ivory-50 text-danger/80 hover:border-danger/50 hover:bg-danger/10 hover:text-danger")}>
+                          <Ban className="h-3.5 w-3.5" /> Cancel
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {loading && rows.length === 0 && (
+              <tr><td colSpan={9} className="px-5 py-16 text-center text-sm text-ink-500"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-gold-500" />Loading orders…</td></tr>
+            )}
             {!loading && loadFailed && (
-              <tr><td colSpan={10} className="px-5 py-10 text-center text-sm font-semibold text-danger">{errorMessage ?? "Couldn't load orders."} The list below may be incomplete — don&apos;t read it as &ldquo;no orders&rdquo;.</td></tr>
+              <tr><td colSpan={9} className="px-5 py-10 text-center text-sm font-semibold text-danger">{errorMessage ?? "Couldn't load orders."} The list below may be incomplete — don&apos;t read it as &ldquo;no orders&rdquo;.</td></tr>
             )}
             {!loading && !loadFailed && rows.length === 0 && (
-              <tr><td colSpan={10} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
+              <tr><td colSpan={9} className="px-5 py-16 text-center text-sm text-ink-400">No orders match these filters.</td></tr>
             )}
           </tbody>
         </table>

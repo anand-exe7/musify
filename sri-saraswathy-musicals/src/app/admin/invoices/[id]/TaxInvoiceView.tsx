@@ -7,6 +7,12 @@ import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/Tax
 import { InvoiceEditor } from "./InvoiceEditor";
 import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
+import { usePOS } from "@/lib/store/pos";
+
+/** A cancelled counter bill leaves the bills list and its stock comes back — re-read both so every open screen agrees. */
+function refreshAfterCancel(inv: Invoice) {
+  if (inv.status === "cancelled" && inv.source === "pos") void usePOS.getState().hydrate();
+}
 
 /**
  * Admin wrapper around the shared tax-invoice sheet — same content the
@@ -26,8 +32,11 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
     setCancelling(true);
     try {
       const res = await fetch(`/api/invoices/${encodeURIComponent(current.id)}`, { method: "DELETE" });
-      if (res.ok) setCurrent((await res.json()) as Invoice);
-      else alert(`Couldn't cancel the invoice (${res.status})`);
+      if (res.ok) {
+        const next = (await res.json()) as Invoice;
+        setCurrent(next);
+        refreshAfterCancel(next);
+      } else alert(`Couldn't cancel the invoice (${res.status})`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Couldn't cancel the invoice");
     } finally {
@@ -89,6 +98,7 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
           invoice={current}
           onCancel={() => setEditing(false)}
           onSaved={(next) => {
+            if (current.status !== "cancelled") refreshAfterCancel(next);
             setCurrent(next);
             setEditing(false);
           }}

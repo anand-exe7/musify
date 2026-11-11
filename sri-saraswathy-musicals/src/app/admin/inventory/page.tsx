@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { LoadErrorBanner } from "@/components/admin/LoadState";
+import { LoadErrorBanner, LoadingInline } from "@/components/admin/LoadState";
 import { usePOS, productsChanged, type InvProduct } from "@/lib/store/pos";
 import { useSettings } from "@/lib/store/settings";
 import { Pager } from "@/components/ui/Pager";
@@ -397,7 +397,7 @@ export default function InventoryPage() {
                   {isOpen && (
                     <tr className="border-b border-ink-100 bg-ink-900/[0.025]">
                       <td colSpan={cols} className="px-4 py-3 pl-14">
-                        {(vs === undefined || vs === "loading") && <p className="py-3 text-xs text-ink-400">Loading variants…</p>}
+                        {(vs === undefined || vs === "loading") && <p className="py-3"><LoadingInline label="Loading variants…" /></p>}
                         {vs === "error" && (
                           <p className="py-3 text-xs text-danger">Couldn&apos;t load the variants. <button onClick={() => loadVariants(p.id)} className="font-semibold underline">Try again</button></p>
                         )}
@@ -445,7 +445,7 @@ export default function InventoryPage() {
                 </Fragment>
               );
             })}
-            {!data && loading && <tr><td colSpan={cols + 0} className="py-16 text-center text-sm text-ink-400">Loading inventory…</td></tr>}
+            {!data && loading && <tr><td colSpan={cols + 0} className="py-16 text-center text-sm text-ink-400"><LoadingInline label="Loading inventory…" /></td></tr>}
             {data && items.length === 0 && <tr><td colSpan={cols} className="py-16 text-center text-sm text-ink-400">No products match these filters.</td></tr>}
           </tbody>
         </table>

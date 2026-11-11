@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Check, ExternalLink, Mail, MapPin, Package, Phone, Truck, Undo2 } from "lucide-react";
+import { ArrowLeft, Ban, Check, ExternalLink, Loader2, Mail, MapPin, Package, Phone, Truck, Undo2 } from "lucide-react";
 import type { Order } from "@/types";
 import { cn, formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
@@ -187,13 +187,13 @@ export function OrderView({ order: initial, names, invoice }: {
               {order.status === "processing" && (
                 <button onClick={() => move("shipped", order.email ? "Marked as shipped. The customer has been emailed." : "Marked as shipped.")} disabled={busy !== null}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-3 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60">
-                  <Truck className="h-4 w-4" /> {busy === "shipped" ? "Saving…" : "Mark as shipped"}
+                  {busy === "shipped" ? <><Loader2 className="h-4 w-4 animate-spin" /> Marking as shipped…</> : <><Truck className="h-4 w-4" /> Mark as shipped</>}
                 </button>
               )}
               {order.status === "shipped" && (
                 <button onClick={() => move("delivered", "Marked as delivered.")} disabled={busy !== null}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-3 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60">
-                  <Check className="h-4 w-4" /> {busy === "delivered" ? "Saving…" : "Mark as delivered"}
+                  {busy === "delivered" ? <><Loader2 className="h-4 w-4 animate-spin" /> Marking as delivered…</> : <><Check className="h-4 w-4" /> Mark as delivered</>}
                 </button>
               )}
               {order.status === "shipped" && (
@@ -211,13 +211,13 @@ export function OrderView({ order: initial, names, invoice }: {
               {detailsChanged && (
                 <button onClick={() => send({ courier: courier.trim(), trackingNo: trackingNo.trim() }, "details", "Tracking details saved.")} disabled={busy !== null}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-gold-500/50 bg-gold-50 py-2.5 text-sm font-semibold text-gold-800 hover:bg-gold-100 disabled:opacity-60">
-                  {busy === "details" ? "Saving…" : "Save tracking details"}
+                  {busy === "details" ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving tracking details…</> : "Save tracking details"}
                 </button>
               )}
               {order.status !== "delivered" && (
                 <button onClick={cancel} disabled={busy !== null}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-danger/30 bg-danger/5 py-2.5 text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-60">
-                  <Ban className="h-4 w-4" /> {busy === "cancelled" ? "Cancelling…" : "Cancel order"}
+                  {busy === "cancelled" ? <><Loader2 className="h-4 w-4 animate-spin" /> Cancelling order…</> : <><Ban className="h-4 w-4" /> Cancel order</>}
                 </button>
               )}
             </div>
