@@ -11,11 +11,12 @@ import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { ticketReceiptDoc } from "@/lib/billing/repairReceipt";
 import { E } from "@/lib/whatsapp";
+import { ticketPayments, paymentLines, modesLabel } from "@/lib/billing/repairPayments";
 
 export function ticketPayment(t: RepairTicket) {
   const total = grossTotal(t);
   const paid = Math.min(total, t.advance || 0);
-  return { paid, balance: Math.max(0, total - paid) };
+  return { paid, balance: Math.max(0, total - paid), history: paymentLines(ticketPayments(t)) };
 }
 
 function invoiceMessage(t: RepairTicket, number: string | null, link: string): string {
@@ -30,7 +31,7 @@ function invoiceMessage(t: RepairTicket, number: string | null, link: string): s
     `${E.guitar} Item: ${t.productName}\n` +
     `${E.wrench} Work: ${t.problem}\n\n` +
     `Total (incl GST): ${formatINR(grossTotal(t))}\n` +
-    `Amount paid: ${formatINR(t.advance)}\n` +
+    `Amount paid: ${formatINR(t.advance)}${modesLabel(ticketPayments(t)) ? ` (${modesLabel(ticketPayments(t))})` : ""}\n` +
     (bal > 0 ? `*Balance due: ${formatINR(bal)}*\n_This is a payment receipt, not a tax invoice. The tax invoice is issued on full payment._\n` : `*Fully paid ${E.check}*\n`) +
     `\n${E.doc} View / download:\n${link}\n` +
     `\nThank you for trusting ${BUSINESS.name}! ${E.notes}`

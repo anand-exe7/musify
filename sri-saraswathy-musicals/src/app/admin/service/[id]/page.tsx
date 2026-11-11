@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Wrench, MessageCircle, FileText, Pencil, CheckCircle2, Clock,
-  AlertTriangle, Phone, Mail, Calendar, User as UserIcon, Save, History, IndianRupee, Plus, Trash2, Receipt,
+  AlertTriangle, Phone, Mail, Calendar, User as UserIcon, Save, History, IndianRupee, Plus, Trash2, Receipt, Loader2, Printer,
 } from "lucide-react";
-import { ticketPayments, REPAIR_PAY_MODES, PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
+import { ticketPayments, REPAIR_PAY_MODES, PAY_MODE_LABEL, modesLabel } from "@/lib/billing/repairPayments";
+import { partsTotal } from "@/lib/billing/serviceInvoice";
+import { useBranchContacts, phoneFor } from "@/lib/client/branchContacts";
 import {
   useRepair, alertLevel, daysUntil, statusMeta, REPAIR_STATUS, PRIORITY_META,
   chargeBase, grossTotal, balanceDue, isClosed, isFixed,
@@ -36,7 +38,7 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function statusUpdateMessage(t: RepairTicket): string {
+function statusUpdateMessage(t: RepairTicket, contactPhone: string): string {
   const sm = statusMeta(t.status);
   let line = `Update on your repair (${sm.label}).`;
   if (t.status === "ready") line = `Good news — your instrument is repaired and ready for pickup! ${E.party}`;
@@ -49,9 +51,13 @@ function statusUpdateMessage(t: RepairTicket): string {
     `${E.guitar} Item: ${t.productName}\n` +
     `${E.clipboard} Status: ${sm.label}\n` +
     `${E.calendar} Ready by: ${fmtDate(t.deadline)}\n` +
-    (chargeBase(t) > 0 ? `${E.money} Charge: ${formatINR(grossTotal(t))} (incl GST)${bal > 0 ? `\nBalance due: ${formatINR(bal)}` : `\nFully paid ${E.check}`}\n` : "") +
+    (chargeBase(t) > 0
+      ? `${E.money} Charge: ${formatINR(grossTotal(t))} (incl GST${(t.parts ?? []).length ? `, products ${formatINR(partsTotal(t.parts))}` : ""})\n` +
+        (t.advance > 0 ? `Paid: ${formatINR(t.advance)}${modesLabel(ticketPayments(t)) ? ` (${modesLabel(ticketPayments(t))})` : ""}\n` : "") +
+        (bal > 0 ? `Balance due: ${formatINR(bal)}\n` : `Fully paid ${E.check}\n`)
+      : "") +
     `\n${E.doc} Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n` +
-    `\nQuestions? Reply here or call ${BUSINESS.branches[0].phone}`
+    `\nQuestions? Reply here or call ${contactPhone}`
   );
 }
 
@@ -65,6 +71,9 @@ export default function TicketDetailPage() {
   const nextInvoiceNo = useRepair((s) => s.nextInvoiceNo);
   const addPayment = useRepair((s) => s.addPayment);
   const removePayment = useRepair((s) => s.removePayment);
+  const flush = useRepair((s) => s.flush);
+  const contacts = useBranchContacts();
+  const [openingDoc, setOpeningDoc] = useState(false);
   // REP-04: new payment being entered
   const [payAmt, setPayAmt] = useState(0);
   const [payMode, setPayMode] = useState("CASH");
@@ -108,11 +117,17 @@ export default function TicketDetailPage() {
   const changeStatus = async (status: RepairStatus) => {
     if (status === t.status) return;
     if (status === "completed") {
-      const invoiceNo = t.invoiceNo || (await nextInvoiceNo());
       const finalCost = t.finalCost > 0 ? t.finalCost : t.estimate;
-      updateTicket(t.id, { status, completedAt: new Date().toISOString(), invoiceNo, finalCost },
-        `Status → Completed · invoice ${invoiceNo}`);
-      flash(`Marked completed · ${invoiceNo}`);
+      const due = Math.max(0, grossTotal({ ...t, finalCost }) - (t.advance || 0));
+      if (due > 0) {
+        // REP-02: no tax invoice while money is still owed — it is issued when the last payment comes in.
+        updateTicket(t.id, { status, completedAt: new Date().toISOString(), finalCost }, `Status → Completed · balance ${formatINR(due)} due`);
+        flash(`Marked completed · ${formatINR(due)} still due — tax invoice on full payment`);
+      } else {
+        const invoiceNo = t.invoiceNo || (await nextInvoiceNo());
+        updateTicket(t.id, { status, completedAt: new Date().toISOString(), invoiceNo, finalCost }, `Status → Completed · invoice ${invoiceNo}`);
+        flash(`Marked completed · ${invoiceNo}`);
+      }
     } else {
       updateTicket(t.id, { status }, `Status → ${statusMeta(status).label}`);
       flash(`Status → ${statusMeta(status).label}`);
@@ -156,19 +171,28 @@ export default function TicketDetailPage() {
 
   const sendUpdate = () => {
     updateTicket(t.id, { whatsappSentAt: new Date().toISOString() }, "Status update sent via WhatsApp");
-    window.open(waLink(t.phone, statusUpdateMessage(t)), "_blank", "noopener,noreferrer");
+    window.open(waLink(t.phone, statusUpdateMessage(t, phoneFor(contacts, t.branch))), "_blank", "noopener,noreferrer");
   };
   const resendIntake = () => {
-    window.open(waLink(t.phone, repairIntakeMessage(t)), "_blank", "noopener,noreferrer");
+    // Built from the ticket as it is now (charge, products, payments), not as it was at intake.
+    window.open(waLink(t.phone, repairIntakeMessage(t, phoneFor(contacts, t.branch))), "_blank", "noopener,noreferrer");
   };
 
   const goInvoice = async () => {
-    // REP-02: while a balance is due the page shows the payment receipt — no invoice number is taken yet.
-    if (!t.invoiceNo && (balanceDue(t) <= 0 || t.status === "cancelled")) {
-      const invoiceNo = await nextInvoiceNo();
-      updateTicket(t.id, { invoiceNo }, `Invoice ${invoiceNo} generated`);
+    setOpeningDoc(true);
+    try {
+      // REP-02: while a balance is due the page shows the payment receipt — no invoice number is taken yet.
+      if (!t.invoiceNo && (balanceDue(t) <= 0 || t.status === "cancelled")) {
+        const invoiceNo = await nextInvoiceNo();
+        updateTicket(t.id, { invoiceNo }, `Invoice ${invoiceNo} generated`);
+      }
+      // The receipt / invoice page reads the ticket from the server: let the latest payment land there first.
+      await flush();
+      router.push(`/admin/service/${t.id}/invoice`);
+    } catch (e) {
+      setOpeningDoc(false);
+      flash(e instanceof Error ? e.message : "Couldn't open the document");
     }
-    router.push(`/admin/service/${t.id}/invoice`);
   };
 
   const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
@@ -200,7 +224,7 @@ export default function TicketDetailPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setEditOpen(true)} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600"><Pencil className="h-4 w-4" /> Edit</button>
-            <button onClick={goInvoice} className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800"><FileText className="h-4 w-4" /> {balanceDue(t) > 0 && t.status !== "cancelled" ? "Receipt" : t.invoiceNo ? "View Invoice" : "Generate Invoice"}</button>
+            <button onClick={goInvoice} disabled={openingDoc} className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:opacity-80">{openingDoc ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening…</> : <><Printer className="h-4 w-4" /> {balanceDue(t) > 0 && t.status !== "cancelled" ? "Payment receipt · Print" : t.invoiceNo ? "Tax invoice · Print" : "Generate tax invoice"}</>}</button>
           </div>
         </div>
       </div>
@@ -426,9 +450,10 @@ export default function TicketDetailPage() {
             ) : (
               <p className="mb-3 text-sm text-ink-500">No invoice generated yet.</p>
             )}
-            <button onClick={goInvoice} className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-3 text-xs font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
-              <FileText className="h-4 w-4" /> {balanceDue(t) > 0 && t.status !== "cancelled" ? "Open Payment Receipt" : t.invoiceNo ? "Open Invoice" : "Generate Invoice"}
+            <button onClick={goInvoice} disabled={openingDoc} className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-3 text-xs font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800 disabled:opacity-80">
+              {openingDoc ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening…</> : <><Printer className="h-4 w-4" /> {balanceDue(t) > 0 && t.status !== "cancelled" ? "Payment receipt — print / share" : t.invoiceNo ? "Tax invoice — print / share" : "Generate tax invoice"}</>}
             </button>
+            <p className="mt-2 text-[11px] text-ink-400">Thermal 80 / 58 mm, A4, PDF and WhatsApp are on the next screen.</p>
             {t.status !== "completed" && (
               <button onClick={() => changeStatus("completed")} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-success/40 py-3 text-xs font-bold uppercase tracking-wider text-success hover:bg-success/10">
                 <CheckCircle2 className="h-4 w-4" /> Mark Completed

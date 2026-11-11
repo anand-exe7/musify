@@ -9,29 +9,29 @@ import {
 } from "lucide-react";
 import {
   useRepair, alertLevel, daysUntil, statusMeta, PRIORITY_META,
-  chargeBase, grossTotal, balanceDue, turnaroundDays, isClosed, REPAIR_STATUS,
+  chargeBase, grossTotal, balanceDue, isClosed, REPAIR_STATUS,
   type RepairStatus, type RepairTicket,
 } from "@/lib/store/repair";
-import { serviceEarned, serviceEarnedAt } from "@/lib/client/sales";
-import { LoadErrorBanner } from "@/components/admin/LoadState";
+import { serviceEarned } from "@/lib/client/sales";
+import { LoadErrorBanner, LoadingInline } from "@/components/admin/LoadState";
+import { ticketPayments, modesLabel, REPAIR_PAY_MODES, PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
 import type { Branch } from "@/lib/store/pos";
 import { waLink } from "@/lib/data/business";
+import { useBranchContacts, phoneFor } from "@/lib/client/branchContacts";
 import { RepairTicketModal, repairIntakeMessage } from "@/components/admin/RepairTicketModal";
 import { formatINR, cn } from "@/lib/utils";
-import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
+import { branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
-import { AdminStat } from "@/components/admin/AdminStat";
+import { ReportTab, PERIODS, periodBounds, dayKey, type ReportPeriod } from "@/components/admin/ServiceReport";
 
 type Tab = "tickets" | "report";
 type BranchFilter = Branch | "all";
 type StatusFilter = RepairStatus | "all" | "active";
+type PayFilter = "all" | "unpaid" | (typeof REPAIR_PAY_MODES)[number];
+type SortKey = "deadline" | "new" | "old" | "amount-high" | "amount-low" | "priority";
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-}
-
-function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
 }
 
 function KpiCell({ label, value, sub, dot, tone }: { label: string; value: string; sub?: string; dot: string; tone?: string }) {
@@ -47,28 +47,41 @@ function KpiCell({ label, value, sub, dot, tone }: { label: string; value: strin
   );
 }
 
-const Stat = AdminStat;
-
 export default function ServicePage() {
   const router = useRouter();
   const tickets = useRepair((s) => s.tickets);
+  const hydrated = useRepair((s) => s.hydrated);
   const loadError = useRepair((s) => s.loadError);
   const deleteTicket = useRepair((s) => s.deleteTicket);
   const updateTicket = useRepair((s) => s.updateTicket);
+  const contacts = useBranchContacts();
 
   const [tab, setTab] = useState<Tab>("tickets");
   const [modal, setModal] = useState<{ open: boolean; ticket: RepairTicket | null }>({ open: false, ticket: null });
   const [statusF, setStatusF] = useState<StatusFilter>("all");
   const [branchF, setBranchF] = useState<BranchFilter>("all");
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<"deadline" | "new" | "priority">("deadline");
+  const [sort, setSort] = useState<SortKey>("deadline");
+  const [payF, setPayF] = useState<PayFilter>("all");
+  const [period, setPeriod] = useState<ReportPeriod>("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const overdue = useMemo(() => tickets.filter((t) => alertLevel(t) === "overdue"), [tickets]);
   const dueSoon = useMemo(() => tickets.filter((t) => alertLevel(t) === "due-soon"), [tickets]);
 
   const rows = useMemo(() => {
+    const bounds = periodBounds(period, from, to);
     let list = tickets.filter((t) => {
+      if (bounds) {
+        const k = dayKey(t.createdAt);
+        if (k < bounds.lo || k > bounds.hi) return false;
+      }
+      if (payF !== "all") {
+        const pays = ticketPayments(t);
+        if (payF === "unpaid" ? pays.length > 0 : !pays.some((p) => p.mode === payF)) return false;
+      }
       if (statusF === "active" && isClosed(t.status)) return false;
       if (statusF !== "all" && statusF !== "active" && t.status !== statusF) return false;
       if (branchF !== "all" && t.branch !== branchF) return false;
@@ -84,6 +97,9 @@ export default function ServicePage() {
     const prRank = { urgent: 0, high: 1, normal: 2, low: 3 };
     list = [...list].sort((a, b) => {
       if (sort === "new") return +new Date(b.createdAt) - +new Date(a.createdAt);
+      if (sort === "old") return +new Date(a.createdAt) - +new Date(b.createdAt);
+      if (sort === "amount-high") return grossTotal(b) - grossTotal(a);
+      if (sort === "amount-low") return grossTotal(a) - grossTotal(b);
       if (sort === "priority") return prRank[a.priority] - prRank[b.priority] || +new Date(a.deadline) - +new Date(b.deadline);
       // deadline: open first (by soonest), closed last
       const ac = isClosed(a.status), bc = isClosed(b.status);
@@ -91,8 +107,18 @@ export default function ServicePage() {
       return +new Date(a.deadline) - +new Date(b.deadline);
     });
     return list;
-  }, [tickets, statusF, branchF, query, sort]);
-  const pg = usePaged(rows, `${query}|${sort}|${statusF}|${branchF}`);
+  }, [tickets, statusF, branchF, query, sort, payF, period, from, to]);
+  const pg = usePaged(rows, `${query}|${sort}|${statusF}|${branchF}|${payF}|${period}|${from}|${to}`);
+  const filtered = statusF !== "all" || branchF !== "all" || payF !== "all" || period !== "all" || !!query.trim();
+  const clearFilters = () => {
+    setStatusF("all");
+    setBranchF("all");
+    setPayF("all");
+    setPeriod("all");
+    setFrom("");
+    setTo("");
+    setQuery("");
+  };
 
   const kpi = useMemo(() => {
     const active = tickets.filter((t) => !isClosed(t.status));
@@ -115,7 +141,7 @@ export default function ServicePage() {
   const sendWhatsApp = (t: RepairTicket, e: React.MouseEvent) => {
     e.stopPropagation();
     updateTicket(t.id, { whatsappSentAt: new Date().toISOString() }, "Update sent via WhatsApp");
-    window.open(waLink(t.phone, repairIntakeMessage(t)), "_blank", "noopener,noreferrer");
+    window.open(waLink(t.phone, repairIntakeMessage(t, phoneFor(contacts, t.branch))), "_blank", "noopener,noreferrer");
   };
 
   const selCls = "w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-700 focus:border-gold-500 focus:outline-none";
@@ -214,43 +240,69 @@ export default function ServicePage() {
             <KpiCell label="Revenue" value={formatINR(kpi.revenue)} sub="incl GST" dot="bg-gold-500" tone="text-gold-600" />
           </div>
 
-          {/* Toolbar — one clean row */}
-          <div className="mb-3 flex flex-col gap-2.5 lg:flex-row lg:items-center">
-            <div className="relative lg:flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticket, name, phone, instrument…" className="w-full rounded-xl border border-ink-200 bg-ivory-50 py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
+          {/* Toolbar — search + filters, then the date range and sort. */}
+          <div className="mb-3 space-y-2.5 rounded-2xl border border-ink-100 bg-ivory-50 p-3">
+            <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
+              <div className="relative lg:flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ticket, name, phone, instrument…" className="w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:w-auto">
+                <select value={statusF} onChange={(e) => setStatusF(e.target.value as StatusFilter)} className={selCls} aria-label="Status">
+                  <option value="all">All statuses</option>
+                  <option value="active">Active only</option>
+                  {REPAIR_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+                <select value={payF} onChange={(e) => setPayF(e.target.value as PayFilter)} className={selCls} aria-label="Payment mode">
+                  <option value="all">All payment modes</option>
+                  {REPAIR_PAY_MODES.map((m) => <option key={m} value={m}>Paid by {PAY_MODE_LABEL[m]}</option>)}
+                  <option value="unpaid">Nothing paid yet</option>
+                </select>
+                <select value={branchF} onChange={(e) => setBranchF(e.target.value as BranchFilter)} className={selCls} aria-label="Branch">
+                  <option value="all">All branches</option>
+                  <BranchOptions />
+                </select>
+                <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={selCls} aria-label="Sort">
+                  <option value="deadline">Sort · Deadline</option>
+                  <option value="new">Sort · Newest first</option>
+                  <option value="old">Sort · Oldest first</option>
+                  <option value="amount-high">Sort · Amount high → low</option>
+                  <option value="amount-low">Sort · Amount low → high</option>
+                  <option value="priority">Sort · Priority</option>
+                </select>
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 lg:flex lg:w-auto">
-              <select value={statusF} onChange={(e) => setStatusF(e.target.value as StatusFilter)} className={selCls}>
-                <option value="all">All statuses</option>
-                <option value="active">Active only</option>
-                {REPAIR_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
-              <select value={branchF} onChange={(e) => setBranchF(e.target.value as BranchFilter)} className={selCls}>
-                <option value="all">All branches</option>
-                <BranchOptions />
-              </select>
-              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className={selCls}>
-                <option value="deadline">Sort · Deadline</option>
-                <option value="new">Sort · Newest</option>
-                <option value="priority">Sort · Priority</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-ink-400">Raised</span>
+              {PERIODS.map((p) => (
+                <button key={p.key} onClick={() => { setPeriod(p.key); if (p.key !== "custom") { setFrom(""); setTo(""); } }}
+                  className={cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all", period === p.key ? "bg-ink-900 text-ivory-50" : "bg-white text-ink-500 ring-1 ring-ink-100 hover:text-ink-900")}>
+                  {p.label}
+                </button>
+              ))}
+              {period === "custom" && (
+                <span className="flex items-center gap-2">
+                  <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} aria-label="From" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+                  <span className="text-ink-400">→</span>
+                  <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} aria-label="To" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+                </span>
+              )}
             </div>
           </div>
 
           <div className="mb-3 flex items-center justify-between px-0.5">
             <p className="text-xs text-ink-500">{rows.length} ticket{rows.length === 1 ? "" : "s"}{statusF === "active" ? " · active" : ""}</p>
-            {(statusF !== "all" || branchF !== "all" || query.trim()) && (
-              <button onClick={() => { setStatusF("all"); setBranchF("all"); setQuery(""); }} className="text-xs font-semibold text-ink-500 transition-colors hover:text-gold-600">Clear filters</button>
+            {filtered && (
+              <button onClick={clearFilters} className="text-xs font-semibold text-ink-500 transition-colors hover:text-gold-600">Clear filters</button>
             )}
           </div>
 
           {/* Table */}
           <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-            <table className="w-full min-w-[960px] whitespace-nowrap text-sm">
+            <table className="w-full min-w-[1040px] whitespace-nowrap text-sm">
               <thead>
                 <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-                  <th className="px-5 py-4">Ticket</th><th>Customer</th><th>Instrument</th><th>Priority</th><th>Status</th><th>Deadline</th><th className="text-right">Charge</th><th className="text-right">Balance</th><th className="px-5 text-right">Actions</th>
+                  <th className="px-5 py-4">Ticket</th><th>Customer</th><th>Instrument</th><th>Priority</th><th>Status</th><th>Payment</th><th>Deadline</th><th className="pr-4 text-right">Amount</th><th className="px-5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-50">
@@ -281,6 +333,18 @@ export default function ServicePage() {
                       <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", pr.tone, open && t.priority === "urgent" && "ring-1 ring-danger/40")}>{open && t.priority === "urgent" ? "🔥 " : ""}{pr.label}</span></td>
                       <td><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", sm.tone)}>{sm.label}</span></td>
                       <td>
+                        {(() => {
+                          const pays = ticketPayments(t);
+                          if (pays.length === 0) return <span className="text-[11px] text-ink-400">Not paid yet</span>;
+                          return (
+                            <>
+                              <p className="text-[12px] font-semibold text-ink-800">{modesLabel(pays)}</p>
+                              <p className="text-[11px] text-ink-400">{pays.length} payment{pays.length === 1 ? "" : "s"} · {formatINR(t.advance)}</p>
+                            </>
+                          );
+                        })()}
+                      </td>
+                      <td>
                         <p className="text-ink-700">{fmtDate(t.deadline)}</p>
                         {!isClosed(t.status) && (
                           <p className={cn("text-[11px] font-semibold", lv === "overdue" ? "text-danger" : lv === "due-soon" ? "text-[#8a6a1f]" : "text-ink-400")}>
@@ -288,8 +352,16 @@ export default function ServicePage() {
                           </p>
                         )}
                       </td>
-                      <td className="text-right tabular-nums">{t.status === "cancelled" ? "—" : chargeBase(t) > 0 ? formatINR(grossTotal(t)) : "—"}</td>
-                      <td className="text-right font-semibold tabular-nums">{t.status === "cancelled" ? <span className="text-ink-400">—</span> : balanceDue(t) > 0 ? formatINR(balanceDue(t)) : <span className="text-success">Settled</span>}</td>
+                      <td className="pr-4 text-right tabular-nums">
+                        {t.status === "cancelled" || chargeBase(t) <= 0 ? (
+                          <span className="text-ink-400">—</span>
+                        ) : (
+                          <>
+                            <p className="font-semibold text-ink-900">{formatINR(grossTotal(t))}</p>
+                            {balanceDue(t) > 0 ? <p className="text-[11px] font-semibold text-danger">{formatINR(balanceDue(t))} due</p> : <p className="text-[11px] font-semibold text-success">Settled</p>}
+                          </>
+                        )}
+                      </td>
                       <td className="px-5">
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                           <button onClick={(e) => sendWhatsApp(t, e)} title="WhatsApp customer" className="grid h-8 w-8 place-items-center rounded-lg text-[#128C4B] hover:bg-[#128C4B]/10"><MessageCircle className="h-4 w-4" /></button>
@@ -300,8 +372,11 @@ export default function ServicePage() {
                     </tr>
                   );
                 })}
-                {rows.length === 0 && (
-                  <tr><td colSpan={9} className="px-5 py-16 text-center text-sm text-ink-400">No tickets match these filters.</td></tr>
+                {!hydrated && !loadError && (
+                  <tr><td colSpan={10} className="px-5 py-16 text-center"><LoadingInline label="Loading tickets…" /></td></tr>
+                )}
+                {hydrated && rows.length === 0 && (
+                  <tr><td colSpan={10} className="px-5 py-16 text-center text-sm text-ink-400">No tickets match these filters.</td></tr>
                 )}
               </tbody>
             </table>
@@ -315,242 +390,3 @@ export default function ServicePage() {
   );
 }
 
-/* ─────────────────────────  Report tab  ───────────────────────── */
-
-type ReportPeriod = "all" | "today" | "week" | "month" | "custom";
-
-/** yyyy-mm-dd of an ISO timestamp in local time. */
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(+d)) return iso.slice(0, 10);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-/** Start-of-day keys for the quick presets, computed in local time. */
-function periodBounds(period: ReportPeriod, from: string, to: string): { lo: string; hi: string } | null {
-  if (period === "all") return null;
-  if (period === "custom") return from || to ? { lo: from || "0000-01-01", hi: to || "9999-12-31" } : null;
-  const now = new Date();
-  const todayKey = dayKey(now.toISOString());
-  if (period === "today") return { lo: todayKey, hi: todayKey };
-  if (period === "week") {
-    const d = new Date(now);
-    const dow = (d.getDay() + 6) % 7; // Monday = 0
-    d.setDate(d.getDate() - dow);
-    return { lo: dayKey(d.toISOString()), hi: todayKey };
-  }
-  // month
-  const first = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { lo: dayKey(first.toISOString()), hi: todayKey };
-}
-
-function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) {
-  const [period, setPeriod] = useState<ReportPeriod>("all");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-
-  // REP-06: date-wise report — filter tickets by when they were raised.
-  const tickets = useMemo(() => {
-    const b = periodBounds(period, from, to);
-    if (!b) return allTickets;
-    return allTickets.filter((t) => {
-      const k = dayKey(t.createdAt);
-      return k >= b.lo && k <= b.hi;
-    });
-  }, [allTickets, period, from, to]);
-
-  const m = useMemo(() => {
-    const completed = tickets.filter((t) => t.status === "completed");
-    const active = tickets.filter((t) => !isClosed(t.status));
-    const revenue = tickets.reduce((n, t) => n + serviceEarned(t), 0);
-    const collected = tickets.reduce((n, t) => n + (t.advance || 0), 0);
-    const outstanding = tickets.filter((t) => !isClosed(t.status)).reduce((n, t) => n + balanceDue(t), 0);
-    const turnarounds = completed.map(turnaroundDays).filter((x): x is number => x != null);
-    const avgTAT = turnarounds.length ? Math.round(turnarounds.reduce((a, b) => a + b, 0) / turnarounds.length) : 0;
-
-    const byStatus = REPAIR_STATUS.map((s) => ({ ...s, n: tickets.filter((t) => t.status === s.key).length }));
-
-    const catMap = new Map<string, { n: number; rev: number }>();
-    tickets.forEach((t) => {
-      const e = catMap.get(t.category) || { n: 0, rev: 0 };
-      e.n += 1;
-      e.rev += serviceEarned(t);
-      catMap.set(t.category, e);
-    });
-    const byCategory = [...catMap.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.n - a.n);
-
-    const branchAgg = BRANCH_KEYS.map((b) => {
-      const list = tickets.filter((t) => t.branch === b);
-      return {
-        b,
-        total: list.length,
-        active: list.filter((t) => !isClosed(t.status)).length,
-        rev: list.reduce((n, t) => n + serviceEarned(t), 0),
-      };
-    });
-
-    const techMap = new Map<string, { open: number; done: number }>();
-    tickets.forEach((t) => {
-      const key = t.technician || "Unassigned";
-      const e = techMap.get(key) || { open: 0, done: 0 };
-      if (t.status === "completed") e.done += 1;
-      else if (!isClosed(t.status)) e.open += 1;
-      techMap.set(key, e);
-    });
-    const byTech = [...techMap.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.open + b.done - (a.open + a.done));
-
-    // monthly ticket intake + revenue (current year)
-    const months = Array.from({ length: 12 }, () => ({ raised: 0, rev: 0 }));
-    tickets.forEach((t) => { months[new Date(t.createdAt).getMonth()].raised += 1; });
-    tickets.forEach((t) => {
-      const earned = serviceEarned(t);
-      if (earned > 0) months[new Date(serviceEarnedAt(t)).getMonth()].rev += earned;
-    });
-
-    return { completed, active, revenue, collected, outstanding, avgTAT, byStatus, byCategory, branchAgg, byTech, months };
-  }, [tickets]);
-
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const maxMonth = Math.max(...m.months.map((x) => x.raised), 1);
-  const maxCat = Math.max(...m.byCategory.map((c) => c.n), 1);
-  const catColors = ["#C9A24B", "#A98337", "#DFBE58", "#5B1E1E", "#87672A", "#EAD48F", "#3D6A8B"];
-
-  const periods: { key: ReportPeriod; label: string }[] = [
-    { key: "all", label: "All time" },
-    { key: "today", label: "Today" },
-    { key: "week", label: "This week" },
-    { key: "month", label: "This month" },
-  ];
-
-  return (
-    <div className="space-y-6">
-      {/* REP-06: date-wise report filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
-        <div className="flex items-center gap-1 rounded-full bg-white p-1 ring-1 ring-ink-100">
-          {periods.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => { setPeriod(p.key); setFrom(""); setTo(""); }}
-              className={cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all", period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
-          <input type="date" value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPeriod("custom"); }} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-        </label>
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
-          <input type="date" value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPeriod("custom"); }} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-        </label>
-        <span className="pb-2 text-xs text-ink-400">{tickets.length} ticket{tickets.length === 1 ? "" : "s"} in range</span>
-      </div>
-
-      {/* KPI row */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Repair Revenue" value={formatINR(m.revenue)} accent="green" hint={`${m.completed.length} completed · advances included · incl GST`} />
-        <Stat label="Outstanding Balance" value={formatINR(m.outstanding)} accent="gold" hint="On open tickets" />
-        <Stat label="Advance Collected" value={formatINR(m.collected)} hint="Across all tickets" />
-        <Stat label="Avg Turnaround" value={`${m.avgTAT} days`} hint="Raise → completed" />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        {/* Monthly intake */}
-        <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-bold text-ink-900">Ticket Intake · 2026</p>
-              <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{tickets.length} total</p>
-            </div>
-            <span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold text-gold-700">Revenue {formatINR(m.revenue)}</span>
-          </div>
-          <div className="flex h-48 items-end gap-1.5">
-            {m.months.map((v, i) => (
-              <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
-                <div className="flex w-full flex-1 items-end">
-                  <div className="w-full rounded-t bg-ink-900 transition-all hover:bg-gold-500" style={{ height: `${(v.raised / maxMonth) * 100}%`, minHeight: v.raised > 0 ? 4 : 0 }} title={`${v.raised} raised · ${formatINR(v.rev)}`} />
-                </div>
-                <span className="text-[8px] uppercase text-ink-400">{MONTHS[i]}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* By status */}
-        <Card>
-          <p className="mb-4 text-sm font-bold text-ink-900">By Status</p>
-          <div className="space-y-2.5">
-            {m.byStatus.filter((s) => s.n > 0).map((s) => (
-              <div key={s.key} className="flex items-center justify-between">
-                <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", s.tone)}>{s.label}</span>
-                <span className="font-bold tabular-nums text-ink-900">{s.n}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* By category */}
-        <Card>
-          <p className="mb-4 text-sm font-bold text-ink-900">By Category (segregation)</p>
-          <div className="space-y-3">
-            {m.byCategory.map((c, i) => (
-              <div key={c.k}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-semibold text-ink-700">{c.k}</span>
-                  <span className="text-ink-500">{c.n} tickets{c.rev > 0 && <span className="ml-2 font-semibold text-ink-900">{formatINR(c.rev)}</span>}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-ink-100">
-                  <div className="h-full rounded-full" style={{ width: `${(c.n / maxCat) * 100}%`, background: catColors[i % catColors.length] }} />
-                </div>
-              </div>
-            ))}
-            {m.byCategory.length === 0 && <p className="py-6 text-center text-sm text-ink-400">No data.</p>}
-          </div>
-        </Card>
-
-        {/* By branch */}
-        <Card>
-          <p className="mb-4 text-sm font-bold text-ink-900">By Branch</p>
-          <div className="grid grid-cols-2 gap-3">
-            {m.branchAgg.map((b) => (
-              <div key={b.b} className="rounded-xl border border-ink-100 bg-[#FAF7EF] p-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-ink-500">{branchLabel(b.b)}</p>
-                <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900">{b.total}</p>
-                <p className="text-[11px] text-ink-400">{b.active} open</p>
-                <p className="mt-2 text-sm font-semibold tabular-nums text-success">{formatINR(b.rev)}</p>
-                <p className="text-[11px] text-ink-400">revenue</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* By technician */}
-      <Card>
-        <p className="mb-4 text-sm font-bold text-ink-900">Technician Workload</p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[420px] text-sm">
-            <thead>
-              <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">
-                <th className="py-3">Technician</th><th className="text-center">Open</th><th className="text-center">Completed</th><th className="text-right">Total Handled</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-50">
-              {m.byTech.map((t) => (
-                <tr key={t.k} className="text-ink-800">
-                  <td className="py-3.5 font-semibold text-ink-900">{t.k}</td>
-                  <td className="text-center tabular-nums">{t.open}</td>
-                  <td className="text-center tabular-nums text-success">{t.done}</td>
-                  <td className="text-right font-semibold tabular-nums">{t.open + t.done}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-}

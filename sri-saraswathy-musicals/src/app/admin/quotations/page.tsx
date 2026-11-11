@@ -1,4 +1,5 @@
 "use client";
+import { LoadingInline } from "@/components/admin/LoadState";
 import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
@@ -8,6 +9,7 @@ import type { Quotation } from "@/types";
 import { formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 import { RowOutputMenu } from "@/components/print/RowOutputMenu";
+import { QuotationSheet, QUOTATION_PRINT_CSS } from "@/components/quotation/QuotationSheet";
 import { quotationToDoc } from "@/lib/print/doc";
 
 function fmtDate(d: string) {
@@ -86,7 +88,7 @@ export default function QuotationsPage() {
                 <td className="px-4 py-3 text-ink-800">{q.customer}{q.customerPhone && <span className="block text-xs text-ink-400">{q.customerPhone}</span>}</td>
                 <td className="px-4 py-3 text-ink-600">{branchLabel(q.branch)}</td>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums text-ink-900">{formatINR(q.total)}</td>
-                <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-2"><Link href={`/admin/quotations/${encodeURIComponent(q.id)}`} className="font-semibold text-gold-600 hover:underline">View</Link><RowOutputMenu href={`/admin/quotations/${encodeURIComponent(q.id)}`} doc={quotationToDoc(q)} phone={q.customerPhone} shareLink={typeof window !== "undefined" ? `${window.location.origin}/quotation/${encodeURIComponent(q.id)}` : undefined} /></div></td>
+                <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-2"><Link href={`/admin/quotations/${encodeURIComponent(q.id)}`} className="font-semibold text-gold-600 hover:underline">View</Link><RowOutputMenu href={`/admin/quotations/${encodeURIComponent(q.id)}`} doc={quotationToDoc(q)} phone={q.customerPhone} shareLink={typeof window !== "undefined" ? `${window.location.origin}/quotation/${encodeURIComponent(q.id)}` : undefined} sheet={{ node: <QuotationSheet quotation={q} />, css: QUOTATION_PRINT_CSS, id: "quotation-sheet" }} pdfName={`Quotation-${q.number}`} /></div></td>
               </tr>
             ))}
             {loading && Array.from({ length: 6 }, (_, i) => (
@@ -102,7 +104,7 @@ export default function QuotationsPage() {
           </tbody>
         </table>
       </div>
-      {loading && <p role="status" className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-ink-400">Loading quotations…</p>}
+      {loading && <p className="py-6 text-center"><LoadingInline label="Loading quotations…" /></p>}
       {!loading && <Pager className="mt-4" {...pg.pager} />}
     </div>
   );

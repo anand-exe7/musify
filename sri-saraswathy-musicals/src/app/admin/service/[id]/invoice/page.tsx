@@ -18,14 +18,13 @@ export default async function AdminServiceInvoicePage({ params }: { params: Prom
   if (!session.isAdmin) redirect("/");
 
   const { id } = await params;
-  let invoice = await getInvoiceByRefId(id);
   const ticket = await getTicket(id);
   if (!ticket) notFound();
 
   // Idempotent: records the invoice if the ticket just became billable, and
   // re-syncs amounts/paid status if the final cost changed since it was minted.
   await recordServiceInvoice(ticket);
-  invoice = await getInvoiceByRefId(id);
+  const invoice = await getInvoiceByRefId(id);
 
   return <AdminServiceInvoiceView invoice={invoice ?? null} ticket={ticket} />;
 }

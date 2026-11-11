@@ -1,4 +1,5 @@
 "use client";
+import { LoadingInline } from "@/components/admin/LoadState";
 import { useEffect, useMemo, useState } from "react";
 import { ShieldCheck, Info } from "lucide-react";
 import { useAuth } from "@/lib/store/auth";
@@ -212,7 +213,7 @@ export default function UsersPage() {
               );
             })}
             {!loading && rows.length === 0 && <tr><td colSpan={4} className="px-5 py-16 text-center text-sm text-ink-400">No users found.</td></tr>}
-            {loading && <tr><td colSpan={4} className="px-5 py-16 text-center text-sm text-ink-400">Loading users…</td></tr>}
+            {loading && <tr><td colSpan={4} className="px-5 py-16 text-center text-sm text-ink-400"><LoadingInline label="Loading users…" /></td></tr>}
           </tbody>
         </table>
       </div>

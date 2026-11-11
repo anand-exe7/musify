@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getOrder } from "@/lib/db/queries/orders";
-import { getAllProducts } from "@/lib/db/queries/products";
+import { getProductNames } from "@/lib/db/queries/products";
 import { getInvoiceByRefId } from "@/lib/db/queries/invoices";
 import { getVerifiedSession } from "@/lib/auth/server";
 import { adminAccessOf, branchAllowed } from "@/lib/auth/session";
@@ -26,9 +26,8 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
   const order = await getOrder(id);
   if (!order || !branchAllowed(access, order.branch)) notFound();
 
-  const [products, invoice] = await Promise.all([getAllProducts(), getInvoiceByRefId(id)]);
-  const names: Record<string, string> = {};
-  for (const p of products) names[p.id] = p.name;
+  // Only the names of this order's products — not the whole catalogue with its photos.
+  const [names, invoice] = await Promise.all([getProductNames([...new Set(order.items.map((it) => it.productId))]), getInvoiceByRefId(id)]);
 
   return <OrderView order={order} names={names} invoice={invoice ? { id: invoice.id, number: invoice.number, reference: invoice.reference ?? "" } : null} />;
 }
