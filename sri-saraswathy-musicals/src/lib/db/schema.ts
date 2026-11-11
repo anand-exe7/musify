@@ -417,6 +417,8 @@ export const purchases = pgTable("purchases", {
   notes: text("notes").notNull().default(""),
   createdBy: text("created_by").notNull().default(""),
   createdAt: text("created_at").notNull(),
+  /** EXP-01: when true, payments made against this vendor bill are subtracted from the sales analytics. */
+  inAnalytics: boolean("in_analytics").notNull().default(false),
 }, (t) => [
   check("purchases_payment_mode_check", sql`${t.paymentMode} = '' OR ${t.paymentMode} IN ('CASH','UPI','CARD','BANK','OTHER','CREDIT')`),
 ]);
@@ -499,6 +501,29 @@ export const stockTransfers = pgTable("stock_transfers", {
 }, (t) => [
   check("stock_transfers_from_branch_check", oneOf(t.fromBranch, BRANCHES)),
   check("stock_transfers_to_branch_check", oneOf(t.toBranch, BRANCHES)),
+]);
+
+/**
+ * LED-04: append-only stock movement log. One row per stock change made through `adjustProductStock` that the
+ * caller labelled (bill cancelled, order cancelled, transfer, purchase, repair …), so every put-back can be traced.
+ */
+export const stockMovements = pgTable("stock_movements", {
+  id: text("id").primaryKey(),
+  at: text("at").notNull(),
+  productId: text("product_id").notNull(),
+  productName: text("product_name").notNull().default(""),
+  variant: text("variant").notNull().default(""),
+  branch: text("branch").notNull(),
+  /** Signed change in units (+ in, − out). */
+  delta: integer("delta").notNull(),
+  /** Short machine reason: bill_cancelled, order_cancelled, transfer, purchase, purchase_deleted, repair, adjustment. */
+  reason: text("reason").notNull().default("adjustment"),
+  /** The document behind the change (bill / invoice / order / transfer / ticket id). */
+  ref: text("ref").notNull().default(""),
+  note: text("note").notNull().default(""),
+}, (t) => [
+  index("stock_movements_at_idx").on(t.at),
+  index("stock_movements_product_idx").on(t.productId),
 ]);
 
 /**
@@ -600,7 +625,15 @@ export const repairTickets = pgTable("repair_tickets", {
   deadline: text("deadline").notNull(),
   estimate: integer("estimate").notNull().default(0),
   finalCost: integer("final_cost").notNull().default(0),
+  /** Total received so far (paise) — always the sum of `payments` once a ticket has any. */
   advance: integer("advance").notNull().default(0),
+  /** REP-01: how the customer paid at intake (CASH / UPI / CARD / BANK / OTHER). */
+  paymentMode: text("payment_mode").notNull().default("CASH"),
+  /**
+   * REP-03 / REP-04: every part-payment received against the ticket, oldest first. A part-payment is a payment
+   * against this job (it gets a receipt), never an advance order; the tax invoice is issued only on full payment.
+   */
+  payments: jsonb("payments").$type<{ id: string; at: string; amount: number; mode: string; note?: string; receiptNo?: string }[]>().notNull().default([]),
   gstRate: integer("gst_rate").notNull().default(18),
   events: jsonb("events").$type<{ at: string; label: string }[]>().notNull().default([]),
   /** Products sold to the customer during the service (billed on the same invoice, on top of the service charge). */
@@ -637,6 +670,8 @@ export const expenses = pgTable("expenses", {
   expenseDate: text("expense_date").notNull(),
   createdAt: text("created_at").notNull(),
   branch: text("branch").notNull(),
+  /** EXP-01: when true, this expense is subtracted from the sales analytics (net view). */
+  inAnalytics: boolean("in_analytics").notNull().default(false),
 }, (t) => [
   check("expenses_payment_mode_check", oneOf(t.paymentMode, PAYMENT_MODES)),
   check("expenses_branch_check", oneOf(t.branch, BRANCHES)),
@@ -679,6 +714,12 @@ export const deliverySettings = pgTable("delivery_settings", {
   standardCharge: integer("standard_charge").notNull().default(25000),
   expressCharge: integer("express_charge").notNull().default(60000),
   storePickup: boolean("store_pickup").notNull().default(true),
+  /** ADM-04 / INV-07: master switch for low-stock alerts & highlighting across the admin. */
+  lowStockAlerts: boolean("low_stock_alerts").notNull().default(true),
+  /** EXP-01: payment modes whose linked expenses / vendor payments are subtracted in analytics. */
+  expenseDeductModes: jsonb("expense_deduct_modes").$type<string[]>().notNull().default(["CASH", "UPI", "CARD", "BANK", "OTHER"]),
+  /** EXP-04: managed expense categories (rename / enable / disable). Expenses still store the name as text. */
+  expenseCategories: jsonb("expense_categories").$type<{ name: string; active: boolean }[]>().notNull().default([]),
 });
 
 /**

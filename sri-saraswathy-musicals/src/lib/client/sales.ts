@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { ticketPayments, dominantMode } from "@/lib/billing/repairPayments";
 import { usePOS, type Bill } from "@/lib/store/pos";
 import { useRepair } from "@/lib/store/repair";
 import { fetchJson, errMsg } from "@/lib/client/api";
@@ -93,13 +94,14 @@ export function ticketToBill(t: RepairTicket): UnifiedBill {
     delivery: 0,
     total: gross,
     status: "completed",
-    payment: balanceDue(t) <= 0 ? "Paid" : "Balance due",
+    // ANA-01: the mode most of the money came in by, so the payment-mode split can bucket it.
+    payment: `${dominantMode(ticketPayments(t), t.paymentMode || "CASH")}${balanceDue(t) <= 0 ? "" : " · balance due"}`,
   };
 }
 
 /**
- * Money already taken on a repair that isn't billable yet (the advance paid at
- * intake). It counts as revenue on the day it was received, as its own "Advance"
+ * REP-03: part-payments already taken on a repair that isn't billable yet — a payment against the job, not an
+ * advance order. (Historically called the "advance".) It counts as revenue on the day it was received, as its own "Advance"
  * row; once the repair is ready/completed the ticket's full charge replaces it, so
  * nothing is counted twice. Cancelled tickets don't count.
  */
@@ -114,13 +116,13 @@ export function ticketAdvanceBill(t: RepairTicket): UnifiedBill | null {
     phone: t.phone || "",
     source: "service",
     branch: t.branch,
-    items: [{ name: `Advance — ${t.productName}`, price: advance, qty: 1 }],
+    items: [{ name: `Part payment — ${t.productName}`, price: advance, qty: 1 }],
     subtotal: advance,
     discount: 0,
     delivery: 0,
     total: advance,
     status: "completed",
-    payment: "Advance",
+    payment: `${dominantMode(ticketPayments(t), t.paymentMode || "CASH")} · part payment`,
   };
 }
 

@@ -53,6 +53,8 @@ export interface PurchaseRecord {
   notes: string;
   createdBy: string;
   createdAt: string;
+  /** EXP-01: payments on this bill are subtracted in the sales analytics. */
+  inAnalytics?: boolean;
 }
 
 export interface PurchaseLineRecord {
@@ -424,6 +426,12 @@ export interface PurchasePatch {
   lines?: { id: string; unitCost?: number; gst?: number }[];
   /** Opening-balance bills only: the amount owed. */
   openingAmount?: number;
+}
+
+/** EXP-01: link a vendor bill to analytics (its payments are then subtracted from sales). */
+export async function setPurchaseInAnalytics(id: string, on: boolean): Promise<boolean> {
+  const r = await db.update(purchases).set({ inAnalytics: on }).where(eq(purchases.id, id)).returning({ id: purchases.id });
+  return r.length > 0;
 }
 
 export async function updatePurchase(id: string, patch: PurchasePatch): Promise<PurchaseRecord | undefined> {
@@ -1090,7 +1098,7 @@ export async function deletePurchase(id: string, stockMode: "keep" | "reverse" =
         deltas.push({ variantIndex, branch: l.branch as Branch, delta: -l.quantity });
       }
       try {
-        await adjustProductStock(productId, deltas);
+        await adjustProductStock(productId, deltas, { log: { reason: "purchase_deleted", ref: id } });
       } catch (e) {
         if (e instanceof HttpError && e.status === 409) {
           throw new PurchaseValidationError(`Can't take the stock back: some of what this bill brought in has already been sold or moved (${e.message}). Choose "Delete the bill only" to keep the stock as it is.`);

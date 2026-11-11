@@ -72,7 +72,7 @@ async function reverseOrder(order: Order): Promise<void> {
     for (const it of order.items) {
       const idx = (catalog.get(it.productId)?.variants ?? []).findIndex((v) => variantKey(v) === it.variantKey);
       if (idx < 0) continue;
-      await adjustProductStock(it.productId, [{ variantIndex: idx, branch: order.branch, delta: it.quantity }]).catch((err) =>
+      await adjustProductStock(it.productId, [{ variantIndex: idx, branch: order.branch, delta: it.quantity }], { log: { reason: "order_cancelled", ref: order.id, note: "Online order cancelled — stock returned" } }).catch((err) =>
         console.error("[orders] couldn't restore stock for", order.id, it, err),
       );
     }

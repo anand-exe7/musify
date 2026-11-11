@@ -7,7 +7,7 @@ import { isBranch, type Branch, type StockDelta } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
 import { adjustProductStock, takeStock, type StockLine } from "@/lib/db/queries/stockOps";
 import { slugify } from "@/lib/utils";
-import { selectProduct, selectProducts, insertVariants, syncVariants } from "./variants";
+import { selectProduct, selectProducts, selectProductsLean, insertVariants, syncVariants } from "./variants";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
 import { row, rows, definedOnly } from "./_util";
@@ -91,7 +91,7 @@ export async function deleteBill(id: string): Promise<boolean> {
   if (isBranch(bill.branch)) {
     for (const l of stockLinesOf(bill)) {
       try {
-        await adjustProductStock(l.productId, [{ variantIndex: l.variantIndex, branch: bill.branch, delta: l.quantity }]);
+        await adjustProductStock(l.productId, [{ variantIndex: l.variantIndex, branch: bill.branch, delta: l.quantity }], { log: { reason: "bill_cancelled", ref: id, note: "Counter bill cancelled — stock returned" } });
       } catch (err) {
         // The product may have been deleted since; the bill is gone either way.
         console.error("[pos] couldn't restore stock for deleted bill", id, l, err);
@@ -222,6 +222,11 @@ function toColumnPatch(patch: Partial<InvProduct>): Partial<typeof products.$inf
 
 export async function getInventory(): Promise<InvProduct[]> {
   return (await selectProducts()).map(toInvProduct);
+}
+
+/** The catalogue for list screens — one photo per product, no gallery / variant photos (see `selectProductsLean`). */
+export async function getInventoryList(): Promise<InvProduct[]> {
+  return (await selectProductsLean()).map(toInvProduct);
 }
 
 /** One product in full (variants and stock included) — what the editor opens. */

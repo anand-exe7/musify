@@ -58,10 +58,15 @@ async function customerIdFor(phone: string | null | undefined, name: string, gst
   }
 }
 
-export async function createInvoice(inv: Invoice): Promise<Invoice> {
-  const withRef = { ...inv, reference: inv.reference || (await nextBranchReference(inv.branch, inv.date)) };
-  const customerId = await customerIdFor(inv.customerPhone, inv.customer, inv.customerGstin);
-  const [r] = await db.insert(invoices).values({ ...withRef, customerId }).returning();
+export async function createInvoice(inv: Invoice, number?: Promise<string>): Promise<Invoice> {
+  // The GST number, the branch reference and the customer record don't depend on each other — fetch them
+  // together (one database round-trip instead of three in a row).
+  const [num, reference, customerId] = await Promise.all([
+    number ?? Promise.resolve(inv.number),
+    inv.reference ? Promise.resolve(inv.reference) : nextBranchReference(inv.branch, inv.date),
+    customerIdFor(inv.customerPhone, inv.customer, inv.customerGstin),
+  ]);
+  const [r] = await db.insert(invoices).values({ ...inv, number: num, reference, customerId }).returning();
   return row<Invoice>(r);
 }
 

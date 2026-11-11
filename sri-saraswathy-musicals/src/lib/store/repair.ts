@@ -4,6 +4,7 @@ import type { Branch } from "@/lib/store/pos";
 import { genDocId } from "@/lib/ids";
 import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 import { partsTotal, type ServicePart } from "@/lib/billing/serviceInvoice";
+import { withPayment, withoutPayment, PAY_MODE_LABEL, type RepairPayment } from "@/lib/billing/repairPayments";
 
 export type { ServicePart as RepairPart };
 
@@ -50,7 +51,12 @@ export interface RepairTicket {
   // Money (GST-inclusive service charge)
   estimate: number;
   finalCost: number;
+  /** Total paid so far (paise) — the sum of `payments`. */
   advance: number;
+  /** REP-01: payment mode chosen when the ticket was raised. */
+  paymentMode?: string;
+  /** REP-03 / REP-04: every part-payment received against this ticket (receipt per payment). */
+  payments?: RepairPayment[];
   gstRate: number; // %
   /** Products sold to the customer during the service; billed on the same invoice. */
   parts?: ServicePart[];
@@ -164,6 +170,7 @@ export function genRepairId(): string {
 /* ─────────────────────────────  Store  ───────────────────────────── */
 
 const now = () => new Date().toISOString();
+const formatPaise = (p: number) => `₹${(p / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 const send = makeSender("the repair change");
 
@@ -178,6 +185,9 @@ interface RepairState {
   updateTicket: (id: string, patch: Partial<RepairTicket>, eventLabel?: string) => void;
   deleteTicket: (id: string) => void;
   logEvent: (id: string, label: string) => void;
+  /** REP-04: record a (part-)payment — paid amount, balance and status update at once. */
+  addPayment: (id: string, p: { amount: number; mode: string; note?: string }) => void;
+  removePayment: (id: string, paymentId: string) => void;
   nextInvoiceNo: () => Promise<string>;
   resetDemo: () => void;
 }
@@ -229,6 +239,19 @@ export const useRepair = create<RepairState>()((set, get) => ({
       ),
     }));
     void send(`/api/repair/${id}`, "PATCH", { patch: {}, eventLabel: label }, get().hydrate, () => set({ tickets: prev }));
+  },
+  addPayment: (id, p) => {
+    const t = get().tickets.find((x) => x.id === id);
+    if (!t || !(p.amount > 0)) return;
+    const next = withPayment(t, p);
+    const label = `Payment ${formatPaise(p.amount)} received (${PAY_MODE_LABEL[p.mode] ?? p.mode})${p.note?.trim() ? ` · ${p.note.trim()}` : ""}`;
+    get().updateTicket(id, next, label);
+  },
+  removePayment: (id, paymentId) => {
+    const t = get().tickets.find((x) => x.id === id);
+    if (!t) return;
+    const gone = (t.payments ?? []).find((p) => p.id === paymentId);
+    get().updateTicket(id, withoutPayment(t, paymentId), gone ? `Payment ${formatPaise(gone.amount)} removed` : "Payment removed");
   },
   // Ask the server for the next service-invoice number — it checks the DB for
   // a free `SER-<year>-XXXXX` code, which an in-memory scan of loaded tickets

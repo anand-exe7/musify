@@ -95,7 +95,7 @@ export async function createInward(input: StockInwardInput): Promise<StockInward
     await adjustProductStock(
       input.productId,
       [{ variantIndex: input.variantIndex, branch, delta: input.quantity }],
-      { cost: input.unitCost },
+      { cost: input.unitCost, log: { reason: "purchase", ref: input.id } },
     );
   } catch (err) {
     await db.delete(stockInward).where(eq(stockInward.id, input.id));

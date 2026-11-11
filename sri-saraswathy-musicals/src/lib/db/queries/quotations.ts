@@ -9,6 +9,7 @@ import { addDays, computeQuote, QUOTE_VALID_DAYS } from "@/lib/quotation";
 import { getPricingCatalog } from "./products";
 import { variantKey } from "@/lib/catalog/variants";
 import { branchCode } from "./invoices";
+import { isValidGstin, normalizeGstin } from "@/lib/gst/gstin";
 import { row, rows } from "./_util";
 
 const bad = (m: string) => new HttpError(400, m);
@@ -71,6 +72,12 @@ async function clean(input: QuotationInput, partial: boolean) {
   }
   for (const k of ["customerPhone", "customerGstin"] as const) {
     if (input[k] !== undefined) out[k] = (input[k] ?? "").toString().trim() || null;
+  }
+  // QUO-03: a GSTIN, when given, must be a valid 15-character GSTIN.
+  if (out.customerGstin) {
+    const g = normalizeGstin(out.customerGstin as string);
+    if (!isValidGstin(g)) throw bad("Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5).");
+    out.customerGstin = g;
   }
   if (input.notes !== undefined) out.notes = String(input.notes).trim();
   if (input.status !== undefined) {
