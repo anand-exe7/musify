@@ -140,6 +140,18 @@ describe("stock for products used in a repair", () => {
     expect(await at("Branch 1")).toBe(before - 2);
   });
 
+  it("writes the cancel's stock return to the stock history against the ticket", async () => {
+    const { getStockMovements } = await import("@/lib/db/queries/stockMovements");
+    let t = await ticket({ status: "in-progress", parts: [part(1)] });
+    t = await change(t, { status: "ready" });
+    t = await change(t, { status: "cancelled" });
+    const moves = (await getStockMovements(100)).filter((m) => m.ref === t.id);
+    expect(moves.map((m) => [m.delta, m.note])).toEqual(expect.arrayContaining([
+      [-1, "Used in repair"],
+      [1, "Repair cancelled — products returned to stock"],
+    ]));
+  });
+
   it("refuses Ready when the branch is short, and changes nothing", async () => {
     const before = await at("Branch 1");
     const t = await ticket({ status: "in-progress", parts: [part(before + 1)] });

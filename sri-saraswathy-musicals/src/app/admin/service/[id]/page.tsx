@@ -116,6 +116,16 @@ export default function TicketDetailPage() {
 
   const changeStatus = async (status: RepairStatus) => {
     if (status === t.status) return;
+    if (status === "cancelled") {
+      const taken = (t.stockTaken ?? []).length > 0;
+      const ok = confirm(
+        `Cancel repair ${t.id}?\n\n` +
+          `• It leaves revenue, the Service report and Analytics${t.advance > 0 ? ` (the ${formatINR(t.advance)} received is taken out)` : ""}.\n` +
+          (taken ? `• Products used go back into ${branchLabel(t.branch)}'s stock, logged in the stock history.\n` : "• Stock is not touched (no products were taken out for it).\n") +
+          (t.advance > 0 ? "• Refund the customer if due." : ""),
+      );
+      if (!ok) return;
+    }
     if (status === "completed") {
       const finalCost = t.finalCost > 0 ? t.finalCost : t.estimate;
       const due = Math.max(0, grossTotal({ ...t, finalCost }) - (t.advance || 0));
@@ -269,7 +279,19 @@ export default function TicketDetailPage() {
                 })}
               </div>
             ) : (
-              <div className="mb-5 rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">This ticket was cancelled.</div>
+              <div className="mb-5 rounded-lg border border-danger/25 bg-danger/[0.06] px-3.5 py-3 text-sm text-ink-700">
+                <p className="font-semibold text-danger">This repair is cancelled.</p>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-[13px]">
+                  <li>Not counted in revenue, the Service report or Analytics{t.advance > 0 ? ` — the ${formatINR(t.advance)} received is taken out of revenue` : ""}.</li>
+                  <li>
+                    {(t.parts ?? []).some((p) => p.productId)
+                      ? <>Products picked from inventory are back in {branchLabel(t.branch)}&apos;s stock (if they had been taken out), logged in the stock history.</>
+                      : <>No inventory products on this ticket, so stock is unchanged.</>}
+                  </li>
+                  {t.invoiceNo && <li>Its tax invoice stays on record, marked Cancelled.</li>}
+                  {t.advance > 0 && <li>{formatINR(t.advance)} was paid ({modesLabel(ticketPayments(t))}) — refund it to the customer if due.</li>}
+                </ul>
+              </div>
             )}
 
             <label className={label}>Update status</label>

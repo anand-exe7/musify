@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Receipt, Tag, Search, Pencil, Settings2, BarChart3 } from "lucide-react";
+import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Receipt, Tag, Search, Pencil, Settings2, BarChart3, X, Loader2 } from "lucide-react";
+import { AdminStat } from "@/components/admin/AdminStat";
+import { Segmented } from "@/components/admin/Segmented";
 import { ExpenseCategoriesModal, useExpenseCategoryList } from "@/components/expenses/ExpenseCategoriesModal";
 import { ExpenseEditModal } from "@/components/expenses/ExpenseEditModal";
 import { PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
@@ -11,7 +13,7 @@ import {
   type Expense,
   type PaymentMode,
 } from "@/lib/store/expenses";
-import { LoadErrorBanner } from "@/components/admin/LoadState";
+import { LoadErrorBanner, LoadingInline } from "@/components/admin/LoadState";
 import { inPeriod, type Period } from "@/lib/store/pos";
 import { useBranchScope } from "@/lib/store/branch";
 import type { Invoice } from "@/types";
@@ -78,17 +80,29 @@ export default function ExpensesPage() {
   const [form, setForm] = useState(blankForm());
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Loading states: the expense list (re-read every time the page opens) and the sales used for net profit.
+  const hydrated = useExpenses((s) => s.hydrated);
+  const [refreshing, setRefreshing] = useState(true);
+  const [salesLoaded, setSalesLoaded] = useState(false);
 
   useEffect(() => {
-    void hydrate();
+    let alive = true;
+    void hydrate().finally(() => alive && setRefreshing(false));
     (async () => {
       try {
         const res = await fetch("/api/invoices", { cache: "no-store" });
-        if (res.ok) setInvoices((await res.json()) as Invoice[]);
+        if (res.ok && alive) setInvoices((await res.json()) as Invoice[]);
       } catch {
         /* revenue card just shows 0 */
+      } finally {
+        if (alive) setSalesLoaded(true);
       }
     })();
+    return () => {
+      alive = false;
+    };
   }, [hydrate]);
 
   const notify = (m: string) => {
@@ -188,9 +202,12 @@ export default function ExpensesPage() {
       branch: formBranch,
       inAnalytics: form.inAnalytics,
     };
+    setSaving(true);
     const okSave = await addExpense(expense);
+    setSaving(false);
     if (!okSave) return notify("Couldn't save the expense.");
     setForm(blankForm());
+    setAddOpen(false);
     notify(`Added ${expense.title} · ${formatINR(expense.amount)}`);
   };
 
@@ -212,19 +229,16 @@ export default function ExpensesPage() {
           <p className="mt-1 text-sm text-ink-500">Outgoings &amp; true net profit{scopeSelected !== "all" ? ` · ${branchLabel(scopeSelected)}` : ""}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 rounded-full bg-danger px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-danger/90">
+          <Plus className="h-3.5 w-3.5" /> Add expense
+        </button>
         {fullAdmin && (
           <button onClick={() => setCatsOpen(true)} className="flex items-center gap-2 rounded-full border border-ink-200 bg-ivory-50 px-4 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
             <Settings2 className="h-3.5 w-3.5" /> Categories &amp; analytics
           </button>
         )}
         {/* Period filter */}
-        <div className="flex flex-wrap items-center gap-1.5 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          {PERIODS.map((p) => (
-            <button key={p.value} onClick={() => setPeriod(p.value)} className={cn("rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all", period === p.value ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <Segmented value={period} onChange={setPeriod} options={PERIODS.map((p) => [p.value, p.label] as const)} />
         </div>
       </div>
 
@@ -237,7 +251,10 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      <div className="mb-5 inline-flex rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+      {refreshing && hydrated && (
+        <p className="mb-3 inline-flex items-center gap-2 text-xs text-ink-500"><Loader2 className="h-3.5 w-3.5 animate-spin text-gold-500" /> Refreshing expenses…</p>
+      )}
+      <div className="mb-5 flex w-fit rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
         {([["tracker", "Tracker"], ["report", "Report"]] as const).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={cn("rounded-full px-4 py-1.5 text-xs font-semibold transition-all", tab === k ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>{l}</button>
         ))}
@@ -252,80 +269,74 @@ export default function ExpensesPage() {
         />
       ) : (
       <>
-      {/* Net profit + KPIs */}
+      {/* Net profit + KPIs — tap a box for its details */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className={cn("rounded-2xl border p-5", netProfit >= 0 ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5")}>
-          <div className="flex items-center gap-2">
-            {netProfit >= 0 ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-danger" />}
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">Net Profit</p>
-          </div>
-          <p className={cn("mt-2 text-2xl font-bold tabular-nums", netProfit >= 0 ? "text-success" : "text-danger")}>{netProfit < 0 ? "-" : ""}{formatINR(Math.abs(netProfit))}</p>
-          <p className="mt-1 text-[11px] text-ink-400">Revenue {formatINR(revenue)} − Expenses {formatINR(totalExpenses)}</p>
-        </div>
-        <KPI icon={<Wallet className="h-4 w-4 text-gold-600" />} label="Total Expenses" value={formatINR(totalExpenses)} />
-        <KPI icon={<Receipt className="h-4 w-4 text-gold-600" />} label="Entries" value={String(periodExpenses.length)} />
-        <KPI icon={<Tag className="h-4 w-4 text-gold-600" />} label="Top Category" value={topCategory} small />
+        <AdminStat label="Net Profit" value={salesLoaded ? `${netProfit < 0 ? "-" : ""}${formatINR(Math.abs(netProfit))}` : "…"} hint={salesLoaded ? "Revenue − expenses" : "Loading sales…"} accent={netProfit >= 0 ? "green" : "danger"} icon={netProfit >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+          details={[{ label: "GST sales", value: formatINR(gstRevenue), tone: "plus" }, { label: "Non-GST sales", value: formatINR(nonGstRevenue), tone: "plus" }, { label: "Expenses", value: `− ${formatINR(totalExpenses)}`, tone: "minus" }, { label: "Net profit", value: `${netProfit < 0 ? "-" : ""}${formatINR(Math.abs(netProfit))}`, tone: "total" }]} />
+        <AdminStat label="Total Expenses" value={hydrated ? formatINR(totalExpenses) : "…"} hint="This period · branch" accent="danger" icon={<Wallet className="h-4 w-4" />}
+          details={byCategory.length ? [...byCategory.map(([c, v]) => ({ label: c, value: `− ${formatINR(v)}`, tone: "minus" as const })), { label: "Total", value: formatINR(totalExpenses), tone: "total" as const }] : undefined} />
+        <AdminStat label="Entries" value={hydrated ? String(periodExpenses.length) : "…"} hint="Expenses recorded" accent="ink" icon={<Receipt className="h-4 w-4" />} />
+        <AdminStat label="Top Category" value={hydrated ? topCategory : "…"} hint={byCategory[0] ? formatINR(byCategory[0][1]) : "—"} accent="gold" icon={<Tag className="h-4 w-4" />} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        {/* Add + breakdown */}
-        <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
-            <div className="mb-4 flex items-center gap-2"><Plus className="h-4 w-4 text-gold-600" /><h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">Add Expense</h2></div>
-            <div className="space-y-4">
-              <div><label className={label}>What for?</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. October Shop Rent" className={field} /></div>
-              <div className="grid grid-cols-2 gap-3">
+      {/* Add expense — a compact pop-up instead of a tall side form */}
+      {addOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/45 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !saving && setAddOpen(false)}>
+          <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl bg-ivory-50 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+              <h2 className="flex items-center gap-2 text-base font-bold text-ink-900"><span className="grid h-8 w-8 place-items-center rounded-full bg-danger/10 text-danger"><Wallet className="h-4 w-4" /></span> Add expense</h2>
+              <button onClick={() => setAddOpen(false)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-lg text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+              <div><label className={label}>What for?</label><input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. October shop rent" className={field} /></div>
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div><label className={label}>Amount (₹)</label><MoneyInput value={form.amount === "" ? 0 : form.amount} onChange={(paise) => setForm({ ...form, amount: paise })} className={field} /></div>
                 <div><label className={label}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={field} /></div>
+                <div>
+                  <label className={label}>Paid via</label>
+                  <select value={form.paymentMode} onChange={(e) => setForm({ ...form, paymentMode: e.target.value as PaymentMode })} className={field}>
+                    {PAYMENT_MODES.map((m) => <option key={m} value={m}>{PAY_MODE_LABEL[m] ?? m}</option>)}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className={label}>Branch</label>
-                <select value={formBranch} onChange={(e) => setForm({ ...form, branch: e.target.value })} disabled={branchChoices.length === 1} className={field}>
-                  {branchChoices.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
-                </select>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={label}>Category</label>
+                  <input list="expense-cats" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Pick or type one" className={field} />
+                  <datalist id="expense-cats">{activeCategories.map((c) => <option key={c} value={c} />)}</datalist>
+                </div>
+                <div>
+                  <label className={label}>Branch</label>
+                  <select value={formBranch} onChange={(e) => setForm({ ...form, branch: e.target.value })} disabled={branchChoices.length === 1} className={field}>
+                    {branchChoices.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className={label}>Category</label>
-                <input list="expense-cats" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Pick or type a custom one" className={field} />
-                <datalist id="expense-cats">{activeCategories.map((c) => <option key={c} value={c} />)}</datalist>
-              </div>
-              <div>
-                <label className={label}>Paid via</label>
-                <select value={form.paymentMode} onChange={(e) => setForm({ ...form, paymentMode: e.target.value as PaymentMode })} className={field}>
-                  {PAYMENT_MODES.map((m) => <option key={m} value={m}>{PAY_MODE_LABEL[m] ?? m}</option>)}
-                </select>
-              </div>
+              {activeCategories.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {activeCategories.slice(0, 10).map((c) => (
+                    <button key={c} type="button" onClick={() => setForm({ ...form, category: c })} className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", form.category === c ? "bg-ink-900 text-ivory-50" : "bg-white text-ink-600 ring-1 ring-ink-100 hover:text-ink-900")}>{c}</button>
+                  ))}
+                </div>
+              )}
               <div><label className={label}>Notes (optional)</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Supplier, bill no…" className={field} /></div>
               {/* EXP-01: link to analytics */}
               <label className="flex items-start gap-2 rounded-lg bg-white px-3 py-2.5 text-sm text-ink-800 ring-1 ring-ink-100">
                 <input type="checkbox" checked={form.inAnalytics} onChange={(e) => setForm({ ...form, inAnalytics: e.target.checked })} className="mt-0.5 h-4 w-4 accent-ink-900" />
-                <span>Subtract in analytics<span className="block text-[11px] text-ink-400">Shows on Analytics as a deduction from sales (net view).</span></span>
+                <span>Subtract in analytics<span className="block text-[11px] text-ink-400">Shows on Sales Analytics as a deduction from sales (net view).</span></span>
               </label>
-              <button onClick={submit} className="w-full rounded-xl bg-ink-900 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800">Add Expense</button>
             </div>
-          </section>
-
-          {byCategory.length > 0 && (
-            <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
-              <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-ink-900">By Category</h2>
-              <div className="space-y-3">
-                {byCategory.map(([cat, amt]) => {
-                  const pct = totalExpenses > 0 ? Math.round((amt / totalExpenses) * 100) : 0;
-                  return (
-                    <div key={cat}>
-                      <div className="mb-1 flex items-center justify-between text-xs">
-                        <span className="font-medium text-ink-700">{cat}</span>
-                        <span className="tabular-nums text-ink-500">{formatINR(amt)} · {pct}%</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-ink-100"><div className="h-full rounded-full bg-gold-500" style={{ width: `${pct}%` }} /></div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
+            <div className="flex gap-2 border-t border-ink-100 px-5 py-4">
+              <button onClick={() => setAddOpen(false)} disabled={saving} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
+              <button onClick={() => void submit()} disabled={saving} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-danger py-2.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-70">
+                {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : <><Plus className="h-4 w-4" /> Add expense</>}
+              </button>
+            </div>
+          </div>
         </div>
+      )}
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* Ledger */}
         <section>
           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -378,23 +389,45 @@ export default function ExpensesPage() {
                     </td>
                   </tr>
                 ))}
-                {ledger.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-ink-400">No expenses in this period.</td></tr>}
+                {!hydrated && <tr><td colSpan={7} className="px-4 py-12 text-center"><LoadingInline label="Loading expenses…" /></td></tr>}
+                {hydrated && ledger.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-ink-400">
+                    No expenses in this period.{" "}
+                    <button onClick={() => setAddOpen(true)} className="font-semibold text-danger hover:underline">Add one</button>
+                  </td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </section>
+
+        {/* By category */}
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-ink-900">By Category</h2>
+            {byCategory.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-400">{hydrated ? "No expenses in this period." : "Loading…"}</p>
+            ) : (
+              <div className="space-y-3">
+                {byCategory.map(([cat, amt]) => {
+                  const pct = totalExpenses > 0 ? Math.round((amt / totalExpenses) * 100) : 0;
+                  return (
+                    <div key={cat}>
+                      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-medium text-ink-700">{cat}</span>
+                        <span className="shrink-0 tabular-nums text-danger">{formatINR(amt)} <span className="text-ink-400">· {pct}%</span></span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-ink-100"><div className="h-full rounded-full bg-danger/70" style={{ width: `${pct}%` }} /></div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </aside>
       </div>
       </>
       )}
-    </div>
-  );
-}
-
-function KPI({ icon, label, value, small }: { icon: React.ReactNode; label: string; value: string; small?: boolean }) {
-  return (
-    <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
-      <div className="flex items-center gap-2">{icon}<p className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">{label}</p></div>
-      <p className={cn("mt-2 font-bold tabular-nums text-ink-900", small ? "text-lg" : "text-2xl")}>{value}</p>
     </div>
   );
 }

@@ -3,7 +3,8 @@ import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState } from "react";
 import {
-  MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox, Plus, Download
+  MessageSquare, Search, MessageCircle, Phone, Mail, Trash2, CheckCircle2, Clock, Inbox, Plus, Download,
+  X,
 } from "lucide-react";
 import {
   useInquiry, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus, INQUIRY_TOPICS, genInquiryId
@@ -16,6 +17,10 @@ import { downloadCsv, stamp } from "@/lib/csv";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { AdminStat } from "@/components/admin/AdminStat";
 import { E } from "@/lib/whatsapp";
+import { PERIODS, periodBounds, type ReportPeriod } from "@/components/admin/ServiceReport";
+import { useBranchContacts } from "@/lib/client/branchContacts";
+import { useAuth } from "@/lib/store/auth";
+import Link from "next/link";
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -44,6 +49,8 @@ export default function InquiriesPage() {
   const addInquiry = useInquiry((s) => s.addInquiry);
   const updateInquiry = useInquiry((s) => s.updateInquiry);
   const deleteInquiry = useInquiry((s) => s.deleteInquiry);
+  const contacts = useBranchContacts();
+  const fullAdmin = useAuth((s) => s.adminAccess === "all");
 
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
   const allowedBranches = useBranchScope((s) => s.allowed);
@@ -57,6 +64,7 @@ export default function InquiriesPage() {
 
   const [statusF, setStatusF] = useState<InquiryStatus | "all">("all");
   const [query, setQuery] = useState("");
+  const [period, setPeriod] = useState<ReportPeriod>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -88,16 +96,18 @@ export default function InquiriesPage() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const bounds = periodBounds(period, from, to);
     return scopedInquiries
       .filter((i) => statusF === "all" || i.status === statusF)
       .filter((i) => {
+        if (!bounds) return true;
         const day = localDay(i.createdAt);
-        return (!from || day >= from) && (!to || day <= to);
+        return day >= bounds.lo && day <= bounds.hi;
       })
       .filter((i) => !q || i.name.toLowerCase().includes(q) || i.phone.includes(query.trim()) || i.topic.toLowerCase().includes(q) || (i.productInterest || "").toLowerCase().includes(q) || i.message.toLowerCase().includes(q))
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  }, [scopedInquiries, statusF, query, from, to]);
-  const pg = usePaged(rows, `${query}|${statusF}|${branch}|${from}|${to}`);
+  }, [scopedInquiries, statusF, query, period, from, to]);
+  const pg = usePaged(rows, `${query}|${statusF}|${branch}|${period}|${from}|${to}`);
 
   const contact = (i: Inquiry) => {
     if (i.status === "new") updateInquiry(i.id, { status: "contacted" });
@@ -126,51 +136,58 @@ export default function InquiriesPage() {
       <LoadErrorBanner message={loadError} onRetry={() => void useInquiry.getState().hydrate()} />
       {/* Add Inquiry Modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-ink-950/40 p-4 backdrop-blur-sm" onClick={() => setShowAdd(false)}>
-          <div className="my-auto w-full max-w-md rounded-2xl bg-ivory-50 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-ink-900">Add Inquiry</h3>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Name *</label>
-                <input required value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        // Header and buttons stay put; only the form scrolls — so it always fits the screen (a sheet on phones).
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/40 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setShowAdd(false)}>
+          <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-ivory-50 shadow-xl sm:max-h-[88vh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+              <h3 className="text-lg font-bold text-ink-900">Add inquiry</h3>
+              <button onClick={() => setShowAdd(false)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-lg text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+              <div className="grid gap-3.5 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Name *</label>
+                  <input required value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Mobile *</label>
+                  <input required type="tel" inputMode="numeric" placeholder="10-digit number" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "").slice(0, 10) }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Topic</label>
+                  <select value={addForm.topic} onChange={(e) => setAddForm((f) => ({ ...f, topic: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none">
+                    {INQUIRY_TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Product interest (optional)</label>
+                  <input value={addForm.productInterest} onChange={(e) => setAddForm((f) => ({ ...f, productInterest: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Branch</label>
+                  <select value={addBranch} onChange={(e) => setAddForm((f) => ({ ...f, branch: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none">
+                    {branchChoices.map((b) => <option key={b} value={b}>{b === "Any" ? "Any branch" : branchLabel(b)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Follow-up status</label>
+                  <select value={addForm.status} onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value as InquiryStatus }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none">
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Phone *</label>
-                <input required type="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Topic</label>
-                <select value={addForm.topic} onChange={(e) => setAddForm((f) => ({ ...f, topic: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
-                  {INQUIRY_TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">What they asked</label>
-                <textarea rows={3} value={addForm.message} onChange={(e) => setAddForm((f) => ({ ...f, message: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Product Interest (Optional)</label>
-                <input value={addForm.productInterest} onChange={(e) => setAddForm((f) => ({ ...f, productInterest: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Branch</label>
-                <select value={addBranch} onChange={(e) => setAddForm((f) => ({ ...f, branch: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
-                  {branchChoices.map((b) => <option key={b} value={b}>{b === "Any" ? "Any branch" : branchLabel(b)}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-ink-500">Follow-up Status</label>
-                <select value={addForm.status} onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value as InquiryStatus }))} className="w-full rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
-                  <option value="new">New</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="resolved">Resolved</option>
-                </select>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">What they asked</label>
+                <textarea rows={3} value={addForm.message} onChange={(e) => setAddForm((f) => ({ ...f, message: e.target.value }))} className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm focus:border-gold-500 focus:outline-none resize-y" />
               </div>
             </div>
-            <div className="mt-6 flex gap-2">
+            <div className="flex gap-2 border-t border-ink-100 px-5 py-4">
               <button onClick={() => setShowAdd(false)} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
               <button onClick={() => {
-                if (!addForm.name.trim() || !addForm.phone.trim()) return alert("Name and phone are required.");
+                if (!addForm.name.trim()) return alert("Enter the customer's name.");
+                if (!/^\d{10}$/.test(addForm.phone)) return alert("Enter a 10-digit mobile number.");
                 addInquiry({
                   id: genInquiryId(),
                   createdAt: new Date().toISOString(),
@@ -184,7 +201,7 @@ export default function InquiriesPage() {
                 });
                 setShowAdd(false);
                 setAddForm({ name: "", phone: "", topic: "Other", message: "", productInterest: "", status: "new", branch: "" });
-              }} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-white hover:opacity-90">Save</button>
+              }} className="flex-1 rounded-xl bg-ink-900 py-2.5 text-sm font-semibold text-white hover:opacity-90">Save inquiry</button>
             </div>
           </div>
         </div>
@@ -209,6 +226,14 @@ export default function InquiriesPage() {
         <div className="border-l-4 border-ink-900 pl-4">
           <h1 className="flex items-center gap-2 text-2xl font-bold text-ink-900"><MessageSquare className="h-6 w-6 text-gold-600" /> Customer Inquiries</h1>
           <p className="mt-1 text-sm text-ink-500">Website enquiries land here · reach customers on WhatsApp to continue</p>
+          {/* INQ-02: which WhatsApp each branch's website inquiries go to (edit on Admin → Branches). */}
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-500">
+            <span className="font-semibold uppercase tracking-wider text-ink-400">Inquiries go to</span>
+            {contacts.map((c) => (
+              <span key={c.id}><b className="text-ink-700">{branchLabel(c.id)}</b> {c.phone || "—"}</span>
+            ))}
+            {fullAdmin && <Link href="/admin/branches" className="font-semibold text-gold-600 hover:underline">Change</Link>}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={exportCsv} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
@@ -228,36 +253,45 @@ export default function InquiriesPage() {
         <Stat label="Resolved" value={String(counts.resolved)} accent="green" icon={<CheckCircle2 className="h-4 w-4" />} />
       </div>
 
-      {/* Filters */}
-      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-ink-100">
+      {/* Filters — search + branch, then date, then status: three tidy rows. */}
+      <div className="mb-5 space-y-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative lg:flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, topic…" className="w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
+          </div>
+          <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-sm ring-1 ring-ink-100">
             <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
             {lockedBranch ? (
               <span className={cn(pill, "bg-gold-500 text-ink-900")}>{branchLabel(lockedBranch)}</span>
             ) : (
               ([["all", "All"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
-                <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
+                <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, "whitespace-nowrap", branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
                   {label}
                 </button>
               ))
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {(["all", "new", "contacted", "resolved"] as const).map((s) => (
-              <button key={s} onClick={() => setStatusF(s)} className={chip(statusF === s)}>{s === "all" ? "All Status" : INQUIRY_STATUS_META[s].label}</button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} aria-label="From date" className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-            <span className="text-xs text-ink-400">–</span>
-            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} aria-label="To date" className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-            {(from || to) && <button onClick={() => { setFrom(""); setTo(""); }} className="text-xs font-semibold text-gold-600 hover:underline">Clear</button>}
-          </div>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, topic…" className="w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none sm:w-72" />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-14 text-[10px] font-bold uppercase tracking-wider text-ink-400">Date</span>
+          {PERIODS.map((p) => (
+            <button key={p.key} onClick={() => { setPeriod(p.key); if (p.key !== "custom") { setFrom(""); setTo(""); } }} className={chip(period === p.key)}>{p.label}</button>
+          ))}
+          {period === "custom" && (
+            <span className="flex items-center gap-2">
+              <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} aria-label="From date" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+              <span className="text-xs text-ink-400">→</span>
+              <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} aria-label="To date" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-14 text-[10px] font-bold uppercase tracking-wider text-ink-400">Status</span>
+          {(["all", "new", "contacted", "resolved"] as const).map((st) => (
+            <button key={st} onClick={() => setStatusF(st)} className={chip(statusF === st)}>{st === "all" ? "All" : INQUIRY_STATUS_META[st].label}</button>
+          ))}
+          <span className="ml-auto text-xs text-ink-500">{rows.length} inquir{rows.length === 1 ? "y" : "ies"}</span>
         </div>
       </div>
 

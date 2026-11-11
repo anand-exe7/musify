@@ -399,6 +399,73 @@ IDs below match the client's *Detailed Requirements* document. Migrations **0037
 - **New ticket:** the mobile number takes digits only and stops at 10 (a pasted +91 / 0 is dropped).
 - **Checked:** both documents were viewed on a local test page (A4 and thermal 80 / 58), as were the intake graph with its hover box and the quotation pop-up. A new automated test confirms that a part-paid repair gets no tax invoice, and that full payment mints one recording "Cash + GPay / UPI".
 
+### 7.7d Repair products, live WhatsApp details, cancel; Inquiries; branch WhatsApp numbers (INQ-02)
+- **Products used (new ticket + ticket page)** (`src/components/admin/TicketParts.tsx`):
+  - Each product is one aligned row: Variant · Qty (− n +) · Price · GST · Line total, every box the same height.
+  - A product without variants shows its single option in a dashed box, so the columns still line up. On a phone the row wraps into two neat lines.
+- **WhatsApp ticket details** (`repairIntakeMessage` in `RepairTicketModal.tsx`):
+  - The message is built from the ticket as it is *now*: service charge (the final cost once set, else the estimate), every product used, the total, what was paid and by which mode, the balance due and the ready-by date.
+  - Example: estimate ₹1,000 + string ₹30 = ₹1,030, ₹300 paid (Cash), balance ₹730.
+  - "Resend ticket details" and "Send status update" no longer send intake-time figures.
+  - The number at the bottom is the ticket's own branch number.
+  - The new-ticket form's summary also adds the products to the total and balance.
+- **Cancelling a repair:**
+  - A confirm box first says what will happen.
+  - Products taken out of stock (only from Ready onwards) go back to the branch, and each return is written to the stock history ("Repair cancelled — products returned to stock"). If nothing was taken out, stock isn't touched.
+  - The repair leaves revenue, the Service report and Analytics. If its tax invoice was already issued, that invoice is marked Cancelled.
+  - The ticket shows a box listing all this, plus the amount paid (and by which mode) to refund if due.
+- **Inquiries** (`src/app/admin/inquiries/page.tsx`):
+  - Filters in three rows: search + branch, then Date (All, Today, This week, This month, This year, Custom with from → to), then Status, with a count.
+  - **Add inquiry** has a fixed header and buttons; only the form scrolls, so it always fits the screen.
+  - The mobile number is limited to 10 digits.
+- **WhatsApp number per branch (INQ-02):**
+  - Each branch's **Phone / WhatsApp** on Admin → Branches is the number its inquiries go to.
+  - The website inquiry form opens WhatsApp to the branch the customer picked. "Any branch" goes to Branch 1, Vadapalani.
+  - The website lists the saved numbers, and repair messages show each ticket's branch number.
+  - The Inquiries page shows which number each branch uses, with a "Change" link.
+  - Public lookup: `/api/branches/contacts`.
+  - Saved today: Vadapalani +91 9087 22 22 56, Porur +91 72001 78753, Ashok Nagar +91 99406 38409. Before this change, every website inquiry went to +91 99406 38409.
+- **Checked:** product rows (desktop and phone), the message text, the Inquiries filters ("Today" shows only today's) and the Add inquiry box on a 560 px-tall screen, all on a temporary local page. New tests cover the cancel's stock-history entries and the cancelled tax invoice.
+
+### 7.7e Reports: Sales & Purchase Analytics, GST, Expenses, Users (round 5)
+- **Every stat box opens a pop-up** (`src/components/admin/AdminStat.tsx`):
+  - Tap any box (Analytics, Purchase Analytics, Expenses, Invoices, Service report…) to see the full amount, never cut off, plus the lines it is made of. For example, Net Profit shows net sales − expenses = profit.
+  - Long amounts step down a size so they fit the box.
+- **Sales Analytics** (`src/app/admin/analytics/page.tsx`): nothing was removed.
+  - **Filters:** Period, Channel, Branch and Tax are one tidy card of segmented controls (`Segmented.tsx`) instead of round pills.
+  - **Tile groups:** tiles sit under headings — Profit & expenses, Sales, By channel, After linked expenses.
+  - **Colours mean something:**
+    - green = profit or income
+    - red = expenses, deductions or a loss
+    - blue = GST
+    - gold = in-store or gross
+    - violet = service
+  - **Formula strip:** "How net sales is worked out" is a small strip between the groups.
+  - **Trend chart:**
+    - Compact and full width (`MonthBars.tsx`). Bars draw properly and are stacked by channel.
+    - Hover or tap a month to see its amount, bill count and channel split.
+    - The year picker always works (this year, last year and any year with sales).
+  - **Side cards:** Payment mode, Branch comparison, Order source and Top items now sit in a row below the chart instead of leaving empty space.
+  - **Payment-mode split:** split bills (cash + card) now count under each mode instead of "Other".
+  - **Sales Report:**
+    - A summary strip on top.
+    - Cleaner columns: date and time, invoice, customer, products as neat lines (+N more), branch with a coloured source tag, payment chip, discount in red, GST, and total.
+    - Click a row for that bill's full breakdown, including split payment parts.
+  - **Loading:** Net Profit and Total Expenses show "…" until expenses load, instead of a wrong figure.
+- **Purchase Analytics:**
+  - The same filter card, and tiles with breakdown pop-ups.
+  - A clearer chart stacked by branch, with hover amounts and a year picker.
+  - The vendor table shows a short "3 branches · 2 owe" button that opens the per-branch split in a pop-up, so many branches never widen the table.
+  - An "Updating purchase figures…" badge shows while filters reload.
+- **GST & Tax:** each tab shows a "Loading…" panel until its data arrives, instead of default values that later jump.
+- **Expenses:**
+  - **Add expense** is a red button at the top that opens a compact pop-up: amount, date and mode on one row, plus one-tap category chips. It replaces the tall side form.
+  - The list shows "Loading expenses…" while it loads, and "Refreshing expenses…" when the page is reopened.
+  - Expense figures are red, and Net Profit waits for sales before showing.
+  - Checked: Tracker → Report → Tracker keeps the list.
+- **Users:** rows fit any width (cards on narrow screens), so there's no sideways scrolling, even with long emails.
+- **Checked:** Sales Analytics (tiles, pop-ups, chart, Sales Report and bill pop-up), Purchase Analytics (vendor pop-up), Expenses and Users were viewed on a temporary local page with sample data. 401 tests pass.
+
 ### 7.8 Repair payments (REP-01, REP-02, REP-03, REP-04)
 - **What:**
   - **Raise Repair Ticket** has **Paid now** and **Payment mode** (Cash, GPay/UPI, Card, Bank, Other).

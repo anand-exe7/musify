@@ -6,6 +6,7 @@ import { MessageCircle, Phone, Mail, MapPin, CheckCircle2, ArrowRight, Send } fr
 import { useInquiry, genInquiryId, INQUIRY_TOPICS, type Inquiry as InquiryRecord } from "@/lib/store/inquiry";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { E } from "@/lib/whatsapp";
+import { useBranchContacts, whatsappFor, phoneFor } from "@/lib/client/branchContacts";
 
 /**
  * Enquiry section embedded directly on the home page (id="inquiry"), so the
@@ -13,6 +14,8 @@ import { E } from "@/lib/whatsapp";
  */
 export function Inquiry() {
   const addInquiry = useInquiry((s) => s.addInquiry);
+  // INQ-02: the inquiry goes to the WhatsApp number of the branch the customer picks (set on Admin → Branches).
+  const contacts = useBranchContacts();
   const [done, setDone] = useState<InquiryRecord | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -55,7 +58,7 @@ export function Inquiry() {
     addInquiry(inquiry);
     setDone(inquiry);
     if (openWhatsApp) {
-      window.open(waLink(BUSINESS.whatsapp, customerMessage(inquiry)), "_blank", "noopener,noreferrer");
+      window.open(waLink(whatsappFor(contacts, inquiry.branch), customerMessage(inquiry)), "_blank", "noopener,noreferrer");
     }
   };
 
@@ -85,7 +88,7 @@ export function Inquiry() {
               <p className="heading-serif mt-3 text-2xl text-ivory-50">We&apos;re on WhatsApp.</p>
               <p className="mt-2 text-sm text-ivory-100/70">Message us directly and we&apos;ll help you pick, price or repair the right instrument.</p>
               <a
-                href={waLink(BUSINESS.whatsapp, `Hi ${BUSINESS.name}! I have an enquiry.`)}
+                href={waLink(whatsappFor(contacts, form.branch), `Hi ${BUSINESS.name}! I have an enquiry.`)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-5 inline-flex items-center gap-2 bg-[#128C4B] px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
@@ -99,7 +102,7 @@ export function Inquiry() {
                 <div key={b.key} className="border-b border-ink-100 pb-4 last:border-0 last:pb-0">
                   <p className="font-semibold text-gold-700">{b.city} · {b.area}</p>
                   <p className="mt-1.5 flex items-start gap-2 text-sm text-ink-600"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-500" />{b.street}, {b.zip}</p>
-                  <p className="mt-1 flex items-center gap-2 text-sm text-ink-600"><Phone className="h-3.5 w-3.5 shrink-0 text-gold-500" />{b.phone}</p>
+                  <p className="mt-1 flex items-center gap-2 text-sm text-ink-600"><Phone className="h-3.5 w-3.5 shrink-0 text-gold-500" />{phoneFor(contacts, b.key)}</p>
                 </div>
               ))}
               <p className="flex items-center gap-2 text-sm text-ink-600"><Mail className="h-3.5 w-3.5 shrink-0 text-gold-500" />{BUSINESS.email}</p>
@@ -123,7 +126,7 @@ export function Inquiry() {
                 </p>
                 <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
                   <a
-                    href={waLink(BUSINESS.whatsapp, customerMessage(done))}
+                    href={waLink(whatsappFor(contacts, done.branch), customerMessage(done))}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 bg-[#128C4B] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
@@ -150,7 +153,7 @@ export function Inquiry() {
                   </div>
                   <div>
                     <label className={label}>Mobile / WhatsApp *</label>
-                    <input value={form.phone} onChange={(e) => set({ phone: e.target.value })} inputMode="numeric" className={field} placeholder="10-digit number" />
+                    <input value={form.phone} onChange={(e) => set({ phone: e.target.value.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "").slice(0, 10) })} inputMode="numeric" className={field} placeholder="10-digit number" />
                   </div>
                   <div>
                     <label className={label}>Email (optional)</label>

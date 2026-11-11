@@ -133,89 +133,81 @@ export default function UsersPage() {
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead>
-            <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">
-              <th className="px-5 py-4">Name</th>
-              <th>Email</th>
-              <th>Branch access</th>
-              <th className="text-right">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-50">
-            {rows.map((u) => {
-              const access = accessOf(u);
-              const userBranches = branchesOfUser(u);
-              const isMe = u.id === meId;
-              return (
-                <tr key={u.id} className="text-ink-800">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-900 text-sm font-semibold text-gold-400">{u.name?.[0]?.toUpperCase() || "?"}</div>
-                      <div>
-                        <p className="font-semibold text-ink-900">{u.name || "—"}{isMe && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-gold-600">You</span>}</p>
-                        <span className={cn("mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", accessTone(access))}>{accessText(access, userBranches)}</span>
-                      </div>
+      {/* Rows that fit any width — no sideways scrolling: one line per user on a wide screen, a card on a narrow one. */}
+      <div className="overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50">
+        <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1.6fr)_6.5rem] gap-4 border-b border-ink-100 px-5 py-3.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400 lg:grid">
+          <span>Name</span><span>Email</span><span>Branch access</span><span className="text-right">Status</span>
+        </div>
+        <ul className="divide-y divide-ink-100">
+          {rows.map((u) => {
+            const access = accessOf(u);
+            const userBranches = branchesOfUser(u);
+            const isMe = u.id === meId;
+            return (
+              <li key={u.id} className="grid gap-3 px-5 py-4 text-ink-800 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1.6fr)_6.5rem] lg:items-center lg:gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-900 text-sm font-semibold text-gold-400">{u.name?.[0]?.toUpperCase() || "?"}</div>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-ink-900">{u.name || "—"}{isMe && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-gold-600">You</span>}</p>
+                    <span className={cn("mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", accessTone(access))}>{accessText(access, userBranches)}</span>
+                  </div>
+                </div>
+                <p className="min-w-0 break-all text-sm text-ink-600 lg:break-words"><span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400 lg:hidden">Email</span>{u.email}</p>
+                <div className="min-w-0">
+                  <select
+                    value={access}
+                    disabled={isMe}
+                    title={isMe ? "You can't change your own access" : undefined}
+                    onChange={(e) => patchUser(u.id, patchForAccess(e.target.value as Access, userBranches))}
+                    className="w-full max-w-xs rounded-lg border border-ink-200 bg-white px-3 py-2 text-xs font-semibold text-ink-900 focus:border-gold-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {ACCESS_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  {access === "staff" && (
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                      {BUSINESS.branches.map((br) => {
+                        const on = userBranches.includes(br.key);
+                        return (
+                          <label key={br.key} className="flex items-center gap-1.5 text-xs text-ink-700">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              disabled={isMe || (on && userBranches.length === 1)}
+                              title={on && userBranches.length === 1 ? "A staff member needs at least one branch" : undefined}
+                              onChange={() => {
+                                const next = on ? userBranches.filter((k) => k !== br.key) : [...userBranches, br.key];
+                                // keep the shop's own order so the primary branch is predictable
+                                const ordered = BUSINESS.branches.map((x) => x.key).filter((k) => next.includes(k));
+                                patchUser(u.id, patchForBranches(ordered));
+                              }}
+                            />
+                            {br.area}
+                          </label>
+                        );
+                      })}
                     </div>
-                  </td>
-                  <td className="text-ink-600">{u.email}</td>
-                  <td>
-                    <select
-                      value={access}
-                      disabled={isMe}
-                      title={isMe ? "You can't change your own access" : undefined}
-                      onChange={(e) => patchUser(u.id, patchForAccess(e.target.value as Access, userBranches))}
-                      className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-xs font-semibold text-ink-900 focus:border-gold-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {ACCESS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                    {access === "staff" && (
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                        {BUSINESS.branches.map((br) => {
-                          const on = userBranches.includes(br.key);
-                          return (
-                            <label key={br.key} className="flex items-center gap-1.5 text-xs text-ink-700">
-                              <input
-                                type="checkbox"
-                                checked={on}
-                                disabled={isMe || (on && userBranches.length === 1)}
-                                title={on && userBranches.length === 1 ? "A staff member needs at least one branch" : undefined}
-                                onChange={() => {
-                                  const next = on ? userBranches.filter((k) => k !== br.key) : [...userBranches, br.key];
-                                  // keep the shop's own order so the primary branch is predictable
-                                  const ordered = BUSINESS.branches.map((x) => x.key).filter((k) => next.includes(k));
-                                  patchUser(u.id, patchForBranches(ordered));
-                                }}
-                              />
-                              {br.area}
-                            </label>
-                          );
-                        })}
-                      </div>
+                  )}
+                </div>
+                <div className="lg:text-right">
+                  <button
+                    onClick={() => patchUser(u.id, { active: !u.active })}
+                    disabled={isMe}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      u.active ? "bg-success/15 text-success hover:bg-success/25" : "bg-ink-100 text-ink-400 hover:bg-ink-200",
                     )}
-                  </td>
-                  <td className="text-right">
-                    <button
-                      onClick={() => patchUser(u.id, { active: !u.active })}
-                      disabled={isMe}
-                      className={cn(
-                        "rounded px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                        u.active ? "bg-success/15 text-success hover:bg-success/25" : "bg-ink-100 text-ink-400 hover:bg-ink-200",
-                      )}
-                    >
-                      {u.active ? "Active" : "Disabled"}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {!loading && rows.length === 0 && <tr><td colSpan={4} className="px-5 py-16 text-center text-sm text-ink-400">No users found.</td></tr>}
-            {loading && <tr><td colSpan={4} className="px-5 py-16 text-center text-sm text-ink-400"><LoadingInline label="Loading users…" /></td></tr>}
-          </tbody>
-        </table>
+                  >
+                    {u.active ? "Active" : "Disabled"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+          {!loading && rows.length === 0 && <li className="px-5 py-16 text-center text-sm text-ink-400">No users found.</li>}
+          {loading && <li className="px-5 py-16 text-center text-sm text-ink-400"><LoadingInline label="Loading users…" /></li>}
+        </ul>
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ import { Building2, ShieldCheck, Check } from "lucide-react";
 import { useAuth } from "@/lib/store/auth";
 import type { BranchProfile } from "@/lib/db/queries/branches";
 import { cn } from "@/lib/utils";
+import { toWhatsAppNumber } from "@/lib/data/business";
+import { invalidateBranchContacts } from "@/lib/client/branchContacts";
 
 export default function BranchesPage() {
   const isAdmin = useAuth((s) => s.isAdmin);
@@ -48,6 +50,7 @@ export default function BranchesPage() {
         body: JSON.stringify({ name: b.name, city: b.city, address: b.address, gstin: b.gstin, phone: b.phone, active: b.active }),
       });
       if (!res.ok) throw new Error("save failed");
+      invalidateBranchContacts();
       setSavedId(b.id);
       setTimeout(() => setSavedId((s) => (s === b.id ? null : s)), 1800);
     } catch {
@@ -74,7 +77,7 @@ export default function BranchesPage() {
     <div className="p-5 md:p-8">
       <div className="mb-6 border-l-4 border-ink-900 pl-4">
         <h1 className="text-2xl font-bold text-ink-900">Branches</h1>
-        <p className="mt-1 text-sm text-ink-500">Address and per-branch GSTIN used on invoices &amp; reports</p>
+        <p className="mt-1 text-sm text-ink-500">Address, per-branch GSTIN and the WhatsApp number each branch&apos;s inquiries go to</p>
       </div>
 
       {loading && <p className="py-6"><LoadingInline label="Loading branches…" /></p>}
@@ -102,7 +105,13 @@ export default function BranchesPage() {
             <input value={b.address} onChange={(e) => setField(b.id, { address: e.target.value })} className={field} />
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div><label className={label}>GSTIN</label><input value={b.gstin} onChange={(e) => setField(b.id, { gstin: e.target.value.toUpperCase() })} className={cn(field, "font-mono tracking-wide")} placeholder="33XXXXX0000X1ZV" /></div>
-              <div><label className={label}>Phone</label><input value={b.phone} onChange={(e) => setField(b.id, { phone: e.target.value })} className={field} /></div>
+              <div>
+                <label className={label}>Phone / WhatsApp</label>
+                <input value={b.phone} onChange={(e) => setField(b.id, { phone: e.target.value })} className={field} placeholder="+91 98765 43210" inputMode="tel" />
+                <p className={cn("mt-1 text-[11px]", toWhatsAppNumber(b.phone) ? "text-ink-400" : "text-danger")}>
+                  {toWhatsAppNumber(b.phone) ? "Website inquiries for this branch open WhatsApp to this number; it is also printed on this branch's messages." : "Enter a 10-digit mobile number, so WhatsApp inquiries can reach this branch."}
+                </p>
+              </div>
             </div>
             <div className="mt-5 flex justify-end">
               <button

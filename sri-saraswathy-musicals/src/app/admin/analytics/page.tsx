@@ -8,12 +8,17 @@ import { useBranchScope } from "@/lib/store/branch";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
-import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import {
+  Download, FileSpreadsheet, Loader2, TrendingUp, TrendingDown, Coins, Wallet, Receipt, IndianRupee, Landmark, ShoppingBag,
+  Store, Globe, Wrench, ClipboardList, Scale, MinusCircle, Search,
+} from "lucide-react";
+import { MonthBars } from "@/components/admin/MonthBars";
+import { Segmented } from "@/components/admin/Segmented";
 import { downloadXlsx, rupeesNum } from "@/lib/reports/excel";
 import { fetchJson } from "@/lib/client/api";
 import { useAuth } from "@/lib/store/auth";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
-import { AdminStat } from "@/components/admin/AdminStat";
+import { AdminStat, StatModal } from "@/components/admin/AdminStat";
 import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import type { Invoice } from "@/types";
@@ -42,11 +47,23 @@ const TAB_LABEL: Record<(typeof TABS)[number], string> = {
   products: "Products",
   coupons: "Coupons",
 };
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
 }
+
+/** Small heading over a group of tiles, so profit, sales and channels read as separate blocks. */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="mb-2.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-ink-500"><span className="h-3 w-1 rounded-full bg-gold-500" />{children}</h2>;
+}
+
+/** The trend chart stacks each month by channel, in the same colours as everywhere else. */
+const TREND_SERIES = [
+  { key: "offline", label: "In-store", color: "#C9A24B" },
+  { key: "online", label: "Online", color: "#2563EB" },
+  { key: "service", label: "Service", color: "#8B5CF6" },
+];
+const BRANCH_COLOR = ["#0A0908", "#C9A24B", "#2563EB", "#16A34A"];
 
 /** ANA-01: bucket a free-text payment label into a reporting mode. */
 function paymentModeOf(label: string | undefined | null): "Cash" | "UPI" | "Card" | "Online" | "Other" {
@@ -69,6 +86,7 @@ export default function AnalyticsPage() {
   const gstRate = useGst((s) => s.standardRate);
   const expensesAll = useExpenses((s) => s.expenses);
   const hydrateExpenses = useExpenses((s) => s.hydrate);
+  const expensesReady = useExpenses((s) => s.hydrated);
 
   // Branch scope: a branch user is locked to their own branch.
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
@@ -146,6 +164,14 @@ export default function AnalyticsPage() {
     // ANA-01: billed total split by payment mode (Cash / UPI / Card / Online / Other).
     const payModeMap = new Map<string, number>();
     scoped.forEach((b) => {
+      // A split bill (cash + card…) is counted under each mode for its own amount, not as "Other".
+      if (b.payments && b.payments.length > 0) {
+        for (const p of b.payments) {
+          const k = paymentModeOf(p.method);
+          payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, p.amount));
+        }
+        return;
+      }
       const k = paymentModeOf(b.payment);
       payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, b.total));
     });
@@ -182,32 +208,42 @@ export default function AnalyticsPage() {
       ),
     [bills, branch, channel, salesClass],
   );
-  const trendYears = useMemo(
-    () => [...new Set(trendBase.map((b) => new Date(b.createdAt).getFullYear()).filter((y) => !Number.isNaN(y)))].sort((a, b) => b - a),
-    [trendBase],
-  );
+  // Every year with sales, plus this year and last year — so the year picker always has something to switch to.
+  const trendYears = useMemo(() => {
+    const now = new Date().getFullYear();
+    return [...new Set([now, now - 1, ...trendBase.map((b) => new Date(b.createdAt).getFullYear()).filter((y) => !Number.isNaN(y))])].sort((a, b) => b - a);
+  }, [trendBase]);
   const [trendYearPick, setTrendYearPick] = useState<number | null>(null);
   // Default to the latest year that has sales (else the current year).
-  const trendYear = trendYearPick !== null && trendYears.includes(trendYearPick) ? trendYearPick : (trendYears[0] ?? new Date().getFullYear());
-  const monthly = useMemo(() => {
+  const trendYear = trendYearPick ?? new Date().getFullYear();
+  const { monthly, monthlyCount, monthlyByChannel } = useMemo(() => {
     const totals = new Array(12).fill(0);
+    const counts = new Array(12).fill(0);
+    const byChannel = Array.from({ length: 12 }, () => ({ offline: 0, online: 0, service: 0 }) as Record<string, number>);
     trendBase.forEach((b) => {
       const d = new Date(b.createdAt);
-      if (d.getFullYear() === trendYear) totals[d.getMonth()] += billNet(b);
+      if (d.getFullYear() !== trendYear) return;
+      const net = billNet(b);
+      totals[d.getMonth()] += net;
+      counts[d.getMonth()] += 1;
+      byChannel[d.getMonth()][b.source] = (byChannel[d.getMonth()][b.source] ?? 0) + net;
     });
-    return totals;
+    return { monthly: totals, monthlyCount: counts, monthlyByChannel: byChannel };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trendBase, trendYear, gstRate]);
-  const maxMonth = Math.max(...monthly, 1);
   const yearTotal = monthly.reduce((a, b) => a + b, 0);
 
   // Expenses for the current period + branch → true net profit.
-  const totalExpenses = useMemo(
-    () =>
-      expensesAll
-        .filter((e) => (branch === "all" || e.branch === branch) && inPeriod(e.expenseDate, period, new Date(), custom))
-        .reduce((n, e) => n + e.amount, 0),
+  const expensesInView = useMemo(
+    () => expensesAll.filter((e) => (branch === "all" || e.branch === branch) && inPeriod(e.expenseDate, period, new Date(), custom)),
     [expensesAll, branch, period, custom],
   );
+  const totalExpenses = expensesInView.reduce((n, e) => n + e.amount, 0);
+  const expenseByCategory = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of expensesInView) m.set(e.category || "Other", (m.get(e.category || "Other") ?? 0) + e.amount);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [expensesInView]);
 
   // Estimated COGS: match each sold item's name to its inventory purchase cost.
   const cogs = useMemo(() => {
@@ -338,7 +374,6 @@ export default function AnalyticsPage() {
     return { gstSales, nonGstSales };
   }, [scoped]);
 
-  const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
   // Until the sales feed resolves, show a loading (or offline) panel rather than
   // a wall of ₹0 stats that reads like the business has no sales.
@@ -346,8 +381,8 @@ export default function AnalyticsPage() {
     return (
       <div className="p-5 md:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-ink-900">Analytics</h1>
-          <p className="mt-1 text-sm text-ink-500">Real-time insights across in-store POS and online storefront orders</p>
+          <h1 className="text-2xl font-bold text-ink-900">Sales Analytics</h1>
+          <p className="mt-1 text-sm text-ink-500">In-store, online and service sales together</p>
         </div>
         {error ? (
           <OfflinePanel hint="We couldn't load your sales data. Check your connection and refresh." />
@@ -358,246 +393,251 @@ export default function AnalyticsPage() {
     );
   }
 
+  const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "0%");
+  const signed = (n: number) => `${n < 0 ? "-" : ""}${formatINR(Math.abs(n))}`;
+
   return (
     <div className="p-5 md:p-8">
-      {/* Header + period */}
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      {/* Header */}
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink-900">Analytics</h1>
-          <p className="mt-1 text-sm text-ink-500">Real-time insights across in-store POS and online storefront orders · cancelled bills are never counted</p>
+          <h1 className="text-2xl font-bold text-ink-900">Sales Analytics</h1>
+          <p className="mt-1 text-sm text-ink-500">In-store, online and service sales together · cancelled bills are never counted · tap any box for its details</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-        {/* ANA-02: Export to Excel (respects the filters below) */}
         {tab !== "today" && (
-          <button onClick={() => void exportExcel()} disabled={exporting} className="flex items-center gap-2 rounded-full border border-ink-200 bg-ivory-50 px-4 py-2 text-xs font-semibold text-ink-700 shadow-sm hover:border-gold-500 hover:text-gold-700 disabled:opacity-50">
-            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />} Export to Excel
+          <button onClick={() => void exportExcel()} disabled={exporting} className="flex shrink-0 items-center gap-2 self-start rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-xs font-semibold text-ink-700 shadow-sm hover:border-gold-500 hover:text-gold-700 disabled:opacity-50 sm:self-auto">
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />} {exporting ? "Preparing…" : "Export to Excel"}
           </button>
         )}
-        {tab !== "today" && (
-          <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-            <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
-            {PERIODS.map((p) => (
-              <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-        )}
-        </div>
       </div>
 
-      {/* custom range */}
-      {tab !== "today" && period === "custom" && (
-        <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-gold-300 bg-gold-50/50 p-4">
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">From</label>
-            <input type="date" value={custom.from ?? ""} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">To</label>
-            <input type="date" value={custom.to ?? ""} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-          </div>
-          <p className="pb-2 text-xs text-ink-500">{scoped.length} bill(s) in range</p>
-        </div>
-      )}
-
       {/* Tabs */}
-      <div className="mb-6 flex gap-6 border-b border-ink-100">
+      <div className="mb-4 flex gap-6 overflow-x-auto border-b border-ink-100">
         {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={cn("relative -mb-px border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors", tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
+          <button key={t} onClick={() => setTab(t)} className={cn("relative -mb-px whitespace-nowrap border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors", tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
             {TAB_LABEL[t]}
           </button>
         ))}
       </div>
 
-      {/* Channel + branch filters */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          {([["all", "All Channels"], ["offline", "In-store (POS)"], ["online", "Online (Storefront)"], ["service", "Service (Repairs)"]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setChannel(k)} className={cn(pill, channel === k ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>
-              {k !== "all" && <span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle", k === "offline" ? "bg-gold-400" : k === "online" ? "bg-success" : "bg-[#8B5CF6]")} />}
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
-          {lockedBranch ? (
-            <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>
-          ) : (
-            ([["all", "Overall"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setBranch(k)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
-                {label}
-              </button>
-            ))
-          )}
-        </div>
-        {/* GST vs Non-GST split */}
-        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Tax</span>
-          {([["all", "All Sales"], ["gst", "GST"], ["nongst", "Non-GST"]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setSalesClass(k)} className={cn(pill, salesClass === k ? "bg-info text-white" : "text-ink-500 hover:text-ink-900")}>
-              {label}
-            </button>
-          ))}
-        </div>
+      {/* Filters — one tidy card, one row per filter */}
+      <div className="mb-6 grid gap-2.5 rounded-2xl border border-ink-100 bg-ivory-50 p-4 xl:grid-cols-2">
+        {tab !== "today" && (
+          <div className="flex flex-wrap items-center gap-2 xl:col-span-2">
+            <Segmented label="Period" value={period} onChange={setPeriod} options={PERIODS.map((p) => [p.key, p.label] as const)} />
+            {period === "custom" && (
+              <span className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
+                <input type="date" value={custom.from ?? ""} max={custom.to || undefined} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} aria-label="From" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+                →
+                <input type="date" value={custom.to ?? ""} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} aria-label="To" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+                <span>{scoped.length} bill(s)</span>
+              </span>
+            )}
+          </div>
+        )}
+        <Segmented
+          label="Channel"
+          value={channel}
+          onChange={setChannel}
+          options={[
+            ["all", "All channels"],
+            ["offline", <span key="o" className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-gold-500" />In-store</span>],
+            ["online", <span key="n" className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-info" />Online</span>],
+            ["service", <span key="s" className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#8B5CF6]" />Service</span>],
+          ] as const}
+        />
+        {lockedBranch ? (
+          <div className="flex items-center gap-2.5"><span className="w-16 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">Branch</span><span className="rounded-lg bg-gold-100 px-3 py-1.5 text-xs font-semibold text-gold-800">{branchLabel(lockedBranch)}</span></div>
+        ) : (
+          <Segmented label="Branch" value={branch} onChange={setBranch} options={[["all", "All branches"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const} />
+        )}
+        <Segmented label="Tax" value={salesClass} onChange={setSalesClass} options={[["all", "All sales"], ["gst", "GST bills"], ["nongst", "Non-GST bills"]] as const} />
       </div>
 
       {/* ── REVENUE ── */}
       {tab === "revenue" && (
         <div className="space-y-6">
-          {/* Profit summary */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className={cn("rounded-2xl border p-5", netProfit >= 0 ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5")}>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Net Profit</p>
-              <p className={cn("mt-2 text-2xl font-bold tabular-nums md:text-3xl", netProfit >= 0 ? "text-success" : "text-danger")}>{netProfit < 0 ? "-" : ""}{formatINR(Math.abs(netProfit))}</p>
-              <p className="mt-1 text-xs text-ink-400">Sales − GST − Expenses</p>
+          {/* Profit & expenses */}
+          <section>
+            <SectionTitle>Profit &amp; expenses</SectionTitle>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <Stat label="Net Profit" value={expensesReady ? signed(netProfit) : "…"} hint={expensesReady ? "Net sales − all expenses" : "Loading expenses…"} accent={netProfit >= 0 ? "green" : "danger"} icon={netProfit >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                details={[{ label: "Net sales (ex-GST)", value: formatINR(m.totalRevenue), tone: "plus" }, { label: `Expenses (${expensesInView.length})`, value: `− ${formatINR(totalExpenses)}`, tone: "minus" }, { label: "Net profit", value: signed(netProfit), tone: "total" }]}
+                note="Net sales are after discounts, without GST and delivery. Expenses are every expense recorded for this period and branch." />
+              <Stat label="Est. Gross Profit" value={signed(grossProfit)} hint="Net sales − cost of goods sold" accent={grossProfit >= 0 ? "green" : "danger"} icon={<Coins className="h-4 w-4" />}
+                details={[{ label: "Net sales (ex-GST)", value: formatINR(m.totalRevenue), tone: "plus" }, { label: "Cost of goods sold (matched)", value: `− ${formatINR(cogs)}`, tone: "minus" }, { label: "Est. gross profit", value: signed(grossProfit), tone: "total" }]}
+                note="Cost is each sold product's purchase cost from Inventory, matched by name. Products with no cost entered count as zero, so this is an estimate." />
+              <Stat label="Total Expenses" value={expensesReady ? formatINR(totalExpenses) : "…"} hint={expensesReady ? `${expensesInView.length} expense${expensesInView.length === 1 ? "" : "s"} · this period` : "Loading expenses…"} accent="danger" icon={<Wallet className="h-4 w-4" />}
+                details={expenseByCategory.length ? [...expenseByCategory.slice(0, 8).map(([c, v]) => ({ label: c, value: formatINR(v), tone: "minus" as const })), { label: "Total", value: formatINR(totalExpenses), tone: "total" as const }] : [{ label: "No expenses in this view", value: "₹0.00", tone: "muted" }]} />
+              <Card className="flex flex-col justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-500">Sales Mix <span className="normal-case tracking-normal text-ink-300">(incl. GST)</span></p>
+                {(() => {
+                  const tot = split.gstSales + split.nonGstSales || 1;
+                  return (
+                    <div className="mt-3 space-y-2.5">
+                      {([["GST bills", split.gstSales, "#2563EB"], ["Non-GST bills", split.nonGstSales, "#9CA3AF"]] as const).map(([label, val, color]) => (
+                        <div key={label}>
+                          <div className="mb-1 flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-ink-600">{label}</span><span className="truncate tabular-nums text-ink-700">{formatINR(val)} · {Math.round((val / tot) * 100)}%</span></div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-ink-100"><div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: color }} /></div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </Card>
             </div>
-            <Stat label="Est. Gross Profit" value={`${grossProfit < 0 ? "-" : ""}${formatINR(Math.abs(grossProfit))}`} hint="Net revenue − matched cost" accent="green" />
-            <Stat label="Total Expenses" value={formatINR(totalExpenses)} hint="This period · branch" />
-            <Card>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Sales Mix <span className="normal-case text-ink-300">(incl. GST)</span></p>
-              {(() => {
-                const tot = split.gstSales + split.nonGstSales || 1;
-                return (
-                  <div className="mt-3 space-y-2.5">
-                    {([["GST", split.gstSales, "#2563EB"], ["Non-GST", split.nonGstSales, "#9CA3AF"]] as const).map(([label, val, color]) => (
-                      <div key={label}>
-                        <div className="mb-1 flex items-center justify-between text-xs"><span className="font-semibold text-ink-600">{label}</span><span className="tabular-nums text-ink-500">{formatINR(val)}</span></div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-ink-100"><div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: color }} /></div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </Card>
+          </section>
+
+          {/* How net sales is worked out — small, between the groups */}
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 rounded-xl border border-dashed border-ink-200 bg-white/60 px-4 py-2.5 text-[11px] text-ink-500">
+            <span className="font-semibold uppercase tracking-wider text-ink-400">How net sales is worked out</span>
+            <span className="rounded-md bg-gold-50 px-2 py-0.5 font-semibold tabular-nums text-gold-800">Billed {formatINR(m.grossSales)}</span>
+            <span>−</span>
+            <span className="rounded-md bg-ink-900/[0.05] px-2 py-0.5 font-semibold tabular-nums text-ink-700">Delivery {formatINR(m.deliveryTotal)}</span>
+            <span>−</span>
+            <span className="rounded-md bg-info/10 px-2 py-0.5 font-semibold tabular-nums text-info">GST {formatINR(m.gstCollected)}</span>
+            <span>=</span>
+            <span className="rounded-md bg-success/10 px-2 py-0.5 font-bold tabular-nums text-success">Net {formatINR(m.totalRevenue)}</span>
+            <span className="w-full text-center text-[10px] text-ink-400 sm:w-auto">discounts already off · repair part-payments count the day they are received</span>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Gross Sales" value={formatINR(m.grossSales)} hint="Billed total · incl. GST + delivery" accent="gold" />
-            <Stat label="Net Sales" value={formatINR(m.totalRevenue)} hint="After discounts · ex-GST · ex-delivery" accent="green" />
-            <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint={`CGST ${formatINR(taxSplit.cgst)} · SGST ${formatINR(taxSplit.sgst)}`} accent="gold" />
-            <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="In-store Net Sales" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
-            <Stat label="Online Net Sales" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
-            <Stat label="Service Net Sales" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"} · part-payments count when received`} />
-            <Stat label="Completed Bills" value={String(m.count)} hint={`${m.items} items in view`} />
-          </div>
+
+          {/* Sales */}
+          <section>
+            <SectionTitle>Sales</SectionTitle>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <Stat label="Gross Sales" value={formatINR(m.grossSales)} hint="Billed total · incl. GST + delivery" accent="gold" icon={<Receipt className="h-4 w-4" />}
+                details={[{ label: "Net sales", value: formatINR(m.totalRevenue) }, { label: "GST", value: `+ ${formatINR(m.gstCollected)}` }, { label: "Delivery", value: `+ ${formatINR(m.deliveryTotal)}` }, { label: "Gross sales (billed)", value: formatINR(m.grossSales), tone: "total" }]} />
+              <Stat label="Net Sales" value={formatINR(m.totalRevenue)} hint="After discounts · ex-GST · ex-delivery" accent="green" icon={<IndianRupee className="h-4 w-4" />}
+                details={[{ label: "Billed total", value: formatINR(m.grossSales) }, { label: "Delivery", value: `− ${formatINR(m.deliveryTotal)}`, tone: "minus" }, { label: "GST", value: `− ${formatINR(m.gstCollected)}`, tone: "minus" }, { label: "Net sales", value: formatINR(m.totalRevenue), tone: "total" }]} />
+              <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint={`CGST ${formatINR(taxSplit.cgst)} · SGST ${formatINR(taxSplit.sgst)}`} accent="info" icon={<Landmark className="h-4 w-4" />}
+                details={[{ label: "CGST", value: formatINR(taxSplit.cgst) }, { label: "SGST", value: formatINR(taxSplit.sgst) }, { label: "Total GST", value: formatINR(m.gstCollected), tone: "total" }]}
+                note="Output tax on these sales — payable to the government, so it is not part of your revenue." />
+              <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net sales per bill" accent="ink" icon={<ShoppingBag className="h-4 w-4" />}
+                details={[{ label: "Net sales", value: formatINR(m.totalRevenue) }, { label: "Bills", value: String(m.count) }, { label: "Average per bill", value: formatINR(m.aov), tone: "total" }]} />
+            </div>
+          </section>
+
+          {/* By channel */}
+          <section>
+            <SectionTitle>By channel</SectionTitle>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <Stat label="In-store Net Sales" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"} · ${pct(m.offlineRev, m.totalRevenue)} of net`} accent="gold" icon={<Store className="h-4 w-4" />}
+                details={[{ label: "Bills", value: String(m.offlineCount) }, { label: "Share of net sales", value: pct(m.offlineRev, m.totalRevenue) }, { label: "In-store net sales", value: formatINR(m.offlineRev), tone: "total" }]} />
+              <Stat label="Online Net Sales" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"} · ${pct(m.onlineRev, m.totalRevenue)} of net`} accent="info" icon={<Globe className="h-4 w-4" />}
+                details={[{ label: "Orders", value: String(m.onlineCount) }, { label: "Share of net sales", value: pct(m.onlineRev, m.totalRevenue) }, { label: "Online net sales", value: formatINR(m.onlineRev), tone: "total" }]} />
+              <Stat label="Service Net Sales" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair entr${m.serviceCount === 1 ? "y" : "ies"} · ${pct(m.serviceRev, m.totalRevenue)} of net`} accent="violet" icon={<Wrench className="h-4 w-4" />}
+                details={[{ label: "Repair entries", value: String(m.serviceCount) }, { label: "Share of net sales", value: pct(m.serviceRev, m.totalRevenue) }, { label: "Service net sales", value: formatINR(m.serviceRev), tone: "total" }]}
+                note="Finished repairs count in full; part payments on unfinished repairs count on the day they are received." />
+              <Stat label="Completed Bills" value={String(m.count)} hint={`${m.items} item${m.items === 1 ? "" : "s"} sold`} accent="ink" icon={<ClipboardList className="h-4 w-4" />}
+                details={[{ label: "In-store", value: String(m.offlineCount) }, { label: "Online", value: String(m.onlineCount) }, { label: "Service", value: String(m.serviceCount) }, { label: "Items sold", value: String(m.items) }, { label: "Total bills", value: String(m.count), tone: "total" }]} />
+            </div>
+          </section>
+
           {/* ANA-04: net view after linked expenses / vendor bills */}
           {deductions && (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Stat label="Net Sales after Expenses" value={`${netAfterDeductions < 0 ? "-" : ""}${formatINR(Math.abs(netAfterDeductions))}`} hint="Gross sales − linked expenses & vendor bills" accent="green" />
-              <Stat label="Linked Deductions" value={formatINR(ded.total)} hint={`${ded.list.length} entr${ded.list.length === 1 ? "y" : "ies"} · modes: ${deductions.modes.join(", ") || "none"}`} />
-            </div>
+            <section>
+              <SectionTitle>After linked expenses &amp; vendor payments</SectionTitle>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Stat label="Net Sales after Expenses" value={signed(netAfterDeductions)} hint="Gross sales − linked expenses & vendor bills" accent={netAfterDeductions >= 0 ? "green" : "danger"} icon={<Scale className="h-4 w-4" />}
+                  details={[{ label: "Gross sales", value: formatINR(m.grossSales), tone: "plus" }, { label: "Linked deductions", value: `− ${formatINR(ded.total)}`, tone: "minus" }, { label: "Net after expenses", value: signed(netAfterDeductions), tone: "total" }]} />
+                <Stat label="Linked Deductions" value={formatINR(ded.total)} hint={`${ded.list.length} entr${ded.list.length === 1 ? "y" : "ies"} · modes: ${deductions.modes.join(", ") || "none"}`} accent="danger" icon={<MinusCircle className="h-4 w-4" />}
+                  details={ded.byMode.size ? [...[...ded.byMode.entries()].map(([k, v]) => ({ label: k, value: `− ${formatINR(v)}`, tone: "minus" as const })), { label: "Total", value: formatINR(ded.total), tone: "total" as const }] : [{ label: "Nothing linked in this view", value: "₹0.00", tone: "muted" }]}
+                  note="Expenses and vendor-bill payments switched on for analytics in Expenses → settings." />
+              </div>
+            </section>
           )}
-          <p className="-mt-2 mb-5 rounded-xl border border-ink-100 bg-ivory-50 px-4 py-2.5 text-xs text-ink-500">
-            <b className="text-ink-700">How Net Sales is worked out:</b> billed total <b className="tabular-nums text-ink-900">{formatINR(m.grossSales)}</b> − delivery <b className="tabular-nums text-ink-900">{formatINR(m.deliveryTotal)}</b> − GST <b className="tabular-nums text-ink-900">{formatINR(m.gstCollected)}</b> = <b className="tabular-nums text-success">{formatINR(m.totalRevenue)}</b>. Discounts are already taken off, and a part-payment on a repair counts on the day it is received.
-          </p>
 
-          <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-            {/* trend */}
+          {/* Trend — compact, full width */}
+          <Card>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-ink-900">Net Sales Trend <span className="font-normal text-ink-400">(ex-GST)</span></p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
+                <p className="text-xs text-ink-500">Avg {formatINR(Math.round(yearTotal / 12))} a month · hover or tap a month</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="hidden items-center gap-3 text-[11px] text-ink-500 sm:flex">
+                  {TREND_SERIES.map((x) => <span key={x.key} className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: x.color }} />{x.label}</span>)}
+                </div>
+                <select value={trendYear} onChange={(e) => setTrendYearPick(Number(e.target.value))} aria-label="Trend year" className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 focus:border-gold-500 focus:outline-none">
+                  {trendYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+            <MonthBars totals={monthly} parts={monthlyByChannel} series={TREND_SERIES} year={trendYear} format={formatINR} height={170} unit={(i) => `${monthlyCount[i]} bill${monthlyCount[i] === 1 ? "" : "s"}`} />
+          </Card>
+
+          {/* Breakdowns */}
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+            {/* ANA-01: payment-mode breakdown */}
             <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-ink-900">Net Sales Trend · {trendYear} <span className="font-normal text-ink-400">(ex-GST)</span></p>
-                  <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {trendYears.length > 1 && (
-                    <select value={trendYear} onChange={(e) => setTrendYearPick(Number(e.target.value))} aria-label="Trend year" className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-semibold text-ink-700 focus:border-gold-500 focus:outline-none">
-                      {trendYears.map((y) => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                  )}
-                  <span className="rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold text-gold-700">Avg {formatINR(Math.round(yearTotal / 12))}/mo</span>
-                </div>
-              </div>
-              <div className="flex h-52 items-end gap-1.5">
-                {monthly.map((v, i) => (
-                  <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
-                    <div className="flex w-full flex-1 items-end">
-                      <div className="w-full rounded-t bg-ink-900 transition-all hover:bg-gold-500" style={{ height: `${(v / maxMonth) * 100}%`, minHeight: v > 0 ? 4 : 0 }} title={formatINR(v)} />
+              <p className="mb-4 text-sm font-bold text-ink-900">Payment Mode Split <span className="font-normal text-ink-400">(billed)</span></p>
+              {m.paymentModes.length === 0 ? (
+                <p className="py-6 text-center text-sm text-ink-400">No sales in this view.</p>
+              ) : (
+                (() => {
+                  const tot = m.paymentModes.reduce((n, [, v]) => n + v, 0) || 1;
+                  return m.paymentModes.map(([mode, val]) => (
+                    <div key={mode} className="mb-4 last:mb-0">
+                      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wider text-ink-500"><span className="h-2 w-2 rounded-full" style={{ background: PAYMODE_COLOR[mode] ?? PAYMODE_COLOR.Other }} />{mode}</span>
+                        <span className="truncate font-bold tabular-nums text-ink-900">{formatINR(val)} <span className="font-medium text-ink-400">· {Math.round((val / tot) * 100)}%</span></span>
+                      </div>
+                      {(ded.byMode.get(mode) ?? 0) > 0 && (
+                        <p className="mb-1 text-right text-[11px] tabular-nums text-ink-500"><span className="text-danger">− {formatINR(ded.byMode.get(mode) ?? 0)}</span> expenses = <b className="text-ink-800">{formatINR(val - (ded.byMode.get(mode) ?? 0))}</b></p>
+                      )}
+                      <div className="h-2 overflow-hidden rounded-full bg-ink-100">
+                        <div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: PAYMODE_COLOR[mode] ?? PAYMODE_COLOR.Other }} />
+                      </div>
                     </div>
-                    <span className="text-[8px] uppercase text-ink-400">{MONTHS[i]}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* order source + top items */}
-            <div className="space-y-4">
-              {/* ANA-01: payment-mode breakdown */}
-              <Card>
-                <p className="mb-4 text-sm font-bold text-ink-900">Payment Mode Split <span className="font-normal text-ink-400">(billed)</span></p>
-                {m.paymentModes.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-ink-400">No sales in this view.</p>
-                ) : (
-                  (() => {
-                    const tot = m.paymentModes.reduce((n, [, v]) => n + v, 0) || 1;
-                    return m.paymentModes.map(([mode, val]) => (
-                      <div key={mode} className="mb-4 last:mb-0">
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="font-semibold uppercase tracking-wider text-ink-500">{mode}</span>
-                          <span className="font-bold tabular-nums text-ink-900">{formatINR(val)} · {Math.round((val / tot) * 100)}%</span>
-                        </div>
-                        {(ded.byMode.get(mode) ?? 0) > 0 && (
-                          <p className="mb-1 text-right text-[11px] tabular-nums text-ink-500">− {formatINR(ded.byMode.get(mode) ?? 0)} expenses = <b className="text-ink-800">{formatINR(val - (ded.byMode.get(mode) ?? 0))}</b></p>
-                        )}
-                        <div className="h-2 overflow-hidden rounded-full bg-ink-100">
-                          <div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: PAYMODE_COLOR[mode] ?? PAYMODE_COLOR.Other }} />
-                        </div>
-                      </div>
-                    ));
-                  })()
-                )}
-              </Card>
-              {/* ANA-05: branch-wise comparison */}
-              {byBranch.length > 1 && (
-                <Card>
-                  <p className="mb-4 text-sm font-bold text-ink-900">Branch Comparison <span className="font-normal text-ink-400">(net sales)</span></p>
-                  {(() => {
-                    const top = Math.max(1, ...byBranch.map((b) => b.net));
-                    return byBranch.map((b) => (
-                      <div key={b.branch} className="mb-4 last:mb-0">
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="font-semibold uppercase tracking-wider text-ink-500">{branchLabel(b.branch)} · {b.count}</span>
-                          <span className="font-bold tabular-nums text-ink-900">{formatINR(b.net)}</span>
-                        </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-ink-100">
-                          <div className="h-full rounded-full bg-gold-500" style={{ width: `${(b.net / top) * 100}%` }} />
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </Card>
+                  ));
+                })()
               )}
-              <Card>
-                <p className="mb-4 text-sm font-bold text-ink-900">Order Source</p>
-                {([["In-store", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"], ["Service", m.serviceRev, m.serviceCount, "#8B5CF6"]] as const).map(([label, rev, cnt, color]) => (
-                  <div key={label} className="mb-4 last:mb-0">
-                    <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="font-semibold uppercase tracking-wider text-ink-500">{label} · {cnt}</span>
-                      <span className="font-bold tabular-nums text-ink-900">{formatINR(rev)}</span>
+            </Card>
+            {/* ANA-05: branch-wise comparison */}
+            <Card>
+              <p className="mb-4 text-sm font-bold text-ink-900">Branch Comparison <span className="font-normal text-ink-400">(net sales)</span></p>
+              {(() => {
+                const top = Math.max(1, ...byBranch.map((b) => b.net));
+                return byBranch.map((b, i) => (
+                  <div key={b.branch} className="mb-4 last:mb-0">
+                    <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold uppercase tracking-wider text-ink-500">{branchLabel(b.branch)} <span className="font-medium normal-case tracking-normal text-ink-400">· {b.count} bill{b.count === 1 ? "" : "s"}</span></span>
+                      <span className="truncate font-bold tabular-nums text-ink-900">{formatINR(b.net)}</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-ink-100">
-                      <div className="h-full rounded-full" style={{ width: `${m.totalRevenue ? (rev / m.totalRevenue) * 100 : 0}%`, background: color }} />
+                      <div className="h-full rounded-full" style={{ width: `${(b.net / top) * 100}%`, background: BRANCH_COLOR[i % BRANCH_COLOR.length] }} />
                     </div>
                   </div>
+                ));
+              })()}
+            </Card>
+            <Card>
+              <p className="mb-4 text-sm font-bold text-ink-900">Order Source <span className="font-normal text-ink-400">(net sales)</span></p>
+              {([["In-store", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#2563EB"], ["Service", m.serviceRev, m.serviceCount, "#8B5CF6"]] as const).map(([label, rev, cnt, color]) => (
+                <div key={label} className="mb-4 last:mb-0">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold uppercase tracking-wider text-ink-500">{label} <span className="font-medium normal-case tracking-normal text-ink-400">· {cnt}</span></span>
+                    <span className="truncate font-bold tabular-nums text-ink-900">{formatINR(rev)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-ink-100">
+                    <div className="h-full rounded-full" style={{ width: `${m.totalRevenue ? (rev / m.totalRevenue) * 100 : 0}%`, background: color }} />
+                  </div>
+                </div>
+              ))}
+            </Card>
+            <Card>
+              <p className="mb-3 text-sm font-bold text-ink-900">Top Items <span className="font-normal text-ink-400">(net revenue)</span></p>
+              <ol className="space-y-2.5 text-sm">
+                {m.topItems.slice(0, 5).map(([name, rev], i) => (
+                  <li key={name} className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2 text-ink-700"><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-gold-100 text-[10px] font-bold text-gold-800">{i + 1}</span><span className="truncate">{name}</span></span>
+                    <span className="shrink-0 font-bold tabular-nums text-ink-900">{formatINR(rev)}</span>
+                  </li>
                 ))}
-              </Card>
-              <Card>
-                <p className="mb-3 text-sm font-bold text-ink-900">Top Items by Revenue</p>
-                <ol className="space-y-3 text-sm">
-                  {m.topItems.slice(0, 5).map(([name, rev], i) => (
-                    <li key={name} className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-ink-700">{i + 1}. {name}</span>
-                      <span className="shrink-0 font-bold tabular-nums text-ink-900">{formatINR(rev)}</span>
-                    </li>
-                  ))}
-                  {m.topItems.length === 0 && <li className="text-ink-400">No sales in this view.</li>}
-                </ol>
-              </Card>
-            </div>
+                {m.topItems.length === 0 && <li className="text-ink-400">No sales in this view.</li>}
+              </ol>
+            </Card>
           </div>
         </div>
       )}
@@ -781,91 +821,143 @@ function SalesTab({ scoped, query, setQuery, billGst, rate }: { scoped: Bill[]; 
     downloadCsv(`sales-report-products-${Date.now()}.csv`, [head, ...body]);
   };
 
-  const btn = "flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:cursor-not-allowed disabled:opacity-50";
+  const [openBill, setOpenBill] = useState<Bill | null>(null);
+  const btn = "flex h-10 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-700 disabled:cursor-not-allowed disabled:opacity-50";
+  const SRC: Record<string, { label: string; tone: string }> = {
+    offline: { label: "In-store", tone: "bg-gold-100 text-gold-800" },
+    online: { label: "Online", tone: "bg-info/10 text-info" },
+    service: { label: "Service", tone: "bg-[#8B5CF6]/10 text-[#6D28D9]" },
+  };
+  const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const time = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const th = "px-3 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-400";
+
   return (
-    <Card>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-ink-900">Sales Report</p>
-          <p className="mt-1 text-xs text-ink-500">{rows.length} bill(s) · {totals.units} unit(s) in current filters · customer and product details included</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search invoice, customer, phone, GSTIN, product…" className="w-72 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-          <button onClick={exportBills} disabled={rows.length === 0} className={btn} title="One row per bill, with its products in one cell"><Download className="h-4 w-4" /> Bills CSV</button>
-          <button onClick={exportItems} disabled={rows.length === 0} className={btn} title="One row per product sold, with the customer on every row"><Download className="h-4 w-4" /> Products CSV</button>
-        </div>
-      </div>
-      {rows.length === 0 ? (
-        <p className="py-12 text-center text-sm text-ink-400">No sales match the current filters.</p>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-sm">
-              <thead>
-                <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-                  <th className="py-3">Date</th>
-                  <th>Invoice</th>
-                  <th>Customer</th>
-                  <th>Products</th>
-                  <th>Branch · Source</th>
-                  <th>Payment</th>
-                  <th className="text-right">Subtotal</th>
-                  <th className="text-right">Discount</th>
-                  <th className="text-right">GST</th>
-                  <th className="text-right">Delivery</th>
-                  <th className="text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-50">
-                {pg.items.map((b) => (
-                  <tr key={b.id} className="align-top text-ink-800">
-                    <td className="whitespace-nowrap py-3 text-ink-600">{fmtDate(b.createdAt)}</td>
-                    <td className="whitespace-nowrap">
-                      <p className="font-semibold text-ink-900">{refOf(b)}</p>
-                      {gstNoOf(b) && <p className="text-[11px] text-ink-400">{gstNoOf(b)}</p>}
-                    </td>
-                    <td className="min-w-[150px]">
-                      <p className="font-medium text-ink-900">{b.customerName || <span className="text-ink-300">—</span>}</p>
-                      <p className="text-[11px] text-ink-500">{b.phone || "—"}</p>
-                      {b.customerGstin && <p className="font-mono text-[10px] text-ink-400">{b.customerGstin}</p>}
-                    </td>
-                    <td className="min-w-[240px]">
-                      {b.items.map((i, k) => (
-                        <p key={k} className="text-[12px] leading-snug text-ink-800">
-                          {i.name} <span className="whitespace-nowrap font-semibold text-ink-500">× {i.qty}</span>
-                          <span className="whitespace-nowrap text-ink-400"> · {formatINR(i.price)}{i.discount ? ` − ${formatINR(i.discount)}` : ""}</span>
-                        </p>
-                      ))}
-                    </td>
-                    <td className="whitespace-nowrap text-[12px]">
-                      <p className="text-ink-700">{branchLabel(b.branch)}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-ink-400">{b.source}</p>
-                    </td>
-                    <td className="whitespace-nowrap text-[12px] text-ink-600">{b.payment || "—"}</td>
-                    <td className="text-right tabular-nums">{formatINR(b.subtotal)}</td>
-                    <td className="text-right tabular-nums">{b.discount ? formatINR(b.discount) : "—"}</td>
-                    <td className="text-right tabular-nums">{billGst(b) ? formatINR(billGst(b)) : "—"}</td>
-                    <td className="text-right tabular-nums">{b.delivery ? formatINR(b.delivery) : "—"}</td>
-                    <td className="text-right font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-ink-200 bg-ivory-50/50 font-bold text-ink-900">
-                  <td className="py-3 text-[10px] uppercase tracking-wider text-ink-500" colSpan={6}>Totals · all {rows.length} bill(s), {totals.units} unit(s)</td>
-                  <td className="text-right tabular-nums">{formatINR(totals.subtotal)}</td>
-                  <td className="text-right tabular-nums">{formatINR(totals.discount)}</td>
-                  <td className="text-right tabular-nums">{formatINR(totals.gst)}</td>
-                  <td className="text-right tabular-nums">{formatINR(totals.delivery)}</td>
-                  <td className="text-right tabular-nums">{formatINR(totals.total)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          <Pager className="mt-4" {...pg.pager} />
-        </>
+    <div className="space-y-4">
+      {openBill && (
+        <StatModal
+          label={`${refOf(openBill)}${gstNoOf(openBill) ? ` · ${gstNoOf(openBill)}` : ""}`}
+          value={formatINR(openBill.total)}
+          hint={`${openBill.customerName || "Walk-in"}${openBill.phone ? ` · ${openBill.phone}` : ""} · ${day(openBill.createdAt)} ${time(openBill.createdAt)} · ${branchLabel(openBill.branch)} · ${SRC[openBill.source]?.label ?? openBill.source}`}
+          accent="gold"
+          details={[
+            ...openBill.items.map((i) => ({ label: `${i.name} × ${i.qty}${i.discount ? ` (− ${formatINR(i.discount)})` : ""}`, value: formatINR(Math.max(0, i.price * i.qty - (i.discount ?? 0))) })),
+            { label: "Subtotal", value: formatINR(openBill.subtotal), tone: "muted" as const },
+            ...(openBill.discount ? [{ label: `Discount${openBill.coupon ? ` (${openBill.coupon})` : ""}`, value: `− ${formatINR(openBill.discount)}`, tone: "minus" as const }] : []),
+            ...(billGst(openBill) ? [{ label: "GST (included)", value: formatINR(billGst(openBill)), tone: "muted" as const }] : []),
+            ...(openBill.delivery ? [{ label: "Delivery", value: `+ ${formatINR(openBill.delivery)}` }] : []),
+            { label: "Total", value: formatINR(openBill.total), tone: "total" as const },
+          ]}
+          note={<>Paid by <b className="text-ink-700">{openBill.payments?.length ? openBill.payments.map((p) => `${p.method.charAt(0) + p.method.slice(1).toLowerCase()} ${formatINR(p.amount)}`).join(" + ") : openBill.payment || "—"}</b>{openBill.customerGstin ? <> · Customer GSTIN <span className="font-mono">{openBill.customerGstin}</span></> : null}</>}
+          onClose={() => setOpenBill(null)}
+        />
       )}
-    </Card>
+
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {([
+          ["Bills", String(rows.length), "text-ink-900"],
+          ["Units sold", String(totals.units), "text-ink-900"],
+          ["Total billed", formatINR(totals.total), "text-gold-700"],
+          ["Discounts", formatINR(totals.discount), "text-danger"],
+          ["GST inside", formatINR(totals.gst), "text-info"],
+        ] as const).map(([l, v, tone]) => (
+          <div key={l} className="min-w-0 rounded-xl border border-ink-100 bg-ivory-50 px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">{l}</p>
+            <p className={cn("mt-1 truncate text-lg font-bold tabular-nums", tone)} title={v}>{v}</p>
+          </div>
+        ))}
+      </div>
+
+      <Card className="p-0">
+        <div className="flex flex-col gap-3 border-b border-ink-100 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-bold text-ink-900">Sales Report</p>
+            <p className="mt-0.5 text-xs text-ink-500">Every bill in the current filters · click a row for its full breakdown</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Invoice, customer, phone, GSTIN, product…" className="h-10 w-full rounded-xl border border-ink-200 bg-white pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none sm:w-80" />
+            </div>
+            <button onClick={exportBills} disabled={rows.length === 0} className={btn} title="One row per bill, with its products in one cell"><Download className="h-4 w-4" /> Bills CSV</button>
+            <button onClick={exportItems} disabled={rows.length === 0} className={btn} title="One row per product sold, with the customer on every row"><Download className="h-4 w-4" /> Products CSV</button>
+          </div>
+        </div>
+        {rows.length === 0 ? (
+          <p className="py-14 text-center text-sm text-ink-400">No sales match the current filters.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-sm">
+                <thead className="bg-[#F4F1EA]/60">
+                  <tr className="text-left">
+                    <th className={cn(th, "pl-4")}>Date</th>
+                    <th className={th}>Invoice</th>
+                    <th className={th}>Customer</th>
+                    <th className={cn(th, "w-full")}>Products</th>
+                    <th className={th}>Branch</th>
+                    <th className={th}>Payment</th>
+                    <th className={cn(th, "text-right")}>Discount</th>
+                    <th className={cn(th, "text-right")}>GST</th>
+                    <th className={cn(th, "pr-4 text-right")}>Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-100/70">
+                  {pg.items.map((b) => {
+                    const src = SRC[b.source] ?? { label: b.source, tone: "bg-ink-100 text-ink-600" };
+                    return (
+                      <tr key={b.id} onClick={() => setOpenBill(b)} className="cursor-pointer align-top text-ink-800 transition-colors hover:bg-[#FAF7EF] [&>td]:px-3 [&>td]:py-3">
+                        <td className="whitespace-nowrap !pl-4">
+                          <p className="font-medium text-ink-800">{day(b.createdAt)}</p>
+                          <p className="text-[11px] text-ink-400">{time(b.createdAt)}</p>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          <p className="font-semibold text-ink-900">{refOf(b)}</p>
+                          {gstNoOf(b) && <p className="text-[11px] text-ink-400">{gstNoOf(b)}</p>}
+                        </td>
+                        <td className="max-w-[11rem]">
+                          <p className="truncate font-medium text-ink-900">{b.customerName || <span className="text-ink-300">Walk-in</span>}</p>
+                          <p className="text-[11px] text-ink-500">{b.phone || "—"}</p>
+                        </td>
+                        <td className="min-w-[16rem]">
+                          <ul className="space-y-0.5">
+                            {b.items.slice(0, 2).map((i, k) => (
+                              <li key={k} className="flex items-baseline justify-between gap-3 text-[12px]">
+                                <span className="min-w-0 truncate text-ink-800">{i.name} <span className="font-semibold text-ink-400">× {i.qty}</span></span>
+                                <span className="shrink-0 tabular-nums text-ink-500">{formatINR(Math.max(0, i.price * i.qty - (i.discount ?? 0)))}</span>
+                              </li>
+                            ))}
+                            {b.items.length > 2 && <li className="text-[11px] font-semibold text-gold-700">+ {b.items.length - 2} more</li>}
+                          </ul>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          <p className="text-[12px] text-ink-700">{branchLabel(b.branch)}</p>
+                          <span className={cn("mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", src.tone)}>{src.label}</span>
+                        </td>
+                        <td className="whitespace-nowrap"><span className="rounded-md bg-ink-900/[0.05] px-2 py-0.5 text-[11px] font-semibold capitalize text-ink-600">{(b.payment || "—").toLowerCase()}</span></td>
+                        <td className="whitespace-nowrap text-right tabular-nums">{b.discount ? <span className="text-danger">− {formatINR(b.discount)}</span> : <span className="text-ink-300">—</span>}</td>
+                        <td className="whitespace-nowrap text-right tabular-nums text-ink-600">{billGst(b) ? formatINR(billGst(b)) : <span className="text-ink-300">—</span>}</td>
+                        <td className="whitespace-nowrap !pr-4 text-right text-base font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-ink-200 bg-[#F4F1EA]/60 font-bold text-ink-900 [&>td]:px-3 [&>td]:py-3">
+                    <td className="!pl-4 text-[10px] uppercase tracking-wider text-ink-500" colSpan={6}>Totals · {rows.length} bill(s), {totals.units} unit(s){totals.delivery ? ` · delivery ${formatINR(totals.delivery)}` : ""}</td>
+                    <td className="whitespace-nowrap text-right tabular-nums text-danger">{totals.discount ? `− ${formatINR(totals.discount)}` : "—"}</td>
+                    <td className="whitespace-nowrap text-right tabular-nums text-ink-700">{formatINR(totals.gst)}</td>
+                    <td className="whitespace-nowrap !pr-4 text-right tabular-nums">{formatINR(totals.total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div className="px-4 pb-4"><Pager className="mt-3" {...pg.pager} /></div>
+          </>
+        )}
+      </Card>
+    </div>
   );
 }
 

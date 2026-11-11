@@ -1,4 +1,5 @@
 "use client";
+import { LoadingPanel } from "@/components/admin/LoadState";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Receipt, Save, RotateCcw, MapPin, ArrowLeftRight, Building2, Info, FileText, ArrowRight, Download } from "lucide-react";
@@ -77,7 +78,7 @@ export default function GstPage() {
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">GST settings saved · live on storefront</div>
       )}
 
-      {!ready && (
+      {!ready && gst.loadError && (
         <div className="mb-4 rounded-xl border border-warning/30 bg-warning/[0.08] px-4 py-3 text-xs text-ink-700">
           {gst.loadError
             ? `Couldn't load the saved GST settings (${gst.loadError}). The values shown are defaults and can't be saved until they load.`
@@ -105,6 +106,8 @@ export default function GstPage() {
 
       {tab === "returns" ? (
         <ReturnsTab />
+      ) : tab === "rules" && !ready && !gst.loadError ? (
+        <LoadingPanel label="Loading GST settings…" />
       ) : tab === "rules" ? (
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           {/* Config */}
@@ -280,6 +283,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
 
   const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
+  if (status === "loading") return <LoadingPanel label="Loading GST collections…" />;
   return (
     <div className="space-y-6">
       {/* filters + export */}
@@ -398,6 +402,7 @@ function ReturnsTab() {
   const field = "rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
   const lbl = "mb-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
 
+  if (status === "loading") return <LoadingPanel label="Loading invoices for the returns…" />;
   return (
     <div className="space-y-6">
       {/* Period picker */}
@@ -434,17 +439,17 @@ function ReturnsTab() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Invoices in period</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{status === "ready" ? g1.sales.length : status === "loading" ? "…" : "—"}</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{status === "ready" ? g1.sales.length : "—"}</p>
           <p className="mt-1 text-xs text-ink-400">Outward supplies</p>
         </Card>
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Taxable value</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{status === "ready" ? formatINR(g1.totals.taxableValue) : status === "loading" ? "…" : "—"}</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-ink-900 md:text-3xl">{status === "ready" ? formatINR(g1.totals.taxableValue) : "—"}</p>
           <p className="mt-1 text-xs text-ink-400">Net of GST</p>
         </Card>
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">Tax payable</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-gold-600 md:text-3xl">{status === "ready" ? formatINR(g1.totals.integratedTax + g1.totals.centralTax + g1.totals.stateTax) : status === "loading" ? "…" : "—"}</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-gold-600 md:text-3xl">{status === "ready" ? formatINR(g1.totals.integratedTax + g1.totals.centralTax + g1.totals.stateTax) : "—"}</p>
           <p className="mt-1 text-xs text-ink-400">IGST + CGST + SGST</p>
         </Card>
       </div>

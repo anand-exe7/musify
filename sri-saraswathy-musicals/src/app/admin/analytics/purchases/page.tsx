@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, Package, Receipt, CheckCircle2, AlertCircle, FileText } from "lucide-react";
-import { AdminStat } from "@/components/admin/AdminStat";
+import { ArrowLeft, Download, Package, Receipt, CheckCircle2, AlertCircle, FileText, Loader2 } from "lucide-react";
+import { AdminStat, StatModal } from "@/components/admin/AdminStat";
+import { MonthBars } from "@/components/admin/MonthBars";
+import { Segmented } from "@/components/admin/Segmented";
 import { useVendors } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
@@ -22,9 +24,8 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "year", label: "This Year" },
   { key: "custom", label: "Custom" },
 ];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** One colour per branch in the monthly chart. */
-const BRANCH_COLORS = ["bg-ink-900", "bg-gold-500", "bg-ink-400", "bg-success"];
+const BRANCH_COLORS = ["#0A0908", "#C9A24B", "#2563EB", "#16A34A"];
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -68,6 +69,7 @@ export default function PurchaseAnalyticsPage() {
   const [vendorPick, setVendorPick] = useState("all");
   const [query, setQuery] = useState("");
   const [yearPick, setYearPick] = useState<number | null>(null);
+  const [vendorOpen, setVendorOpen] = useState<PurchaseAnalytics["vendors"][number] | null>(null);
 
   useEffect(() => { void hydrateVendors(); }, [hydrateVendors]);
   useEffect(() => { if (lockedBranch) setBranch(lockedBranch); }, [lockedBranch]);
@@ -90,16 +92,18 @@ export default function PurchaseAnalyticsPage() {
   }, [data, query]);
   const pg = usePaged(vendorRows, `${query}|${key}`);
 
-  const years = useMemo(() => [...new Set((data?.months ?? []).map((m) => Number(m.month.slice(0, 4))))].sort((a, b) => b - a), [data]);
-  const year = yearPick !== null && years.includes(yearPick) ? yearPick : (years[0] ?? new Date().getFullYear());
+  const years = useMemo(() => {
+    const now = new Date().getFullYear();
+    return [...new Set([now, now - 1, ...(data?.months ?? []).map((m) => Number(m.month.slice(0, 4)))])].sort((a, b) => b - a);
+  }, [data]);
+  const year = yearPick ?? new Date().getFullYear();
   const monthly = useMemo(() => {
     const rows = Array.from({ length: 12 }, () => ({ total: 0, branches: {} as Record<string, number> }));
     for (const m of data?.months ?? []) if (Number(m.month.slice(0, 4)) === year) rows[Number(m.month.slice(5, 7)) - 1] = { total: m.total, branches: m.branches };
     return rows;
   }, [data, year]);
-  const maxMonth = Math.max(...monthly.map((m) => m.total), 1);
-
   const branchKeys = Object.keys(data?.branches ?? {});
+  const chartSeries = branchKeys.map((b, i) => ({ key: b, label: branchLabel(b), color: BRANCH_COLORS[i % BRANCH_COLORS.length] }));
   const r2 = (paise: number) => (paise / 100).toFixed(2);
   const exportVendors = () => downloadCsv(`purchase-analytics-vendors-${Date.now()}.csv`, [
     ["Vendor", "Bills", "Bought", "Paid", "Left", "Last purchase", ...BRANCH_KEYS.flatMap((b) => [`${branchLabel(b)} bought`, `${branchLabel(b)} paid`, `${branchLabel(b)} left`])],
@@ -110,21 +114,39 @@ export default function PurchaseAnalyticsPage() {
     ...branchKeys.map((b) => { const x = data!.branches[b]; return [branchLabel(b), String(x.bills), String(x.qty), r2(x.goods), r2(x.gst), r2(x.bought), r2(x.opening), r2(x.paid), r2(x.left)]; }),
   ]);
 
-  const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
   const th = "px-3 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400";
 
   const header = (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <Link href="/admin/analytics" className="mb-1 inline-flex items-center gap-1 text-xs font-semibold text-ink-500 hover:text-ink-900"><ArrowLeft className="h-3 w-3" /> Back to Analytics</Link>
-        <h1 className="text-2xl font-bold text-ink-900">Purchase Analytics</h1>
-        <p className="mt-1 max-w-xl text-sm text-ink-500">What each branch bought from vendors, what it has paid, and what it still has to pay.</p>
+    <div className="mb-5">
+      <Link href="/admin/analytics" className="mb-1 inline-flex items-center gap-1 text-xs font-semibold text-ink-500 hover:text-ink-900"><ArrowLeft className="h-3 w-3" /> Back to Sales Analytics</Link>
+      <h1 className="text-2xl font-bold text-ink-900">Purchase Analytics</h1>
+      <p className="mt-1 max-w-2xl text-sm text-ink-500">What each branch bought from vendors, what it has paid, and what it still has to pay · tap any box for its details.</p>
+    </div>
+  );
+
+  const filters = (
+    <div className="mb-6 grid gap-2.5 rounded-2xl border border-ink-100 bg-ivory-50 p-4 xl:grid-cols-2">
+      <div className="flex flex-wrap items-center gap-2 xl:col-span-2">
+        <Segmented label="Period" value={period} onChange={setPeriod} options={PERIODS.map((p) => [p.key, p.label] as const)} />
+        {period === "custom" && (
+          <span className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
+            <input type="date" value={custom.from ?? ""} max={custom.to || undefined} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value || undefined }))} aria-label="From" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+            →
+            <input type="date" value={custom.to ?? ""} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value || undefined }))} aria-label="To" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm focus:border-gold-500 focus:outline-none" />
+          </span>
+        )}
       </div>
-      <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-        <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
-        {PERIODS.map((p) => (
-          <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>{p.label}</button>
-        ))}
+      {lockedBranch ? (
+        <div className="flex items-center gap-2.5"><span className="w-16 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">Branch</span><span className="rounded-lg bg-gold-100 px-3 py-1.5 text-xs font-semibold text-gold-800">{branchLabel(lockedBranch)}</span></div>
+      ) : (
+        <Segmented label="Branch" value={branch} onChange={(v) => setBranch(v as BranchFilter)} options={[["all", "All branches"], ...allowedBranches.map((b) => [b, branchLabel(b)] as const)] as const} />
+      )}
+      <div className="flex items-center gap-2.5">
+        <span className="w-16 shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">Vendor</span>
+        <select value={vendorPick} onChange={(e) => setVendorPick(e.target.value)} className="h-9 w-full max-w-xs rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-700 focus:border-gold-500 focus:outline-none">
+          <option value="all">All vendors</option>
+          {[...vendors].sort((a, b) => a.name.localeCompare(b.name)).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+        </select>
       </div>
     </div>
   );
@@ -133,6 +155,7 @@ export default function PurchaseAnalyticsPage() {
     return (
       <div className="p-5 md:p-8">
         {header}
+        {filters}
         {error ? <OfflinePanel hint={error} /> : <LoadingPanel label="Loading purchase analytics…" />}
       </div>
     );
@@ -140,43 +163,45 @@ export default function PurchaseAnalyticsPage() {
 
   const t = data.totals;
   return (
-    <div className={cn("p-5 transition-opacity md:p-8", loading && "opacity-60")} aria-busy={loading}>
+    <div className="p-5 md:p-8" aria-busy={loading}>
       {header}
+      {filters}
 
-      {period === "custom" && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-ink-600">
-          From <input type="date" value={custom.from ?? ""} max={custom.to || undefined} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value || undefined }))} className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1" />
-          to <input type="date" value={custom.to ?? ""} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value || undefined }))} className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1" />
+      {/* Re-loading after a filter change: say so, instead of just fading the page. */}
+      {loading && (
+        <div className="sticky top-20 z-20 mb-4 flex items-center justify-center">
+          <span className="inline-flex items-center gap-2 rounded-full border border-gold-300 bg-white px-4 py-1.5 text-xs font-semibold text-ink-700 shadow-md"><Loader2 className="h-3.5 w-3.5 animate-spin text-gold-500" /> Updating purchase figures…</span>
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
-          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
-          {lockedBranch ? (
-            <span className={cn(pill, "bg-gold-500 text-ink-900")}>{branchLabel(lockedBranch)}</span>
-          ) : (
-            ([["all", "Overall"], ...allowedBranches.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setBranch(k as BranchFilter)} className={cn(pill, branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>{label}</button>
-            ))
-          )}
-        </div>
-        <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">
-          Vendor
-          <select value={vendorPick} onChange={(e) => setVendorPick(e.target.value)} className="rounded-full border border-ink-200 bg-ivory-50 px-3 py-1.5 text-xs font-semibold normal-case tracking-normal text-ink-700 focus:outline-none">
-            <option value="all">All vendors</option>
-            {[...vendors].sort((a, b) => a.name.localeCompare(b.name)).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-        </label>
-      </div>
+      {vendorOpen && (
+        <StatModal
+          label={vendorOpen.vendorName}
+          value={formatINR(vendorOpen.bought)}
+          hint={`${vendorOpen.bills} bill${vendorOpen.bills === 1 ? "" : "s"} · paid ${formatINR(vendorOpen.paid)} · ${vendorOpen.left > 0 ? `${formatINR(vendorOpen.left)} still to pay` : "settled"}`}
+          accent={vendorOpen.left > 0 ? "danger" : "green"}
+          details={Object.entries(vendorOpen.branches).flatMap(([b, x]) => [
+            { label: `${branchLabel(b)} — bought`, value: formatINR(x.bought), tone: "total" as const },
+            { label: "Paid", value: formatINR(x.paid), tone: "plus" as const },
+            { label: x.left > 0 ? "Still owes" : x.left < 0 ? "Paid extra" : "Balance", value: x.left === 0 ? "settled" : formatINR(Math.abs(x.left)), tone: x.left > 0 ? ("minus" as const) : ("muted" as const) },
+          ])}
+          note={vendorOpen.last ? `Last bill ${new Date(vendorOpen.last).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : undefined}
+          onClose={() => setVendorOpen(null)}
+        />
+      )}
 
       {/* Every card follows the branch, vendor and period chosen above */}
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Bought" value={formatINR(t.bought)} hint={`${t.bills} bill${t.bills === 1 ? "" : "s"} · ${t.qty} pcs`} accent="gold" icon={<Package className="h-4 w-4" />} />
-        <Stat label="Goods value" value={formatINR(t.goods)} hint="Before GST" icon={<FileText className="h-4 w-4" />} />
-        <Stat label="GST input" value={formatINR(t.gst)} hint="CGST + SGST + IGST" accent="green" icon={<Receipt className="h-4 w-4" />} />
-        <Stat label="Paid" value={formatINR(t.paid)} hint="Against these bills" accent="green" icon={<CheckCircle2 className="h-4 w-4" />} />
-        <Stat label="Still to pay" value={formatINR(Math.max(0, t.left))} hint={t.opening > 0 ? `Includes ${formatINR(t.opening)} old balance` : "Bought + old balance − paid"} accent={t.left > 0 ? "danger" : "ink"} icon={<AlertCircle className="h-4 w-4" />} />
+      <div className={cn("mb-6 grid grid-cols-1 gap-3 transition-opacity min-[420px]:grid-cols-2 lg:grid-cols-5", loading && "opacity-60")}>
+        <Stat label="Bought" value={formatINR(t.bought)} hint={`${t.bills} bill${t.bills === 1 ? "" : "s"} · ${t.qty} pcs`} accent="gold" icon={<Package className="h-4 w-4" />}
+          details={[{ label: "Goods value (before GST)", value: formatINR(t.goods) }, { label: "GST", value: `+ ${formatINR(t.gst)}` }, { label: "Bought", value: formatINR(t.bought), tone: "total" }]} />
+        <Stat label="Goods value" value={formatINR(t.goods)} hint="Before GST" icon={<FileText className="h-4 w-4" />}
+          details={[{ label: "Bills", value: String(t.bills) }, { label: "Pieces", value: String(t.qty) }, { label: "Goods value", value: formatINR(t.goods), tone: "total" }]} />
+        <Stat label="GST input" value={formatINR(t.gst)} hint="CGST + SGST + IGST" accent="info" icon={<Receipt className="h-4 w-4" />}
+          note="Tax paid on purchases — claimable as input tax credit against the GST on your sales." />
+        <Stat label="Paid" value={formatINR(t.paid)} hint="Against these bills" accent="green" icon={<CheckCircle2 className="h-4 w-4" />}
+          details={[{ label: "Bought", value: formatINR(t.bought) }, ...(t.opening ? [{ label: "Old balance", value: `+ ${formatINR(t.opening)}` }] : []), { label: "Paid", value: `− ${formatINR(t.paid)}`, tone: "plus" as const }, { label: "Still to pay", value: formatINR(Math.max(0, t.left)), tone: "total" as const }]} />
+        <Stat label="Still to pay" value={formatINR(Math.max(0, t.left))} hint={t.opening > 0 ? `Includes ${formatINR(t.opening)} old balance` : "Bought + old balance − paid"} accent={t.left > 0 ? "danger" : "green"} icon={<AlertCircle className="h-4 w-4" />}
+          details={branchKeys.map((b) => ({ label: branchLabel(b), value: data.branches[b].left > 0 ? formatINR(data.branches[b].left) : "settled", tone: data.branches[b].left > 0 ? ("minus" as const) : ("plus" as const) }))} />
       </div>
 
       {/* What each branch bought, paid and owes */}
@@ -220,29 +245,22 @@ export default function PurchaseAnalyticsPage() {
 
       {/* Monthly purchases, each bar split by branch */}
       <Card className="mb-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-ink-900">Purchases by month · {year}</h2>
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-ink-900">Purchases by month</h2>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{formatINR(monthly.reduce((n, m) => n + m.total, 0))}</p>
+            <p className="text-xs text-ink-500">Bought in {year}, split by branch · hover or tap a month</p>
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-ink-500">
-              {branchKeys.map((b, i) => <span key={b} className="inline-flex items-center gap-1"><span className={cn("h-2.5 w-2.5 rounded-sm", BRANCH_COLORS[i % BRANCH_COLORS.length])} />{branchLabel(b)}</span>)}
+              {chartSeries.map((x) => <span key={x.key} className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: x.color }} />{x.label}</span>)}
             </div>
-            {years.length > 1 && (
-              <select value={year} onChange={(e) => setYearPick(Number(e.target.value))} aria-label="Year" className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-xs font-semibold text-ink-700 focus:outline-none">
-                {years.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-            )}
+            <select value={year} onChange={(e) => setYearPick(Number(e.target.value))} aria-label="Year" className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 focus:border-gold-500 focus:outline-none">
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
           </div>
         </div>
-        <div className="flex h-44 items-end gap-2">
-          {monthly.map((m, i) => (
-            <div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
-              <div className="flex w-full flex-col-reverse overflow-hidden rounded-t" style={{ height: `${(m.total / maxMonth) * 100}%`, minHeight: m.total > 0 ? 4 : 0 }} title={`${MONTHS[i]}: ${formatINR(m.total)}${branchKeys.map((b) => ` · ${branchLabel(b)} ${formatINR(m.branches[b] ?? 0)}`).join("")}`}>
-                {branchKeys.map((b, bi) => (m.branches[b] ?? 0) > 0 && <div key={b} className={BRANCH_COLORS[bi % BRANCH_COLORS.length]} style={{ height: `${((m.branches[b] ?? 0) / m.total) * 100}%` }} />)}
-              </div>
-              <span className="text-[10px] text-ink-400">{MONTHS[i]}</span>
-            </div>
-          ))}
-        </div>
+        <MonthBars totals={monthly.map((m) => m.total)} parts={monthly.map((m) => m.branches)} series={chartSeries} year={year} format={formatINR} height={170} />
       </Card>
 
       {/* Vendors, with each branch's part */}
@@ -255,30 +273,34 @@ export default function PurchaseAnalyticsPage() {
           </div>
         </div>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-y border-ink-100 text-left">
-                <th className={th}>Vendor</th><th className={cn(th, "text-right")}>Bills</th><th className={cn(th, "text-right")}>Bought</th><th className={cn(th, "text-right")}>Paid</th><th className={cn(th, "text-right")}>Left</th><th className={th}>Each branch</th><th className={cn(th, "pr-5 text-right")}>Last</th>
+                <th className={cn(th, "pl-5")}>Vendor</th><th className={cn(th, "text-right")}>Bills</th><th className={cn(th, "text-right")}>Bought</th><th className={cn(th, "text-right")}>Paid</th><th className={cn(th, "text-right")}>Left</th><th className={th}>Branches</th><th className={cn(th, "pr-5 text-right")}>Last bill</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-50">
-              {pg.items.map((v) => (
-                <tr key={v.vendorId} className="text-ink-800">
-                  <td className="px-3 py-3 font-semibold text-ink-900">{v.vendorName}</td>
-                  <td className="px-3 text-right tabular-nums">{v.bills}</td>
-                  <td className="px-3 text-right font-semibold tabular-nums">{formatINR(v.bought)}</td>
-                  <td className="px-3 text-right tabular-nums text-success">{formatINR(v.paid)}</td>
-                  <td className="px-3 text-right tabular-nums">{owes(v.left)}</td>
-                  <td className="px-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(v.branches).map(([b, x]) => (
-                        <span key={b} className="rounded-md border border-ink-100 bg-white px-1.5 py-0.5 text-[10px] text-ink-600">{branchLabel(b)}: {formatINR(x.bought)} · <span className={x.left > 0 ? "font-semibold text-danger" : ""}>{x.left > 0 ? `owes ${formatINR(x.left)}` : x.left < 0 ? `extra ${formatINR(-x.left)}` : "settled"}</span></span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="pr-5 text-right text-xs text-ink-500">{v.last || "—"}</td>
-                </tr>
-              ))}
+              {pg.items.map((v) => {
+                const parts = Object.entries(v.branches);
+                const owing = parts.filter(([, x]) => x.left > 0).length;
+                return (
+                  <tr key={v.vendorId} className="text-ink-800">
+                    <td className="max-w-[14rem] py-3 pl-5 pr-3"><p className="truncate font-semibold text-ink-900" title={v.vendorName}>{v.vendorName}</p></td>
+                    <td className="px-3 text-right tabular-nums">{v.bills}</td>
+                    <td className="whitespace-nowrap px-3 text-right font-semibold tabular-nums">{formatINR(v.bought)}</td>
+                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-success">{formatINR(v.paid)}</td>
+                    <td className="whitespace-nowrap px-3 text-right tabular-nums">{owes(v.left)}</td>
+                    <td className="px-3">
+                      {/* A short summary; the full branch-by-branch split opens in a pop-up, so long lists never widen the table. */}
+                      <button onClick={() => setVendorOpen(v)} className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-700">
+                        <span className="flex -space-x-1">{parts.slice(0, 4).map(([b, x]) => <span key={b} className={cn("h-2.5 w-2.5 rounded-full ring-2 ring-white", x.left > 0 ? "bg-danger" : "bg-success")} />)}</span>
+                        {parts.length} branch{parts.length === 1 ? "" : "es"}{owing > 0 ? <span className="text-danger">· {owing} owe{owing === 1 ? "s" : ""}</span> : <span className="text-success">· settled</span>}
+                      </button>
+                    </td>
+                    <td className="whitespace-nowrap pr-5 text-right text-xs text-ink-500">{v.last ? new Date(v.last).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                  </tr>
+                );
+              })}
               {vendorRows.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-ink-400">No vendors match.</td></tr>}
             </tbody>
           </table>

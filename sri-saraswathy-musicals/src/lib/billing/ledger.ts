@@ -16,6 +16,7 @@ import { getGstSettings } from "@/lib/db/queries/settings";
 import { taxLines } from "@/lib/gst/inclusive";
 import { isIntraSupply } from "@/lib/gst/place-of-supply";
 import { serviceInvoiceBreakup, partsTotal } from "@/lib/billing/serviceInvoice";
+import { ticketPayments, modesLabel } from "@/lib/billing/repairPayments";
 import type { Order, Invoice } from "@/types";
 import type { Bill } from "@/lib/store/pos";
 import type { RepairTicket } from "@/lib/store/repair";
@@ -198,7 +199,12 @@ export async function recordBillInvoice(bill: Bill, opts: { fresh?: boolean } = 
  */
 export async function recordServiceInvoice(t: RepairTicket, opts: { force?: boolean } = {}): Promise<void> {
   try {
-    if (t.status === "cancelled") return;
+    if (t.status === "cancelled") {
+      // A cancelled repair leaves revenue: an invoice already issued for it stays on record, marked Cancelled.
+      const issued = await getInvoiceByRefId(t.id);
+      if (issued && issued.status !== "cancelled") await updateInvoice(t.id, { status: "cancelled" });
+      return;
+    }
     const charge = t.finalCost > 0 ? t.finalCost : t.estimate;
     const base = charge + partsTotal(t.parts); // service charge + products sold with it
     if (base <= 0) return;
@@ -214,6 +220,8 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
     const { total, cgst, sgst } = bk;
     const taxable = bk.subtotal;
     const paid = total - (t.advance || 0) <= 0;
+    // How it was paid, from the ticket's payment history (e.g. "Cash + GPay / UPI").
+    const paymentMode = modesLabel(ticketPayments(t)) || "Cash";
     // REP-02: a part-paid repair gets a payment receipt, not a tax invoice — the invoice is minted on full payment.
     if (!existing && !paid) return;
 
@@ -226,9 +234,10 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
           items: bk.items,
           subtotal: taxable, cgst, sgst, igst: 0, total,
           status: paid ? "paid" : "pending",
+          paymentMode,
         });
-      } else if (existing.status !== "cancelled" && existing.status !== (paid ? "paid" : "pending")) {
-        await updateInvoice(t.id, { status: paid ? "paid" : "pending" });
+      } else if (existing.status !== "cancelled" && (existing.status !== (paid ? "paid" : "pending") || existing.paymentMode !== paymentMode)) {
+        await updateInvoice(t.id, { status: paid ? "paid" : "pending", paymentMode });
       }
       return;
     }
@@ -249,7 +258,7 @@ export async function recordServiceInvoice(t: RepairTicket, opts: { force?: bool
       sgst,
       igst: 0,
       total,
-      paymentMode: "cash",
+      paymentMode,
       status: paid ? "paid" : "pending",
       source: "service",
       refId: t.id,
