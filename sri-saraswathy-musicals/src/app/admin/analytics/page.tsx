@@ -571,7 +571,7 @@ export default function AnalyticsPage() {
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
             {/* ANA-01: payment-mode breakdown */}
             <Card>
-              <p className="mb-4 text-sm font-bold text-ink-900">Payment Mode Split <span className="font-normal text-ink-400">(billed)</span></p>
+              <p className="mb-4 text-sm font-bold text-ink-900">Payment Mode Split <span className="font-normal text-ink-400">(billed − linked expenses)</span></p>
               {m.paymentModes.length === 0 ? (
                 <p className="py-6 text-center text-sm text-ink-400">No sales in this view.</p>
               ) : (
@@ -593,6 +593,12 @@ export default function AnalyticsPage() {
                   ));
                 })()
               )}
+              {[...ded.byMode.entries()].filter(([k, v]) => v > 0 && !m.paymentModes.some(([x]) => x === k)).map(([k, v]) => (
+                <p key={k} className="mt-3 flex items-center justify-between gap-2 border-t border-ink-100 pt-2 text-xs">
+                  <span className="font-semibold uppercase tracking-wider text-ink-500">{k}</span>
+                  <span className="tabular-nums text-danger">− {formatINR(v)} <span className="text-ink-400">expenses, no sales</span></span>
+                </p>
+              ))}
             </Card>
             {/* ANA-05: branch-wise comparison */}
             <Card>

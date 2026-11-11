@@ -1,7 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Download, Plus, Search, FileText, Package, BadgeCheck, AlertCircle } from "lucide-react";
+import { ChevronDown, Download, Plus, Search, FileText, Package, BadgeCheck, AlertCircle, BarChart3, Loader2, X, History } from "lucide-react";
+import { Segmented } from "@/components/admin/Segmented";
+import { LoadingPanel } from "@/components/admin/LoadState";
 import { AdminStat } from "@/components/admin/AdminStat";
 import { useVendors } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
@@ -137,11 +139,13 @@ export default function VendorBillsPage() {
     }
   };
 
-  const input = "rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none";
-  const lab = "text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500";
+  const input = "h-10 rounded-xl border border-ink-200 bg-white px-3 text-sm text-ink-800 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
   const sum = data?.summary;
   const showBranches = allowed.length > 1 || state.branch === "all";
   const from = data && data.rows.length ? (data.page - 1) * data.pageSize + 1 : 0;
+  const firstLoad = !data && loading && !error;
+  const wait = "…";
+  const setLink = (id: string, on: boolean) => setData((d) => (d ? { ...d, rows: d.rows.map((r) => (r.id === id ? { ...r, inAnalytics: on } : r)) } : d));
 
   return (
     <div className="p-5 md:p-8">
@@ -154,21 +158,22 @@ export default function VendorBillsPage() {
       {editing && !editing.openingBranch && <PurchaseEditDialog purchase={editing} onClose={() => setEditing(null)} onDone={changed} />}
       {toast && <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>}
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-l-4 border-ink-900 pl-4">
-        <div>
-          <h1 className="text-2xl font-bold text-ink-900">Vendor Bills</h1>
-          <p className="mt-1 text-sm text-ink-500">{view === "bills" ? "Every purchase is one line. Open a line to see what each branch has to pay." : "What you bought from each vendor, and what each branch still owes."}</p>
-          <div className="mt-3 inline-flex rounded-lg border border-ink-200 bg-ivory-50 p-0.5">
-            {([["bills", "Bills"], ["vendors", "By vendor"]] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setView(k)} className={cn("rounded-md px-4 py-1.5 text-xs font-semibold", view === k ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>{l}</button>
-            ))}
+      {/* Header */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-ink-900 text-gold-400"><FileText className="h-5 w-5" /></div>
+          <div>
+            <h1 className="text-2xl font-bold text-ink-900">Vendor Bills</h1>
+            <p className="mt-0.5 text-sm text-ink-500">{view === "bills" ? "Every purchase is one line — open it to see branches, items and payments." : "What you bought from each vendor, and what each branch still owes."}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && <button onClick={() => setAddingOpening(true)} className="inline-flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Opening balance</button>}
+          {isAdmin && <button onClick={() => setAddingOpening(true)} className="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5"><History className="h-4 w-4" /> Opening balance</button>}
           <Link href="/admin/purchases" className="inline-flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900"><Plus className="h-4 w-4" /> New purchase</Link>
         </div>
       </div>
+
+      <Segmented value={view} options={[["bills", "Bills"], ["vendors", "By vendor"]] as const} onChange={setView} className="mb-5" />
 
       {view === "vendors" ? (
         <VendorRollupView
@@ -179,92 +184,101 @@ export default function VendorBillsPage() {
         />
       ) : (
         <>
-      {/* Totals for everything the filters match, then each branch */}
-      <div className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <AdminStat label="Bills" value={sum ? String(sum.bills) : "—"} icon={<FileText className="h-4 w-4" />} accent="ink" />
-        <AdminStat label="Bought" value={sum ? formatINR(sum.bought) : "—"} icon={<Package className="h-4 w-4" />} accent="gold" />
-        <AdminStat label="Paid" value={sum ? formatINR(sum.paid) : "—"} icon={<BadgeCheck className="h-4 w-4" />} accent="green" />
-        <AdminStat
-          label="Left to pay"
-          value={sum ? formatINR(sum.left) : "—"}
-          icon={<AlertCircle className="h-4 w-4" />}
-          accent={sum && sum.left > 0 ? "danger" : "ink"}
-        />
+      {/* Totals for everything the filters match */}
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <AdminStat label="Bills" value={sum ? String(sum.bills) : wait} hint={firstLoad ? "Loading…" : "Matching the filters"} icon={<FileText className="h-4 w-4" />} accent="ink"
+          details={sum ? [{ label: "Bills matching the filters", value: String(sum.bills) }, { label: "Bought on them", value: formatINR(sum.bought) }, { label: "Still to pay", value: formatINR(sum.left), tone: sum.left > 0 ? "minus" : "muted" }] : undefined} />
+        <AdminStat label="Bought" value={sum ? formatINR(sum.bought) : wait} hint="Bill totals incl. GST" icon={<Package className="h-4 w-4" />} accent="gold"
+          details={sum ? [...Object.entries(sum.branches).map(([b, t]) => ({ label: `${branchLabel(b)} · ${t.qty} pcs`, value: formatINR(t.bought) })), { label: "Total bought", value: formatINR(sum.bought), tone: "total" as const }] : undefined} />
+        <AdminStat label="Paid" value={sum ? formatINR(sum.paid) : wait} hint="At purchase + later payments" icon={<BadgeCheck className="h-4 w-4" />} accent="green"
+          details={sum ? [...Object.entries(sum.branches).map(([b, t]) => ({ label: branchLabel(b), value: formatINR(t.paid), tone: "plus" as const })), { label: "Total paid", value: formatINR(sum.paid), tone: "total" as const }] : undefined} />
+        <AdminStat label="Left to pay" value={sum ? formatINR(sum.left) : wait} hint={sum && sum.left > 0 ? "Still owed to vendors" : "Nothing owed"} icon={<AlertCircle className="h-4 w-4" />} accent={sum && sum.left > 0 ? "danger" : "ink"}
+          details={sum ? [...Object.entries(sum.branches).map(([b, t]) => ({ label: branchLabel(b), value: t.left < 0 ? `${formatINR(-t.left)} paid extra` : formatINR(t.left), tone: t.left > 0 ? ("minus" as const) : ("muted" as const) })), { label: "Total left", value: formatINR(sum.left), tone: "total" as const }] : undefined} />
       </div>
       {sum && showBranches && Object.keys(sum.branches).length > 0 && (
-        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        <div className="mb-5 grid overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 sm:grid-cols-3 sm:divide-x sm:divide-ink-100">
           {Object.entries(sum.branches).map(([b, t]) => (
-            <div key={b} className="rounded-xl border border-ink-100 bg-ivory-50 p-3.5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-700">{branchLabel(b)}</p>
-              <p className="mt-1.5 text-xs text-ink-500">Bought <b className="tabular-nums text-ink-900">{formatINR(t.bought)}</b> · {t.qty} pcs</p>
-              <p className="text-xs text-ink-500">Paid <b className="tabular-nums text-success">{formatINR(t.paid)}</b></p>
-              {t.left < 0
-                ? <p className="text-xs text-ink-500">Paid <b className="tabular-nums text-ink-900">{formatINR(-t.left)}</b> extra <span className="text-ink-400">(for other branches)</span></p>
-                : <p className="text-xs text-ink-500">Has to pay <b className={cn("tabular-nums", t.left > 0 ? "text-danger" : "text-ink-900")}>{formatINR(t.left)}</b></p>}
+            <div key={b} className="flex items-center justify-between gap-3 border-b border-ink-100 px-4 py-3 last:border-b-0 sm:border-b-0">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-700">{branchLabel(b)}</p>
+                <p className="truncate text-[11px] text-ink-500">{t.qty} pcs · bought {formatINR(t.bought)} · paid <span className="text-success">{formatINR(t.paid)}</span></p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[10px] uppercase tracking-wider text-ink-400">{t.left < 0 ? "Paid extra" : "Has to pay"}</p>
+                <p className={cn("text-sm font-bold tabular-nums", t.left > 0 ? "text-danger" : "text-ink-900")}>{formatINR(Math.abs(t.left))}</p>
+              </div>
             </div>
           ))}
         </div>
       )}
 
       {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <label className={cn(lab, "relative")}>Search
-          <span className="relative mt-1 block">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-ink-400" />
-            <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Vendor, invoice no, product…" className={cn(input, "w-64 pl-8")} />
-          </span>
-        </label>
-        <label className={lab}>Vendor
-          <select value={state.vendor} onChange={(e) => set({ vendor: e.target.value })} className={cn(input, "mt-1 block w-48")}>
-            <option value="">All vendors</option>
-            {vendorOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-        </label>
-        {allowed.length > 1 && (
-          <label className={lab}>Branch
-            <select value={state.branch} onChange={(e) => set({ branch: e.target.value })} className={cn(input, "mt-1 block")}>
-              <option value="all">All branches</option>
-              {allowed.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+      <div className="mb-5 space-y-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
+        <div className="flex flex-col gap-2.5 md:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+            <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Search vendor, invoice no or product…" className={cn(input, "w-full pl-10")} />
+            {qInput && <button onClick={() => setQInput("")} aria-label="Clear search" className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-ink-400 hover:bg-ink-900/5"><X className="h-3.5 w-3.5" /></button>}
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 md:flex">
+            <select value={state.vendor} onChange={(e) => set({ vendor: e.target.value })} aria-label="Vendor" className={cn(input, "md:w-48")}>
+              <option value="">All vendors</option>
+              {vendorOptions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
-          </label>
-        )}
-        <div>
-          <p className={lab}>Show</p>
-          <div className="mt-1 flex rounded-lg border border-ink-200 bg-ivory-50 p-0.5">
-            {([["all", "All"], ["open", "To pay"], ["paid", "Paid"]] as const).map(([k, l]) => (
-              <button key={k} onClick={() => set({ status: k })} className={cn("rounded-md px-3 py-1.5 text-xs font-semibold", state.status === k ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>{l}</button>
-            ))}
+            {allowed.length > 1 && (
+              <select value={state.branch} onChange={(e) => set({ branch: e.target.value })} aria-label="Branch" className={cn(input, "md:w-44")}>
+                <option value="all">All branches</option>
+                {allowed.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+              </select>
+            )}
           </div>
         </div>
-        <label className={lab}>From<input type="date" value={state.from} max={state.to || undefined} onChange={(e) => set({ from: e.target.value })} className={cn(input, "mt-1 block")} /></label>
-        <label className={lab}>To<input type="date" value={state.to} min={state.from || undefined} onChange={(e) => set({ to: e.target.value })} className={cn(input, "mt-1 block")} /></label>
-        <label className={lab}>Sort
-          <select value={state.sort} onChange={(e) => set({ sort: e.target.value as Query["sort"] })} className={cn(input, "mt-1 block")}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <Segmented label="Show" value={state.status} options={[["all", "All"], ["open", "To pay"], ["paid", "Paid"]] as const} onChange={(k) => set({ status: k })} />
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">Dates</span>
+            <input type="date" value={state.from} max={state.to || undefined} onChange={(e) => set({ from: e.target.value })} aria-label="From date" className={cn(input, "h-9 w-[9.5rem] px-2.5 text-xs")} />
+            <span className="text-ink-300">–</span>
+            <input type="date" value={state.to} min={state.from || undefined} onChange={(e) => set({ to: e.target.value })} aria-label="To date" className={cn(input, "h-9 w-[9.5rem] px-2.5 text-xs")} />
+          </div>
+          <select value={state.sort} onChange={(e) => set({ sort: e.target.value as Query["sort"] })} aria-label="Sort" className={cn(input, "h-9 text-xs")}>
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
             <option value="balance">Most left to pay</option>
             <option value="amount">Biggest bill</option>
           </select>
-        </label>
-        {hasFilter && <button onClick={clear} className="pb-2 text-xs font-semibold text-gold-600 hover:underline">Clear filters</button>}
-        <button onClick={() => void exportCSV()} disabled={!data || data.total === 0} className="ml-auto flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 disabled:opacity-50"><Download className="h-4 w-4" /> Export CSV</button>
+          {hasFilter && <button onClick={clear} className="text-xs font-semibold text-gold-700 hover:underline">Clear filters</button>}
+          <button onClick={() => void exportCSV()} disabled={!data || data.total === 0} className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-700 hover:bg-ink-900/5 disabled:opacity-50"><Download className="h-3.5 w-3.5" /> Export CSV</button>
+        </div>
       </div>
 
       {/* One line per purchase */}
-      <div className={cn("space-y-3 transition-opacity", loading && data && "opacity-60")} aria-busy={loading}>
-        {data?.rows.map((r) => (
-          <BillLine key={r.id} r={r} open={open === r.id} onToggle={() => setOpen(open === r.id ? null : r.id)}>
-            {open === r.id && <BillDetailPanel id={r.id} version={version} canEdit={isAdmin} onPay={setPaying} onEdit={setEditing} onDeleted={() => { setOpen(null); changed("Bill deleted."); }} />}
-          </BillLine>
-        ))}
-        {!data && loading && Array.from({ length: 4 }, (_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-ink-100/60" />)}
-        {data && data.rows.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-ink-200 px-4 py-14 text-center text-sm text-ink-400">{hasFilter ? "No bills match these filters." : "No purchases yet."}</p>
-        )}
-        {error && (
-          <p className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-4 text-sm text-danger">Couldn&apos;t load the bills. <button onClick={() => setVersion((v) => v + 1)} className="font-semibold underline">Try again</button></p>
-        )}
-      </div>
+      {firstLoad ? (
+        <LoadingPanel label="Loading vendor bills…" />
+      ) : (
+        <div className="relative" aria-busy={loading}>
+          {loading && data && (
+            <span className="absolute -top-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-ink-900 px-3 py-1 text-[11px] font-semibold text-ivory-50 shadow"><Loader2 className="h-3 w-3 animate-spin" /> Updating…</span>
+          )}
+          <div className={cn("space-y-2.5 transition-opacity", loading && data && "opacity-50")}>
+            {data?.rows.map((r) => (
+              <BillLine key={r.id} r={r} open={open === r.id} onToggle={() => setOpen(open === r.id ? null : r.id)}>
+                {open === r.id && <BillDetailPanel id={r.id} version={version} canEdit={isAdmin} onPay={setPaying} onEdit={setEditing} onLinkChange={(on) => setLink(r.id, on)} onDeleted={() => { setOpen(null); changed("Bill deleted."); }} />}
+              </BillLine>
+            ))}
+            {data && data.rows.length === 0 && (
+              <div className="grid place-items-center rounded-2xl border border-dashed border-ink-200 px-4 py-14 text-center">
+                <FileText className="h-6 w-6 text-ink-300" />
+                <p className="mt-2 text-sm font-semibold text-ink-600">{hasFilter ? "No bills match these filters" : "No purchases yet"}</p>
+                {hasFilter && <button onClick={clear} className="mt-1 text-xs font-semibold text-gold-700 hover:underline">Clear filters</button>}
+              </div>
+            )}
+          </div>
+          {error && (
+            <p className="mt-3 rounded-2xl border border-danger/30 bg-danger/5 px-4 py-4 text-sm text-danger">Couldn&apos;t load the bills. <button onClick={() => setVersion((v) => v + 1)} className="font-semibold underline">Try again</button></p>
+          )}
+        </div>
+      )}
       {data && (
         <Pager
           className="mt-4"
@@ -285,42 +299,49 @@ const BADGE = {
   unpaid: { text: "Not paid", cls: "bg-danger/10 text-danger" },
 } as const;
 
-/** One purchase, as one line: who, what, what each branch still has to pay, and the money. */
+/** One purchase, as one compact line: who and what, which branches still owe, and the money. */
 function BillLine({ r, open, onToggle, children }: { r: BillRow; open: boolean; onToggle: () => void; children?: React.ReactNode }) {
   const badge = BADGE[r.status];
   const more = r.itemCount - r.items.length;
+  const owing = r.branches.filter((b) => b.left > 0);
   return (
-    <div className={cn("overflow-hidden rounded-2xl border bg-ivory-50 transition-shadow", open ? "border-gold-400 shadow-md" : "border-ink-100 hover:border-ink-200")}>
-      <button onClick={onToggle} aria-expanded={open} className="grid w-full gap-3 p-4 text-left md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-5">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <ChevronDown className={cn("h-4 w-4 shrink-0 text-ink-400 transition-transform", open && "rotate-180")} />
-            <span className="truncate text-base font-bold text-ink-900">{r.vendorName}</span>
-            <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", badge.cls)}>{badge.text}</span>
+    <div className={cn("overflow-hidden rounded-2xl border bg-ivory-50 transition-shadow", open ? "border-gold-400 shadow-md" : "border-ink-100 hover:border-ink-200 hover:shadow-sm")}>
+      <button onClick={onToggle} aria-expanded={open} className="grid w-full items-center gap-3 px-4 py-3.5 text-left md:grid-cols-[minmax(0,1fr)_minmax(0,15rem)_19rem] md:gap-5">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-ink-400 transition-transform", open && "rotate-180")} />
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="truncate text-[15px] font-bold text-ink-900">{r.vendorName}</span>
+              <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", badge.cls)}>{badge.text}</span>
+              {r.inAnalytics && <span title="Payments on this bill are subtracted in analytics" className="inline-flex items-center gap-1 rounded bg-danger/[0.08] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-danger"><BarChart3 className="h-3 w-3" /> In analytics</span>}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-ink-500">
+              {day(r.date)} · {r.openingBranch ? "Old balance" : r.invoiceNo ? `Inv ${r.invoiceNo}` : "No invoice no"}
+              {r.paymentMode && r.paymentMode !== "CREDIT" ? ` · ${r.paymentMode}` : ""}
+              {r.items.length > 0 && <span className="text-ink-600"> · {r.items.join(" · ")}{more > 0 ? ` +${more} more` : ""}</span>}
+            </p>
           </div>
-          <p className="mt-1 pl-6 text-xs text-ink-500">{day(r.date)} · {r.openingBranch ? "Old balance (before this software)" : r.invoiceNo ? `Invoice ${r.invoiceNo}` : "No invoice number"}</p>
-          {r.items.length > 0 && (
-            <p className="mt-0.5 truncate pl-6 text-xs text-ink-600">{r.items.join(" · ")}{more > 0 ? ` · +${more} more` : ""}</p>
+        </div>
+
+        <div className="flex min-w-0 flex-wrap gap-1.5 pl-6 md:pl-0">
+          {owing.length === 0 ? (
+            <span className="rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">✓ All branches paid</span>
+          ) : (
+            owing.map((b) => (
+              <span key={b.branch} className="max-w-full truncate rounded-full bg-danger/[0.07] px-2.5 py-1 text-[11px] text-ink-700">
+                <b className="font-semibold">{branchLabel(b.branch)}</b> <span className="font-semibold tabular-nums text-danger">{formatINR(b.left)}</span>
+              </span>
+            ))
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 pl-6 md:pl-0">
-          {r.branches.map((b) => (
-            <span key={b.branch} className={cn("rounded-lg border px-2.5 py-1.5 text-[11px] leading-tight", b.left > 0 ? "border-danger/25 bg-danger/5" : "border-success/25 bg-success/5")}>
-              <b className="text-ink-900">{branchLabel(b.branch)}</b>{b.qty > 0 && <span className="text-ink-500"> · {b.qty} pcs</span>}
-              <span className={cn("block font-semibold tabular-nums", b.left > 0 ? "text-danger" : "text-success")}>{b.left > 0 ? `has to pay ${formatINR(b.left)}` : "✓ paid"}</span>
-            </span>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 pl-6 text-right text-xs md:min-w-[17rem] md:pl-0">
-          <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Total</p><p className="font-bold tabular-nums text-ink-900">{formatINR(r.total)}</p></div>
-          <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Paid</p><p className="font-bold tabular-nums text-success">{formatINR(r.paid)}</p></div>
-          <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Left</p><p className={cn("font-bold tabular-nums", r.left > 0 ? "text-danger" : "text-ink-400")}>{r.left > 0 ? formatINR(r.left) : "—"}</p></div>
+        <div className="grid grid-cols-3 gap-3 pl-6 text-right md:pl-0">
+          <div className="min-w-0"><p className="text-[10px] uppercase tracking-wider text-ink-400">Total</p><p className="truncate text-sm font-bold tabular-nums text-ink-900">{formatINR(r.total)}</p></div>
+          <div className="min-w-0"><p className="text-[10px] uppercase tracking-wider text-ink-400">Paid</p><p className="truncate text-sm font-bold tabular-nums text-success">{formatINR(r.paid)}</p></div>
+          <div className="min-w-0"><p className="text-[10px] uppercase tracking-wider text-ink-400">Left</p><p className={cn("truncate text-sm font-bold tabular-nums", r.left > 0 ? "text-danger" : "text-ink-300")}>{r.left > 0 ? formatINR(r.left) : "—"}</p></div>
         </div>
       </button>
       {children}
     </div>
   );
 }
-

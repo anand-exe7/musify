@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { PackagePlus, Search, X, Truck, Trash2, Plus, FileText } from "lucide-react";
+import { PackagePlus, Search, X, Truck, Trash2, Plus, FileText, Package, Loader2 } from "lucide-react";
+import { Segmented } from "@/components/admin/Segmented";
 import { usePOS, useInventory, productStock, type InvProduct } from "@/lib/store/pos";
 import { useVendors, vendorMatches } from "@/lib/store/vendors";
 import { useBranchScope } from "@/lib/store/branch";
@@ -80,6 +81,8 @@ export default function PurchasesPage() {
   const [newLinesTo, setNewLinesTo] = useState<string>(DEFAULT_BRANCH);
   const [paymentMode, setPaymentMode] = useState<string>("");
   const [notes, setNotes] = useState("");
+  /** EXP-01: payments on this bill are subtracted in the sales analytics. */
+  const [inAnalytics, setInAnalytics] = useState(false);
 
   useEffect(() => {
     void hydrateVendors();
@@ -217,7 +220,9 @@ export default function PurchasesPage() {
   const payOver = overBranches(payRows, paidSplit);
   const amountPaid = sumAlloc(paidSplit);
   const balance = Math.max(0, grandTotal - amountPaid);
-  const canSubmit = !!vendor && lines.length > 0 && lines.every((l) => !lineError(l)) && !saving && !taxProblem && payOver.length === 0;
+  /** EXP-02: money paid now must say how it was paid, so analytics can file it under the right mode. */
+  const modeMissing = amountPaid > 0 && (!paymentMode || paymentMode === "CREDIT");
+  const canSubmit = !modeMissing && !!vendor && lines.length > 0 && lines.every((l) => !lineError(l)) && !saving && !taxProblem && payOver.length === 0;
 
   const resetForm = () => {
     setLines([]);
@@ -230,6 +235,7 @@ export default function PurchasesPage() {
     setPayAlloc({});
     setPaymentMode("");
     setNotes("");
+    setInAnalytics(false);
     batchRef.current = null;
   };
 
@@ -247,6 +253,7 @@ export default function PurchasesPage() {
     if (lines.some(lineError)) return notify("Fix the highlighted lines first.");
     if (taxProblem) return notify(taxProblem);
     if (payOver.length > 0) return notify(overMessage(payOver) ?? "A branch is paying more than its share.");
+    if (modeMissing) return notify("Choose how the amount paid now was paid.");
     setSaving(true);
     try {
       const batchId = (batchRef.current ??= crypto.randomUUID());
@@ -268,6 +275,7 @@ export default function PurchasesPage() {
           ...(amountPaid > 0 ? { paidAllocations: allocList(paidSplit) } : {}),
           paymentMode,
           notes,
+          ...(isAdmin && inAnalytics ? { inAnalytics: true } : {}),
           lines: lines.map((l) => ({
             productId: l.product.id,
             variantIndex: l.variantIndex,
@@ -297,9 +305,11 @@ export default function PurchasesPage() {
     }
   };
 
-  const field = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
-  const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
-  const num = "w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-right text-sm tabular-nums focus:border-gold-500 focus:outline-none disabled:opacity-60";
+  const field = "h-11 w-full rounded-xl border border-ink-200 bg-white px-3.5 text-sm text-ink-900 placeholder:text-ink-300 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
+  const label = "mb-1.5 block text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500";
+  const cellLabel = "mb-1 block truncate text-[10px] font-bold uppercase tracking-[0.12em] text-ink-400";
+  const num = "h-10 w-full rounded-lg border border-ink-200 bg-white px-2.5 text-right text-sm tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20 disabled:bg-ink-50 disabled:text-ink-400";
+  const linesValue = lines.reduce((n, l) => n + qtyOf(l) * l.unitCost, 0);
 
   return (
     <div className="p-5 md:p-8">
@@ -315,269 +325,327 @@ export default function PurchasesPage() {
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 border-l-4 border-ink-900 pl-4">
-        <div>
-          <h1 className="text-2xl font-bold text-ink-900">Purchases</h1>
-          <p className="mt-1 text-sm text-ink-500">Record a vendor receipt — goods lines, GST, and the amount paid now (0 is fine).</p>
+      {/* Header */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-ink-900 text-gold-400"><PackagePlus className="h-5 w-5" /></div>
+          <div>
+            <h1 className="text-2xl font-bold text-ink-900">New Purchase</h1>
+            <p className="mt-0.5 text-sm text-ink-500">Record a vendor bill: the goods, which branch gets them, the GST and anything paid now.</p>
+          </div>
         </div>
         <Link href="/admin/purchases/invoices" className="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm font-semibold text-ink-900 hover:bg-ivory-100">
-          <FileText className="h-4 w-4" /> Purchase invoices
+          <FileText className="h-4 w-4" /> Vendor bills
         </Link>
       </div>
 
-      <div className="space-y-6">
-        <section className="space-y-5 rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
-          <div className="grid gap-5 md:grid-cols-2">
-            {/* Vendor */}
-            <div>
-              <label className={label}>Vendor — search name / phone / code</label>
-              {vendor ? (
-                <div className="flex items-center justify-between rounded-lg border border-gold-300 bg-gold-50/60 px-3 py-2.5">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-ink-900"><Truck className="h-4 w-4 text-gold-600" />{vendor.name}{vendor.code ? ` · ${vendor.code}` : ""}</span>
-                  <button onClick={() => setVendor(null)} className="grid h-6 w-6 place-items-center rounded text-ink-400 hover:bg-ink-900/5 hover:text-ink-900"><X className="h-4 w-4" /></button>
-                </div>
-              ) : (
-                <div className="relative">
-                  <div className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2.5 focus-within:border-gold-500">
-                    <Search className="h-4 w-4 shrink-0 text-ink-400" />
-                    <input value={vendorTerm} onChange={(e) => setVendorTerm(e.target.value)} placeholder="Start typing…" className="w-full bg-transparent text-sm focus:outline-none" />
+      <div className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-6">
+          {/* 1 · Bill details */}
+          <Step n={1} title="Bill details" hint="Who sent the goods and their bill number.">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="sm:col-span-2 lg:col-span-1">
+                <label className={label}>Vendor</label>
+                {vendor ? (
+                  <div className="flex h-11 items-center justify-between gap-2 rounded-xl border border-gold-400 bg-gold-50/70 px-3.5">
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink-900">
+                      <Truck className="h-4 w-4 shrink-0 text-gold-600" />
+                      <span className="truncate">{vendor.name}</span>
+                      {vendor.code && <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-ink-500">{vendor.code}</span>}
+                    </span>
+                    <button onClick={() => setVendor(null)} aria-label="Change vendor" className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-900/5 hover:text-ink-900"><X className="h-4 w-4" /></button>
                   </div>
-                  {vendorMatchesList.length > 0 && (
-                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-ink-100 bg-white shadow-lg">
-                      {vendorMatchesList.map((v) => (
-                        <button key={v.id} onClick={() => { setVendor(v); setVendorTerm(""); }} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gold-50">
-                          <span className="font-medium text-ink-900">{v.name}</span>
-                          <span className="text-xs text-ink-400">{v.code || v.phone}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {vendorTerm.trim() && vendorMatchesList.length === 0 && (
-                    <p className="mt-1 text-[11px] text-ink-400">No vendor found. Add them on the Vendors page first.</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Product lookup */}
-            <div>
-              <label className={label}>Add product to this receipt</label>
-              <div className="relative">
-                <div className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2.5 focus-within:border-gold-500">
-                  <Search className="h-4 w-4 shrink-0 text-ink-400" />
-                  <input value={productTerm} onChange={(e) => setProductTerm(e.target.value)} placeholder="Search inventory…" className="w-full bg-transparent text-sm focus:outline-none" />
-                </div>
-                {productTerm.trim() && isAdmin && (
-                  <button onClick={() => setCreating(true)} className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-gold-600 hover:underline">
-                    <Plus className="h-3.5 w-3.5" /> Add &quot;{productTerm.trim()}&quot; as a new product
-                  </button>
+                ) : (
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                    <input value={vendorTerm} onChange={(e) => setVendorTerm(e.target.value)} placeholder="Search name, phone or code…" className={cn(field, "pl-10")} />
+                    {vendorMatchesList.length > 0 && (
+                      <div className="absolute z-20 mt-1.5 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-xl">
+                        {vendorMatchesList.map((v) => (
+                          <button key={v.id} onClick={() => { setVendor(v); setVendorTerm(""); }} className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm hover:bg-gold-50">
+                            <span className="truncate font-medium text-ink-900">{v.name}</span>
+                            <span className="shrink-0 text-xs text-ink-400">{v.code || v.phone}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {vendorTerm.trim() && vendorMatchesList.length === 0 && (
+                      <p className="mt-1.5 text-[11px] text-ink-400">No vendor found. <Link href="/admin/vendors" className="font-semibold text-gold-700 hover:underline">Add them on the Vendors page</Link> first.</p>
+                    )}
+                  </div>
                 )}
-                {productMatchesList.length > 0 && (
-                  <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-ink-100 bg-white shadow-lg">
+              </div>
+              <div><label className={label}>Vendor invoice no</label><input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={field} placeholder="e.g. INV-2041" /></div>
+              <div><label className={label}>Purchase date</label><input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className={field} /></div>
+            </div>
+          </Step>
+
+          {/* 2 · Products */}
+          <Step
+            n={2}
+            title="Products"
+            hint={lockedBranch ? `Everything is received into ${branchLabel(lockedBranch)}.` : "Type how many each branch gets. The bill total is optional and only checks your split."}
+            right={lines.length > 0 ? <span className="rounded-full bg-ink-900/[0.06] px-3 py-1 text-xs font-semibold text-ink-700">{lines.length} product{lines.length === 1 ? "" : "s"} · {totals.qty} pcs</span> : null}
+          >
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                <input value={productTerm} onChange={(e) => setProductTerm(e.target.value)} placeholder="Search inventory to add a product…" className={cn(field, "pl-10")} />
+                {(productMatchesList.length > 0 || (productTerm.trim() && isAdmin)) && (
+                  <div className="absolute z-20 mt-1.5 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-xl">
                     {productMatchesList.map((p) => (
-                      <button key={p.id} onClick={() => addLine(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gold-50">
-                        <span className="font-medium text-ink-900">{p.name}</span>
-                        <span className="text-xs text-ink-400">{productStock(p)} in stock</span>
+                      <button key={p.id} onClick={() => addLine(p)} className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm hover:bg-gold-50">
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-ink-900">{p.name}</span>
+                          <span className="block truncate text-[11px] text-ink-400">{[p.brand, p.category].filter(Boolean).join(" · ")}</span>
+                        </span>
+                        <span className="shrink-0 rounded-full bg-ink-900/5 px-2 py-0.5 text-[11px] font-semibold text-ink-600">{productStock(p)} in stock</span>
                       </button>
                     ))}
+                    {productTerm.trim() && isAdmin && (
+                      <button onClick={() => setCreating(true)} className="flex w-full items-center gap-2 border-t border-ink-100 bg-ivory-50 px-3.5 py-2.5 text-left text-xs font-semibold text-gold-700 hover:bg-gold-50">
+                        <Plus className="h-3.5 w-3.5" /> Add &ldquo;{productTerm.trim()}&rdquo; as a new product
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-
-          {/* Header: invoice no + date */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <div><label className={label}>Vendor Invoice No</label><input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={field} placeholder="Bill/Invoice reference" /></div>
-            <div><label className={label}>Purchase Date</label><input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className={field} /></div>
-            <div><label className={label}>Payment Mode (at purchase)</label>
-              <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className={field}>
-                {PAY_MODES.map((m) => <option key={m || "none"} value={m}>{m || "— not paid —"}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Lines */}
-          {!lockedBranch && (
-            <label className="flex flex-wrap items-center gap-2 text-xs text-ink-600">
-              New products start in
-              <select value={newLinesTo} onChange={(e) => setNewLinesTo(e.target.value)} className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1 text-xs focus:border-gold-500 focus:outline-none">
-                {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
-              </select>
-              <span className="text-ink-400">— then type how many each branch gets. The boxes never move on their own.</span>
-            </label>
-          )}
-          <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-                  <th className="px-3 py-3">#</th>
-                  <th>Product</th>
-                  <th>Variant</th>
-                  <th className="w-28">{inclusive ? "Cost incl. GST (₹)" : "Cost excl. GST (₹)"}</th>
-                  <th className="w-20">GST %</th>
-                  <th className="w-24 text-right pr-2">Bill total qty <span className="font-normal normal-case tracking-normal text-ink-300">(optional)</span></th>
-                  {BRANCH_KEYS.map((b) => <th key={b} className="w-20 text-right pr-2">{branchLabel(b)}</th>)}
-                  <th className="w-24 text-right pr-2">Line total</th>
-                  <th className="w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-50">
-                {lines.map((l, i) => {
-                  const err = lineError(l);
-                  return (
-                    <tr key={l.key} className={cn("align-middle", err && (splitStatus(l.alloc, l.target).state === "under" ? "bg-amber-50" : "bg-danger/5"))}>
-                      <td className="px-3 py-2 text-xs text-ink-400">{i + 1}</td>
-                      <td className="py-2 pr-2">
-                        <p className="font-medium text-ink-900">{l.product.name}</p>
-                        {err && splitNote(l, err)}
-                        {(() => {
-                          const m = marginNote(l);
-                          return m && <p className={cn("text-[11px]", m.bad ? "text-danger" : "text-amber-600")}>{m.text}</p>;
-                        })()}
-                        {isAdmin && <>
-                        <label className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-500">
-                          <input type="checkbox" checked={l.updatePrice} onChange={(e) => patch(l.key, { updatePrice: e.target.checked, newPrice: e.target.checked && l.newPrice <= 0 ? sellingPrice(l) : l.newPrice })} />
-                          Update selling price (now {formatINR(sellingPrice(l))})
-                        </label>
-                        {l.updatePrice && (
-                          <div className="mt-1 w-32"><MoneyInput value={l.newPrice} onChange={(paise) => patch(l.key, { newPrice: paise })} className={num} placeholder="New price" /></div>
-                        )}
-                        </>}
-                      </td>
-                      <td className="pr-2">
-                        <select value={l.variantIndex} onChange={(e) => patch(l.key, { variantIndex: Number(e.target.value) })} className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-xs focus:outline-none">
-                          {l.product.variants.map((v, vi) => (
-                            <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""} — {BRANCH_KEYS.map((b) => `${branchLabel(b)} ${variantStockAt(v, b)}`).join(" · ")}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="pr-2"><MoneyInput value={l.unitCost} onChange={(paise) => patch(l.key, { unitCost: paise })} className={num} placeholder="0" /></td>
-                      <td className="pr-2">
-                        <select value={l.gst} onChange={(e) => patch(l.key, { gst: Number(e.target.value) })} className={num}>
-                          {[...new Set([...GST_RATES, l.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
-                        </select>
-                      </td>
-                      <td className="pr-2">
-                        <input type="number" min={0} step={1} value={(l.target ?? qtyOf(l)) || ""} onChange={(e) => setTotal(l, toInt(e.target.value))} title="Total on the vendor's bill (optional) — the branch boxes are compared with it" className={cn(num, l.target !== null && "border-gold-400")} />
-                        {!lockedBranch && (
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              const total = l.target ?? qtyOf(l);
-                              patch(l.key, { alloc: v === "even" ? splitEvenly(total) : moveAll(total, v) });
-                            }}
-                            aria-label="Quick split"
-                            className="mt-1 w-full rounded border border-ink-100 bg-transparent px-1 py-0.5 text-[10px] text-ink-500 focus:outline-none"
-                          >
-                            <option value="">Quick split…</option>
-                            {BRANCH_KEYS.map((b) => <option key={b} value={b}>All to {branchLabel(b)}</option>)}
-                            <option value="even">Split evenly</option>
-                          </select>
-                        )}
-                      </td>
-                      {BRANCH_KEYS.map((b) => (
-                        <td key={b} className="pr-2"><input type="number" min={0} step={1} value={l.alloc[b] || 0} disabled={!!lockedBranch} onChange={(e) => setBranchQty(l, b, toInt(e.target.value))} className={num} /></td>
-                      ))}
-                      <td className="pr-2 text-right tabular-nums text-ink-700">{formatINR(qtyOf(l) * l.unitCost)}</td>
-                      <td className="pr-2">
-                        <button onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} aria-label="Remove line" className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {lines.length === 0 && (
-                  <tr><td colSpan={8 + BRANCH_KEYS.length} className="px-4 py-10 text-center text-sm text-ink-400">Search above to add products to this purchase.</td></tr>
-                )}
-              </tbody>
-              {lines.length > 0 && (
-                <tfoot>
-                  <tr className="border-t border-ink-100 bg-[#FAF7EF] text-xs font-semibold text-ink-900">
-                    <td colSpan={5} className="px-3 py-3 text-right uppercase tracking-wider text-ink-500">Totals</td>
-                    <td className="pr-2 text-right tabular-nums">{totals.qty}</td>
-                    {BRANCH_KEYS.map((b) => <td key={b} className="pr-2 text-right tabular-nums">{totals.alloc[b]}</td>)}
-                    <td className="pr-2 text-right tabular-nums">{formatINR(lines.reduce((n, l) => n + qtyOf(l) * l.unitCost, 0))}</td>
-                    <td />
-                  </tr>
-                </tfoot>
+              {!lockedBranch && (
+                <Segmented label="Start in" value={newLinesTo} options={BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)} onChange={setNewLinesTo} className="shrink-0" />
               )}
-            </table>
-          </div>
+            </div>
 
-          {/* GST */}
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-2 text-xs text-ink-600">
-                  <input type="checkbox" checked={inclusive} onChange={(e) => toggleInclusive(e.target.checked)} />
-                  Prices include GST
-                </label>
-                <label className="flex items-center gap-2 text-xs text-ink-600">
-                  <input type="checkbox" checked={interState} onChange={(e) => setInterState(e.target.checked)} />
-                  Inter-state purchase (IGST instead of CGST + SGST)
-                </label>
+            <div className="mt-4 space-y-3">
+              {lines.map((l, i) => {
+                const err = lineError(l);
+                const st = splitStatus(l.alloc, l.target);
+                const m = marginNote(l);
+                const variant = l.product.variants[l.variantIndex];
+                return (
+                  <div key={l.key} className={cn("rounded-2xl border bg-white p-4 transition-colors", err ? (st.state === "under" ? "border-amber-300 bg-amber-50/40" : "border-danger/40 bg-danger/[0.03]") : "border-ink-100")}>
+                    {/* Product + variant */}
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink-900 text-[11px] font-bold text-ivory-50">{i + 1}</span>
+                      <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_16rem] md:items-start">
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold text-ink-900">{l.product.name}</p>
+                          {variant && (
+                            <p className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-ink-400">
+                              <span>Stock now:</span>
+                              {BRANCH_KEYS.map((b) => <span key={b}>{branchLabel(b)} <b className="font-semibold text-ink-600">{variantStockAt(variant, b)}</b></span>)}
+                            </p>
+                          )}
+                        </div>
+                        {l.product.variants.length > 1 ? (
+                          <select value={l.variantIndex} onChange={(e) => patch(l.key, { variantIndex: Number(e.target.value) })} aria-label="Variant" className="h-10 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 focus:border-gold-500 focus:outline-none">
+                            {l.product.variants.map((v, vi) => <option key={vi} value={vi}>{v.attr}{v.finish ? ` · ${v.finish}` : ""}</option>)}
+                          </select>
+                        ) : (
+                          <span className="flex h-10 items-center rounded-lg border border-dashed border-ink-200 px-3 text-sm text-ink-500">{variant ? `${variant.attr}${variant.finish ? ` · ${variant.finish}` : ""}` || "Standard" : "Standard"}</span>
+                        )}
+                      </div>
+                      <button onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} aria-label="Remove line" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-danger/10 hover:text-danger">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Numbers — two fixed rows (price, then where the pieces go), every box labelled and one height */}
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 md:pl-10">
+                        <div>
+                          <span className={cellLabel}>{inclusive ? "Cost incl. GST" : "Cost excl. GST"}</span>
+                          <MoneyInput value={l.unitCost} onChange={(paise) => patch(l.key, { unitCost: paise })} className={num} placeholder="0" />
+                        </div>
+                        <div>
+                          <span className={cellLabel}>GST</span>
+                          <select value={l.gst} onChange={(e) => patch(l.key, { gst: Number(e.target.value) })} className={num}>
+                            {[...new Set([...GST_RATES, l.gst])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <span className={cellLabel}>Line total</span>
+                          <p className="flex h-10 items-center justify-end truncate rounded-lg bg-ink-900/[0.04] px-2.5 text-sm font-bold tabular-nums text-ink-900">{formatINR(qtyOf(l) * l.unitCost)}</p>
+                        </div>
+                        <div>
+                          <span className={cellLabel} title="Total on the vendor's bill (optional) — the branch boxes are compared with it">Bill qty <span className="font-normal normal-case tracking-normal">(opt.)</span></span>
+                          <input type="number" min={0} step={1} value={(l.target ?? qtyOf(l)) || ""} onChange={(e) => setTotal(l, toInt(e.target.value))} className={cn(num, l.target !== null && "border-gold-400 bg-gold-50/50")} />
+                        </div>
+                        {BRANCH_KEYS.map((b) => (
+                          <div key={b}>
+                            <span className={cn(cellLabel, (l.alloc[b] || 0) > 0 && "text-ink-800")}>{branchLabel(b)}</span>
+                            <input type="number" min={0} step={1} value={l.alloc[b] || 0} disabled={!!lockedBranch && lockedBranch !== b} onChange={(e) => setBranchQty(l, b, toInt(e.target.value))} className={cn(num, (l.alloc[b] || 0) > 0 && "border-ink-400 font-semibold")} />
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Quick split, problems, price update */}
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 md:pl-10">
+                      {!lockedBranch && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-400">
+                          Quick split:
+                          {BRANCH_KEYS.map((b) => (
+                            <button key={b} type="button" onClick={() => patch(l.key, { alloc: moveAll(l.target ?? qtyOf(l), b) })} className="rounded-md border border-ink-200 bg-white px-2 py-1 font-semibold text-ink-600 hover:border-gold-500 hover:text-ink-900">All to {branchLabel(b)}</button>
+                          ))}
+                          <button type="button" onClick={() => patch(l.key, { alloc: splitEvenly(l.target ?? qtyOf(l)) })} className="rounded-md border border-ink-200 bg-white px-2 py-1 font-semibold text-ink-600 hover:border-gold-500 hover:text-ink-900">Split evenly</button>
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <label className="ml-auto flex items-center gap-2 text-[11px] text-ink-500">
+                          <input type="checkbox" checked={l.updatePrice} onChange={(e) => patch(l.key, { updatePrice: e.target.checked, newPrice: e.target.checked && l.newPrice <= 0 ? sellingPrice(l) : l.newPrice })} className="h-3.5 w-3.5 accent-ink-900" />
+                          Update selling price <span className="text-ink-400">(now {formatINR(sellingPrice(l))})</span>
+                          {l.updatePrice && <span className="w-28"><MoneyInput value={l.newPrice} onChange={(paise) => patch(l.key, { newPrice: paise })} className={cn(num, "h-8")} placeholder="New price" /></span>}
+                        </label>
+                      )}
+                    </div>
+                    {(err || m) && (
+                      <div className="mt-2 space-y-1 md:pl-10">
+                        {err && splitNote(l, err)}
+                        {m && <p className={cn("text-[11px] font-medium", m.bad ? "text-danger" : "text-amber-700")}>{m.text}</p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {lines.length === 0 ? (
+                <div className="grid place-items-center rounded-2xl border border-dashed border-ink-200 bg-white/60 px-4 py-12 text-center">
+                  <span className="grid h-11 w-11 place-items-center rounded-full bg-gold-500/10 text-gold-700"><Package className="h-5 w-5" /></span>
+                  <p className="mt-3 text-sm font-semibold text-ink-700">No products yet</p>
+                  <p className="mt-0.5 text-xs text-ink-400">Search above to add the first product on this bill.</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-ink-900 px-4 py-3 text-xs text-ivory-50">
+                  <span className="flex flex-wrap gap-x-4 gap-y-1">
+                    <span><b className="tabular-nums">{totals.qty}</b> pcs</span>
+                    {BRANCH_KEYS.filter((b) => (totals.alloc[b] || 0) > 0).map((b) => <span key={b} className="text-ivory-50/70">{branchLabel(b)} <b className="tabular-nums text-ivory-50">{totals.alloc[b]}</b></span>)}
+                  </span>
+                  <span className="font-semibold">Lines total <b className="ml-1 text-sm tabular-nums text-gold-300">{formatINR(linesValue)}</b></span>
+                </div>
+              )}
+            </div>
+          </Step>
+
+          {/* 3 · GST & payment */}
+          <Step n={3} title="GST & payment" hint={inclusive ? "The GST is taken out of each cost you typed, at the line's rate." : "The GST is added on top of each cost, at the line's rate."}>
+            <div className="flex flex-wrap gap-2">
+              <Toggle on={inclusive} onChange={toggleInclusive}>Prices include GST</Toggle>
+              <Toggle on={interState} onChange={setInterState}>Inter-state (IGST)</Toggle>
+              {taxEdited && <button onClick={() => setTaxEdited(false)} className="text-xs font-semibold text-gold-700 hover:underline">Reset GST to calculated</button>}
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              {(["cgst", "sgst", "igst"] as const).map((k) => (
+                <div key={k}>
+                  <label className={label}>{k.toUpperCase()} (₹)</label>
+                  <MoneyInput value={taxNow[k]} onChange={(v) => setTax(k, v)} className={cn(field, "text-right tabular-nums", (k === "igst") !== interState && taxNow[k] === 0 && "text-ink-300")} />
+                </div>
+              ))}
+            </div>
+            {taxProblem && <p className="mt-2 text-xs font-semibold text-danger">{taxProblem}</p>}
+
+            <div className="mt-6 grid gap-4 border-t border-ink-100 pt-5 md:grid-cols-[14rem_minmax(0,1fr)]">
+              <div>
+                <label className={label}>Paid by</label>
+                <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className={cn(field, modeMissing && "border-danger bg-danger/5")}>
+                  {PAY_MODES.map((m) => <option key={m || "none"} value={m}>{m ? (PAY_MODE_NAMES[m] ?? m) : "— Not paid yet —"}</option>)}
+                </select>
+                <p className={cn("mt-1.5 text-[11px]", modeMissing ? "font-semibold text-danger" : "text-ink-400")}>
+                  {modeMissing ? "Choose how this was paid." : "Used for the payment-mode totals in analytics."}
+                </p>
               </div>
-              <p className="text-[11px] text-ink-400">
-                {inclusive ? "The GST is taken out of each cost you type, using the line's rate." : "The GST is added on top of each cost, using the line's rate."}{" "}
-                {taxEdited && <button onClick={() => setTaxEdited(false)} className="font-semibold text-gold-600 hover:underline">Reset to calculated</button>}
+              <div className="min-w-0">
+                <label className={label}>Paid now — each branch pays its own part</label>
+                <BranchPayTable rows={payRows} value={paidSplit} onChange={setPayAlloc} valueLabel="Its bill" payLabel="Paid now" />
+              </div>
+            </div>
+          </Step>
+        </div>
+
+        {/* Summary */}
+        <aside className="2xl:sticky 2xl:top-24">
+          <div className="overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 shadow-[0_1px_2px_rgba(10,9,8,0.03)]">
+            <div className="h-1 bg-gradient-to-r from-gold-500 to-gold-300" />
+            <div className="grid gap-x-8 p-5 md:grid-cols-2 2xl:block">
+              <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-500">Summary</p>
+              <p className="mt-1 truncate text-sm font-semibold text-ink-900">{vendor ? vendor.name : <span className="text-ink-400">No vendor chosen</span>}</p>
+              <dl className="mt-4 space-y-2 text-sm">
+                <Row k="Goods (before GST)" v={formatINR(totals.cost)} />
+                <Row k={interState ? "IGST" : "CGST + SGST"} v={formatINR(tax)} />
+                <div className="flex items-baseline justify-between border-t border-ink-100 pt-3">
+                  <dt className="font-bold text-ink-900">Grand total</dt>
+                  <dd className="text-2xl font-bold tabular-nums text-ink-900">{formatINR(grandTotal)}</dd>
+                </div>
+                <Row k="Paid now" v={formatINR(amountPaid)} tone="text-success" />
+                <div className={cn("flex items-baseline justify-between rounded-lg px-3 py-2", balance > 0 ? "bg-danger/[0.06]" : "bg-success/[0.08]")}>
+                  <dt className="text-xs font-bold uppercase tracking-wider text-ink-600">Balance</dt>
+                  <dd className={cn("text-lg font-bold tabular-nums", balance > 0 ? "text-danger" : "text-success")}>{formatINR(balance)}</dd>
+                </div>
+              </dl>
+              </div>
+
+              <div>
+              <label className={cn(label, "mt-5 md:mt-0 2xl:mt-5")}>Notes</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full resize-none rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20" placeholder="Any remarks…" />
+
+              {isAdmin && (
+                <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-xl border border-ink-100 bg-white p-3 text-xs text-ink-700">
+                  <input type="checkbox" checked={inAnalytics} onChange={(e) => setInAnalytics(e.target.checked)} className="mt-0.5 h-4 w-4 accent-ink-900" />
+                  <span><b className="block text-ink-900">Subtract in analytics</b>Payments on this bill are deducted from sales, under their payment mode.</span>
+                </label>
+              )}
+
+              <button onClick={submit} disabled={!canSubmit} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 px-5 py-3.5 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-40">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />} {saving ? "Saving…" : "Save purchase"}
+              </button>
+              <p className="mt-2.5 text-center text-[11px] leading-relaxed text-ink-500">
+                {!vendor ? "Choose a vendor to save." : lines.length === 0 ? "Add at least one product." : payOver.length > 0 ? <span className="font-semibold text-danger">{overMessage(payOver)}</span> : modeMissing ? <span className="font-semibold text-danger">Choose how it was paid.</span> : lines.some(lineError) ? <span className="font-semibold text-danger">Fix the highlighted products.</span> : taxProblem ? <span className="font-semibold text-danger">{taxProblem}</span> : "Ready to save."}
               </p>
-              {taxProblem && <p className="text-xs font-semibold text-danger">{taxProblem}</p>}
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <label className={label}>CGST (₹)</label>
-                <MoneyInput value={taxNow.cgst} onChange={(v) => setTax("cgst", v)} className={field + " text-right tabular-nums"} />
-              </div>
-              <div>
-                <label className={label}>SGST (₹)</label>
-                <MoneyInput value={taxNow.sgst} onChange={(v) => setTax("sgst", v)} className={field + " text-right tabular-nums"} />
-              </div>
-              <div>
-                <label className={label}>IGST (₹)</label>
-                <MoneyInput value={taxNow.igst} onChange={(v) => setTax("igst", v)} className={field + " text-right tabular-nums"} />
               </div>
             </div>
           </div>
-
-          {/* Paid now — each branch pays its own part */}
-          <div>
-            <label className={label}>Paid now — each branch pays its own part</label>
-            <BranchPayTable rows={payRows} value={paidSplit} onChange={setPayAlloc} valueLabel="Its bill" payLabel="Paid now" />
-          </div>
-
-          <div>
-            <label className={label}>Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={cn(field, "resize-none")} placeholder="Any remarks for this purchase…" />
-          </div>
-
-          {/* Summary + submit */}
-          <div className="rounded-xl border border-ink-100 bg-white p-4">
-            <div className="grid gap-3 text-sm sm:grid-cols-4">
-              <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Goods Subtotal</p><p className="font-bold tabular-nums text-ink-900">{formatINR(totals.cost)}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wider text-ink-400">GST (CGST+SGST+IGST)</p><p className="font-bold tabular-nums text-ink-900">{formatINR(tax)}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wider text-ink-400">Grand Total</p><p className="font-bold tabular-nums text-ink-900">{formatINR(grandTotal)}</p></div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-ink-400">Balance</p>
-                <p className={cn("font-bold tabular-nums", balance > 0 ? "text-danger" : "text-success")}>{formatINR(balance)}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-4">
-            <p className="text-xs text-ink-500">
-              {payOver.length > 0
-                ? <span className="font-semibold text-danger">{overMessage(payOver)}</span>
-                : lockedBranch ? `Stock is received into ${branchLabel(lockedBranch)}.` : "Type how many each branch gets. If you also type the vendor bill's total, any difference is marked in red."}
-            </p>
-            <button onClick={submit} disabled={!canSubmit} className="flex items-center gap-2 rounded-xl bg-ink-900 px-5 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-50">
-              <PackagePlus className="h-4 w-4" /> {saving ? "Saving…" : "Save Purchase"}
-            </button>
-          </div>
-        </section>
+        </aside>
       </div>
+    </div>
+  );
+}
+
+const PAY_MODE_NAMES: Record<string, string> = { CASH: "Cash", UPI: "UPI / GPay", CARD: "Card", BANK: "Bank transfer", CREDIT: "On credit (not paid)", OTHER: "Other" };
+
+/** A numbered section card of the purchase form. */
+function Step({ n, title, hint, right, children }: { n: number; title: string; hint?: string; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 shadow-[0_1px_2px_rgba(10,9,8,0.03)] md:p-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gold-500/15 text-xs font-bold text-gold-800">{n}</span>
+          <div>
+            <h2 className="text-[15px] font-bold text-ink-900">{title}</h2>
+            {hint && <p className="mt-0.5 text-xs text-ink-500">{hint}</p>}
+          </div>
+        </div>
+        {right}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A pill-shaped on/off switch with its label. */
+function Toggle({ on, onChange, children }: { on: boolean; onChange: (v: boolean) => void; children: React.ReactNode }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)} className={cn("inline-flex items-center gap-2.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors", on ? "border-ink-900 bg-ink-900 text-ivory-50" : "border-ink-200 bg-white text-ink-600 hover:border-ink-400")}>
+      <span className={cn("relative h-4 w-7 rounded-full transition-colors", on ? "bg-gold-500" : "bg-ink-200")}>
+        <span className={cn("absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all", on ? "left-3.5" : "left-0.5")} />
+      </span>
+      {children}
+    </button>
+  );
+}
+
+function Row({ k, v, tone }: { k: string; v: string; tone?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-ink-500">{k}</dt>
+      <dd className={cn("font-semibold tabular-nums text-ink-900", tone)}>{v}</dd>
     </div>
   );
 }

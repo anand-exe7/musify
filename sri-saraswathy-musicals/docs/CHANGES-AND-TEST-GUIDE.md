@@ -466,6 +466,64 @@ IDs below match the client's *Detailed Requirements* document. Migrations **0037
 - **Users:** rows fit any width (cards on narrow screens), so there's no sideways scrolling, even with long emails.
 - **Checked:** Sales Analytics (tiles, pop-ups, chart, Sales Report and bill pop-up), Purchase Analytics (vendor pop-up), Expenses and Users were viewed on a temporary local page with sample data. 401 tests pass.
 
+### 7.7f Purchases, Vendor Bills, analytics link (EXP-01, EXP-02), Delivery (round 6)
+- **New Purchase** (`/admin/purchases`), now in three numbered cards plus a summary:
+  1. **Bill details:** vendor, invoice no and date in one row.
+  2. **Products:**
+     - Search at the top, with "Start in" branch buttons beside it.
+     - Each product is its own card: name, current stock per branch and the variant at the top.
+     - Under that, two aligned rows: Cost · GST · Line total, then Bill qty · Vadapalani · Porur · Ashok Nagar.
+     - "Quick split" buttons sit under the rows. A dark bar shows pcs per branch and the lines total.
+  3. **GST & payment:**
+     - On/off switches for "Prices include GST" and "Inter-state".
+     - "Paid by" (payment mode) next to the per-branch "Paid now" table.
+     - If anything is paid now, a mode is required. The button stays off with "Choose how it was paid".
+  - **Summary:** grand total, paid now, balance (red/green), notes, the **Subtract in analytics** tick (admins) and Save.
+- **Vendor Bills** (`/admin/purchases/invoices`):
+  - Header with "Bills / By vendor" switch.
+  - Tiles open pop-ups with the per-branch split.
+  - One-line branch strip.
+  - Filter card: a big search with a clear ×, vendor and branch; then Show (All / To pay / Paid), dates, sort and Export.
+  - Loading: "Loading vendor bills…" on first load and an "Updating…" badge on filter changes. The By vendor view does the same.
+  - Each bill line:
+    - Status and an **In analytics** tag when linked.
+    - Date · invoice · payment mode · items.
+    - Only the branches that still owe, as small chips.
+    - Total / Paid / Left.
+  - An opened bill is short:
+    - Four figures: total, GST, paid with the mode, left.
+    - Tabs **Branches / Items / Payments**, one shown at a time.
+    - One action row: Pay, Subtract in analytics on/off, Edit, Delete.
+- **EXP-01 (link to analytics, per payment mode):**
+  - **Where to link:**
+    - A vendor bill: the Save-time tick on New Purchase, or the switch inside an opened bill on Vendor Bills.
+    - An expense: the Off/Linked chip in the Expenses list, or the tick when adding or editing one.
+  - **Where to switch modes:** the **Analytics deduction** card on the right of the Expenses page has one switch per mode (Cash, GPay/UPI, Card, Bank, Other). It shows each mode's linked expenses and vendor-bill payments for the chosen period and branch, and the total subtracted. The same switches are still in Expenses → "Categories & analytics".
+  - **Where it shows:** Sales Analytics → "After linked expenses & vendor payments" tiles, and the Payment Mode Split card (billed − linked expenses, per mode). A mode with deductions but no sales is now listed too.
+- **EXP-02 (payment mode on every vendor bill/expense):**
+  - Expenses already required a mode.
+  - Vendor payments recorded later already had one.
+  - A purchase that pays something now must now have one too.
+  - Each deduction is filed under its own mode.
+- **Delivery** (`/admin/delivery`):
+  - Each zone is a card: name and delivery time on top; covered states as chips (× to remove); five labelled rate boxes with ₹.
+  - A line says what online orders to that zone pay (the "up to 500 g" rate, which is what checkout uses).
+  - "Edit states" opens a searchable pop-up that marks states already in another zone.
+  - Deleting asks first. A loading panel shows until zones arrive.
+- **How to test:**
+  1. New Purchase:
+     - Pick a vendor, add two products and type branch quantities. Type a "Bill qty" bigger than the boxes and check the amber "N left to place" note with its "Put N in" buttons.
+     - Click "Pay full" for a branch and leave "Paid by" empty: Save stays off. Choose UPI, tick Subtract in analytics, and Save.
+  2. Vendor Bills:
+     - The new bill shows "In analytics" and "UPI". Open it, switch tabs, and turn the analytics switch off and on.
+     - Search by product name.
+  3. Expenses: the Analytics deduction card shows that payment under GPay/UPI → Vendor bills. Switch Cash off and check the total drops.
+  4. Sales Analytics: the "Linked Deductions" tile and the Payment Mode Split show the same amounts.
+  5. Delivery: edit a zone's states in the pop-up, change a rate, and reload to check it saved.
+- **Checked:**
+  - Each page was run on a temporary local page with sample data (deleted afterwards), on desktop and phone width.
+  - 403 tests pass, including two new ones: an admin's analytics link and payment mode are saved and shown on the bill line, and branch staff can't link.
+
 ### 7.8 Repair payments (REP-01, REP-02, REP-03, REP-04)
 - **What:**
   - **Raise Repair Ticket** has **Paid now** and **Payment mode** (Cash, GPay/UPI, Card, Bank, Other).

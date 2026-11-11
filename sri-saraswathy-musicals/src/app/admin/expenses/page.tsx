@@ -20,6 +20,7 @@ import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { ExpenseReport } from "@/components/expenses/ExpenseReport";
+import { AnalyticsDeductionCard } from "@/components/expenses/AnalyticsDeductionCard";
 import { useAuth } from "@/lib/store/auth";
 import { DEFAULT_BRANCH, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 
@@ -403,6 +404,13 @@ export default function ExpensesPage() {
 
         {/* By category */}
         <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <AnalyticsDeductionCard
+            period={period}
+            custom={custom}
+            branch={scopeSelected}
+            canEdit={fullAdmin}
+            refreshKey={expensesAll.map((e) => `${e.id}:${e.inAnalytics ? 1 : 0}:${e.amount}:${e.paymentMode}`).join("|")}
+          />
           <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
             <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-ink-900">By Category</h2>
             {byCategory.length === 0 ? (
