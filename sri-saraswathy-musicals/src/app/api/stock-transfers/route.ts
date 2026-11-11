@@ -20,8 +20,15 @@ export const dynamic = "force-dynamic";
 export function GET() {
   return handle("admin", async ({ access }) => {
     const list = await getTransfers();
+    // INV-06: resolve the "transferred by" user id to a readable staff name for display.
+    const { getUsers } = await import("@/lib/db/queries/users");
+    const nameById = new Map((await getUsers()).map((u) => [u.id, u.name]));
     // Branch users see transfers where one of their branches was source or destination.
-    return ok(list.filter((r) => branchAllowed(access, r.fromBranch) || branchAllowed(access, r.toBranch)));
+    return ok(
+      list
+        .filter((r) => branchAllowed(access, r.fromBranch) || branchAllowed(access, r.toBranch))
+        .map((r) => ({ ...r, createdByName: nameById.get(r.createdBy) ?? r.createdBy ?? "" })),
+    );
   });
 }
 

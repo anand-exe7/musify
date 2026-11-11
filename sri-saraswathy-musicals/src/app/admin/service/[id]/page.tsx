@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Wrench, MessageCircle, FileText, Pencil, CheckCircle2, Clock,
-  AlertTriangle, Phone, Mail, Calendar, User as UserIcon, Save, History, IndianRupee,
+  AlertTriangle, Phone, Mail, Calendar, User as UserIcon, Save, History, IndianRupee, Plus, Trash2, Receipt,
 } from "lucide-react";
+import { ticketPayments, REPAIR_PAY_MODES, PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
 import {
   useRepair, alertLevel, daysUntil, statusMeta, REPAIR_STATUS, PRIORITY_META,
   chargeBase, grossTotal, balanceDue, isClosed, isFixed,
@@ -18,6 +19,7 @@ import { BUSINESS, waLink, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR, rupeeInput, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { branchLabel } from "@/lib/stock";
+import { E } from "@/lib/whatsapp";
 
 function toDateInput(iso?: string) {
   if (!iso) return "";
@@ -37,18 +39,18 @@ function fmtDate(iso: string) {
 function statusUpdateMessage(t: RepairTicket): string {
   const sm = statusMeta(t.status);
   let line = `Update on your repair (${sm.label}).`;
-  if (t.status === "ready") line = "Good news — your instrument is repaired and ready for pickup! 🎉";
-  else if (t.status === "in-progress") line = "Our technician is working on your instrument now. 🛠";
+  if (t.status === "ready") line = `Good news — your instrument is repaired and ready for pickup! ${E.party}`;
+  else if (t.status === "in-progress") line = `Our technician is working on your instrument now. ${E.wrench}`;
   const bal = balanceDue(t);
   return (
     `*${BUSINESS.name} — Service Update*\n` +
     `Hi ${t.customerName || "there"}, ${line}\n\n` +
-    `🎫 Ticket: ${t.id}\n` +
-    `🎸 Item: ${t.productName}\n` +
-    `📋 Status: ${sm.label}\n` +
-    `📅 Ready by: ${fmtDate(t.deadline)}\n` +
-    (chargeBase(t) > 0 ? `💰 Charge: ${formatINR(grossTotal(t))} (incl GST)${bal > 0 ? `\nBalance due: ${formatINR(bal)}` : "\nFully paid ✅"}\n` : "") +
-    `\n📄 Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n` +
+    `${E.ticket} Ticket: ${t.id}\n` +
+    `${E.guitar} Item: ${t.productName}\n` +
+    `${E.clipboard} Status: ${sm.label}\n` +
+    `${E.calendar} Ready by: ${fmtDate(t.deadline)}\n` +
+    (chargeBase(t) > 0 ? `${E.money} Charge: ${formatINR(grossTotal(t))} (incl GST)${bal > 0 ? `\nBalance due: ${formatINR(bal)}` : `\nFully paid ${E.check}`}\n` : "") +
+    `\n${E.doc} Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n` +
     `\nQuestions? Reply here or call ${BUSINESS.branches[0].phone}`
   );
 }
@@ -61,13 +63,19 @@ export default function TicketDetailPage() {
   const loadError = useRepair((s) => s.loadError);
   const updateTicket = useRepair((s) => s.updateTicket);
   const nextInvoiceNo = useRepair((s) => s.nextInvoiceNo);
+  const addPayment = useRepair((s) => s.addPayment);
+  const removePayment = useRepair((s) => s.removePayment);
+  // REP-04: new payment being entered
+  const [payAmt, setPayAmt] = useState(0);
+  const [payMode, setPayMode] = useState("CASH");
+  const [payNote, setPayNote] = useState("");
 
   const ticket = tickets.find((t) => t.id === id);
 
   const [editOpen, setEditOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   // cost editor draft
-  const [draft, setDraft] = useState<{ finalCost: number; advance: number; technician: string; priority: RepairPriority; deadline: string; gstRate: number } | null>(null);
+  const [draft, setDraft] = useState<{ finalCost: number; technician: string; priority: RepairPriority; deadline: string; gstRate: number } | null>(null);
 
   const t = ticket;
 
@@ -93,9 +101,9 @@ export default function TicketDetailPage() {
   const sm = statusMeta(t.status);
   const pr = PRIORITY_META[t.priority];
   const d = daysUntil(t.deadline);
-  const edit = draft ?? { finalCost: t.finalCost, advance: t.advance, technician: t.technician || "Unassigned", priority: t.priority, deadline: t.deadline, gstRate: t.gstRate };
+  const edit = draft ?? { finalCost: t.finalCost, technician: t.technician || "Unassigned", priority: t.priority, deadline: t.deadline, gstRate: t.gstRate };
   const setEdit = (patch: Partial<typeof edit>) => setDraft({ ...edit, ...patch });
-  const dirty = draft && (draft.finalCost !== t.finalCost || draft.advance !== t.advance || draft.technician !== (t.technician || "Unassigned") || draft.priority !== t.priority || draft.deadline !== t.deadline || draft.gstRate !== t.gstRate);
+  const dirty = draft && (draft.finalCost !== t.finalCost || draft.technician !== (t.technician || "Unassigned") || draft.priority !== t.priority || draft.deadline !== t.deadline || draft.gstRate !== t.gstRate);
 
   const changeStatus = async (status: RepairStatus) => {
     if (status === t.status) return;
@@ -115,7 +123,6 @@ export default function TicketDetailPage() {
     if (!dirty) return;
     const patch: Partial<RepairTicket> = {
       finalCost: Number(edit.finalCost) || 0,
-      advance: Number(edit.advance) || 0,
       technician: edit.technician,
       priority: edit.priority,
       deadline: edit.deadline,
@@ -123,7 +130,6 @@ export default function TicketDetailPage() {
     };
     const notes: string[] = [];
     if (patch.finalCost !== t.finalCost) notes.push(`final cost ${formatINR(patch.finalCost || 0)}`);
-    if (patch.advance !== t.advance) notes.push(`advance ${formatINR(patch.advance || 0)}`);
     if (patch.technician !== (t.technician || "Unassigned")) notes.push(`tech → ${patch.technician}`);
     if (patch.priority !== t.priority) notes.push(`priority → ${PRIORITY_META[patch.priority as RepairPriority].label}`);
     if (patch.deadline !== t.deadline) notes.push(`deadline → ${fmtDate(patch.deadline as string)}`);
@@ -133,12 +139,20 @@ export default function TicketDetailPage() {
     flash("Ticket updated");
   };
 
-  const markFullyPaid = () => {
-    const paid = grossTotal(t);
-    updateTicket(t.id, { advance: paid }, `Balance ${formatINR(balanceDue(t))} received · marked fully paid`);
-    setDraft(null);
-    flash("Marked fully paid");
+  /** REP-04: record a part-payment — paid, balance and status update straight away and it joins the history. */
+  const recordPayment = (amount: number, note?: string) => {
+    const amt = Math.min(Math.round(amount), balanceDue(t));
+    if (!(amt > 0)) {
+      flash("Enter an amount up to the balance due.");
+      return;
+    }
+    addPayment(t.id, { amount: amt, mode: payMode, note: note ?? payNote });
+    setPayAmt(0);
+    setPayNote("");
+    flash(amt >= balanceDue(t) ? "Fully paid — the tax invoice can now be issued" : `Payment ${formatINR(amt)} recorded · receipt ready`);
   };
+  const markFullyPaid = () => recordPayment(balanceDue(t), "Balance settled");
+  const payments = ticketPayments(t);
 
   const sendUpdate = () => {
     updateTicket(t.id, { whatsappSentAt: new Date().toISOString() }, "Status update sent via WhatsApp");
@@ -149,7 +163,8 @@ export default function TicketDetailPage() {
   };
 
   const goInvoice = async () => {
-    if (!t.invoiceNo) {
+    // REP-02: while a balance is due the page shows the payment receipt — no invoice number is taken yet.
+    if (!t.invoiceNo && (balanceDue(t) <= 0 || t.status === "cancelled")) {
       const invoiceNo = await nextInvoiceNo();
       updateTicket(t.id, { invoiceNo }, `Invoice ${invoiceNo} generated`);
     }
@@ -185,7 +200,7 @@ export default function TicketDetailPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setEditOpen(true)} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600"><Pencil className="h-4 w-4" /> Edit</button>
-            <button onClick={goInvoice} className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800"><FileText className="h-4 w-4" /> {t.invoiceNo ? "View Invoice" : "Generate Invoice"}</button>
+            <button onClick={goInvoice} className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800"><FileText className="h-4 w-4" /> {balanceDue(t) > 0 && t.status !== "cancelled" ? "Receipt" : t.invoiceNo ? "View Invoice" : "Generate Invoice"}</button>
           </div>
         </div>
       </div>
@@ -273,10 +288,6 @@ export default function TicketDetailPage() {
                 <MoneyInput value={edit.finalCost || 0} onChange={(paise) => setEdit({ finalCost: paise })} className={field} placeholder={rupeeInput(t.estimate)} />
               </div>
               <div>
-                <label className={label}>Advance / Paid (₹)</label>
-                <MoneyInput value={edit.advance || 0} onChange={(paise) => setEdit({ advance: paise })} className={field} placeholder="0" />
-              </div>
-              <div>
                 <label className={label}>GST (included in cost)</label>
                 <select value={edit.gstRate} onChange={(e) => setEdit({ gstRate: Number(e.target.value) })} className={field}>
                   {[...new Set([0, 5, 12, 18, 28, edit.gstRate])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
@@ -294,11 +305,6 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {balanceDue(t) > 0 && t.status !== "cancelled" && (
-              <button onClick={markFullyPaid} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-success/15 py-2.5 text-xs font-bold uppercase tracking-wider text-success transition-colors hover:bg-success/25">
-                <IndianRupee className="h-3.5 w-3.5" /> Mark balance {formatINR(balanceDue(t))} as paid
-              </button>
-            )}
 
             {/* totals summary */}
             <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-[#FAF7EF] p-4 text-center">
@@ -306,6 +312,58 @@ export default function TicketDetailPage() {
               <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Amount Paid</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(t.advance)}</p></div>
               <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Balance Due</p><p className={cn("mt-1 text-lg font-bold tabular-nums", balanceDue(t) > 0 ? "text-danger" : "text-success")}>{formatINR(balanceDue(t))}</p></div>
             </div>
+          </section>
+
+          {/* REP-01 … REP-04: payments against this ticket — each one is a part-payment with its own receipt */}
+          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-ink-900"><Receipt className="h-4 w-4 text-gold-600" /> Payments</h2>
+              <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", t.status === "cancelled" ? "bg-ink-100 text-ink-500" : balanceDue(t) <= 0 && grossTotal(t) > 0 ? "bg-success/15 text-success" : t.advance > 0 ? "bg-warning/15 text-[#8a6a1f]" : "bg-danger/10 text-danger")}>
+                {t.status === "cancelled" ? "Cancelled" : balanceDue(t) <= 0 && grossTotal(t) > 0 ? "Fully paid" : t.advance > 0 ? "Part paid" : "Unpaid"}
+              </span>
+            </div>
+
+            {payments.length > 0 ? (
+              <ul className="divide-y divide-ink-100 rounded-xl border border-ink-100 bg-white">
+                {payments.map((p) => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                    <span className="font-bold tabular-nums text-ink-900">{formatINR(p.amount)}</span>
+                    <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-ink-600">{PAY_MODE_LABEL[p.mode] ?? p.mode}</span>
+                    <span className="text-xs text-ink-500">{fmtDateTime(p.at)}{p.note ? ` · ${p.note}` : ""}</span>
+                    <span className="ml-auto flex items-center gap-2">
+                      {p.receiptNo && <span className="font-mono text-[10px] text-ink-400">{p.receiptNo}</span>}
+                      {(t.payments ?? []).some((x) => x.id === p.id) && (
+                        <button onClick={() => { if (confirm(`Remove the ${formatINR(p.amount)} payment? Use this only for a payment entered by mistake.`)) removePayment(t.id, p.id); }} aria-label="Remove payment" className="grid h-7 w-7 place-items-center rounded-lg text-ink-400 hover:bg-danger/10 hover:text-danger">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-xl border border-dashed border-ink-200 px-3 py-4 text-center text-sm text-ink-400">No payments yet.</p>
+            )}
+
+            {balanceDue(t) > 0 && t.status !== "cancelled" && (
+              <div className="mt-4 rounded-xl border border-ink-100 bg-white p-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500">Record a payment</p>
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+                  <MoneyInput value={payAmt} onChange={setPayAmt} className={field} placeholder={`Up to ${rupeeInput(balanceDue(t))}`} />
+                  <select value={payMode} onChange={(e) => setPayMode(e.target.value)} className={field} aria-label="Payment mode">
+                    {REPAIR_PAY_MODES.map((m) => <option key={m} value={m}>{PAY_MODE_LABEL[m]}</option>)}
+                  </select>
+                  <input value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Note (optional)" className={field} />
+                  <button onClick={() => recordPayment(payAmt)} disabled={!(payAmt > 0)} className="flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 px-4 py-2 text-xs font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800 disabled:opacity-40">
+                    <Plus className="h-3.5 w-3.5" /> Add
+                  </button>
+                </div>
+                <button onClick={markFullyPaid} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-success/15 py-2.5 text-xs font-bold uppercase tracking-wider text-success transition-colors hover:bg-success/25">
+                  <IndianRupee className="h-3.5 w-3.5" /> Receive full balance {formatINR(balanceDue(t))} ({PAY_MODE_LABEL[payMode]})
+                </button>
+                <p className="mt-2 text-[11px] text-ink-400">A part-payment gets a payment receipt, not a tax invoice. The tax invoice is issued once the ticket is fully paid.</p>
+              </div>
+            )}
           </section>
 
           <TicketParts key={`${t.id}-${(t.parts ?? []).length}`} ticket={t} />
@@ -361,13 +419,15 @@ export default function TicketDetailPage() {
           {/* Invoice */}
           <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-5">
             <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-ink-900">Invoice</h2>
-            {t.invoiceNo ? (
+            {balanceDue(t) > 0 && t.status !== "cancelled" ? (
+              <p className="mb-3 text-sm text-ink-500">Balance {formatINR(balanceDue(t))} due — the customer gets a <span className="font-semibold text-ink-800">payment receipt</span> now; the tax invoice is issued on full payment.</p>
+            ) : t.invoiceNo ? (
               <p className="mb-3 text-sm text-ink-600">Invoice <span className="font-semibold text-ink-900">{t.invoiceNo}</span></p>
             ) : (
               <p className="mb-3 text-sm text-ink-500">No invoice generated yet.</p>
             )}
             <button onClick={goInvoice} className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-3 text-xs font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
-              <FileText className="h-4 w-4" /> {t.invoiceNo ? "Open Invoice" : "Generate Invoice"}
+              <FileText className="h-4 w-4" /> {balanceDue(t) > 0 && t.status !== "cancelled" ? "Open Payment Receipt" : t.invoiceNo ? "Open Invoice" : "Generate Invoice"}
             </button>
             {t.status !== "completed" && (
               <button onClick={() => changeStatus("completed")} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-success/40 py-3 text-xs font-bold uppercase tracking-wider text-success hover:bg-success/10">

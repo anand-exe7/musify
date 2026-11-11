@@ -7,19 +7,13 @@ import { cn } from "@/lib/utils";
 import { BranchOptions } from "@/components/admin/BranchOptions";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { PAY_METHODS, PAY_LABEL, paidTotal, type PayMethod } from "@/lib/paymentSplit";
+import { LineProductPicker } from "@/components/quotation/LineProductPicker";
+import { isValidGstin } from "@/lib/gst/gstin";
+import { gstSummary, taxLabel } from "@/lib/print/doc";
 
 type Line = Invoice["items"][number];
 
 const emptyLine = (): Line => ({ name: "", hsn: "-", qty: 1, rate: 0, gst: 0, amount: 0, mrp: 0, discount: 0 });
-
-/** Rupees → paise (whole paise, no FP drift). Accepts "" and "." as 0. */
-function rupeesToPaise(input: string): number {
-  const t = (input ?? "").toString().trim();
-  if (!t) return 0;
-  const n = Number(t);
-  if (!isFinite(n)) return 0;
-  return Math.round(n * 100);
-}
 
 /** Paise → rupees as a plain decimal string ("2500" or "2500.50"). */
 function paiseToRupees(p: number): string {
@@ -32,6 +26,16 @@ function paiseToRupees(p: number): string {
 export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice; onCancel: () => void; onSaved: (next: Invoice) => void }) {
   const router = useRouter();
   const [draft, setDraft] = useState<Invoice>(() => structuredClone(invoice));
+  // BIL-02: a stable key per line, so removing a row never shifts another row's inputs / picker into its place.
+  const [rowKeys, setRowKeys] = useState<string[]>(() => invoice.items.map(() => crypto.randomUUID()));
+  const addLine = () => {
+    setDraft((d) => ({ ...d, items: [...d.items, emptyLine()] }));
+    setRowKeys((k) => [...k, crypto.randomUUID()]);
+  };
+  const removeLine = (idx: number) => {
+    setDraft((d) => ({ ...d, items: d.items.filter((_, i) => i !== idx) }));
+    setRowKeys((k) => k.filter((_, i) => i !== idx));
+  };
   // Lock lets admin stop auto-recompute of totals (manual override of subtotal/cgst/sgst/igst/total).
   const [autoTotals, setAutoTotals] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -82,11 +86,28 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
       return { ...d, items };
     });
 
+  // BIL-01: rate labels for the split (CGST @ 9% …).
+  const split = gstSummary(
+    draft.items.map((l) => ({ gst: l.gst || 0, amount: Math.max(0, (l.qty || 0) * (l.rate || 0) - (l.discount || 0)) })),
+    liveTotals.cgst,
+    liveTotals.sgst,
+    liveTotals.igst,
+  );
+
   async function save() {
+    if ((draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin)) {
+      setError("Customer GSTIN must be a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5), or leave it blank.");
+      return;
+    }
+    if (draft.items.some((l) => !l.name.trim() || !(l.qty > 0))) {
+      setError("Every line needs an item and a quantity of at least 1 — remove empty lines.");
+      return;
+    }
     setSaving(true);
     setError(null);
     const payload: Invoice = {
       ...draft,
+      customerGstin: (draft.customerGstin ?? "").trim().toUpperCase() || null,
       items: draft.items.map((l) => ({
         ...l,
         amount: Math.max(0, (l.qty || 0) * (l.rate || 0) - (l.discount || 0)),
@@ -164,7 +185,7 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
         </div>
         <div>
           <label className={lbl}>Customer GSTIN</label>
-          <input className={inp} value={draft.customerGstin ?? ""} onChange={(e) => setField("customerGstin", e.target.value || null)} />
+          <input className={cn(inp, "font-mono", (draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin) && "border-danger")} maxLength={15} value={draft.customerGstin ?? ""} onChange={(e) => setField("customerGstin", e.target.value.toUpperCase() || null)} placeholder="33ABCDE1234F1Z5" />
         </div>
         <div className="md:col-span-2 lg:col-span-3">
           <label className={lbl}>Payment received — Cash / Card / UPI</label>
@@ -207,7 +228,7 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
         <div className="mb-2 flex items-center justify-between">
           <p className="text-sm font-bold text-ink-900">Line items</p>
           <button
-            onClick={() => setDraft((d) => ({ ...d, items: [...d.items, emptyLine()] }))}
+            onClick={addLine}
             className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ivory-100"
           >
             <Plus className="h-3.5 w-3.5" /> Add line
@@ -230,26 +251,32 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
             </thead>
             <tbody>
               {draft.items.map((l, idx) => (
-                <tr key={idx} className="border-t border-ink-100">
+                <tr key={rowKeys[idx] ?? idx} className="border-t border-ink-100 align-top">
                   <td className="px-3 py-2">
-                    <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(idx, { name: e.target.value })} />
+                    <input className={cn(inp, "min-w-[200px]")} value={l.name} onChange={(e) => setLine(idx, { name: e.target.value })} placeholder="Item name" />
+                    {/* BIL-02: pick from the catalogue — fills name, HSN, GST %, rate and MRP, and the totals recalculate */}
+                    <LineProductPicker
+                      className="mt-1"
+                      branch={draft.branch}
+                      onPick={(p) => setLine(idx, { name: p.name, hsn: p.hsn || "-", rate: p.rate, mrp: p.mrp ?? p.rate, gst: p.gst, discount: 0 })}
+                    />
                     <input className={cn(inp, "mt-1 text-xs")} placeholder="Instruction / serial" value={l.instruction ?? ""} onChange={(e) => setLine(idx, { instruction: e.target.value || undefined })} />
                   </td>
                   <td className="px-2 py-2"><input className={inp} value={l.hsn} onChange={(e) => setLine(idx, { hsn: e.target.value })} /></td>
-                  <td className="px-2 py-2"><input type="number" min={0} className={cn(inp, "text-center tabular-nums")} value={l.qty} onChange={(e) => setLine(idx, { qty: Number(e.target.value) || 0 })} /></td>
-                  <td className="px-2 py-2"><input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(l.rate)} onChange={(e) => setLine(idx, { rate: rupeesToPaise(e.target.value) })} /></td>
+                  <td className="px-2 py-2"><input type="number" min={1} inputMode="numeric" className={cn(inp, "text-center tabular-nums")} value={l.qty || ""} placeholder="1" onChange={(e) => setLine(idx, { qty: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} /></td>
+                  <td className="px-2 py-2"><MoneyInput className={cn(inp, "text-right tabular-nums")} value={l.rate} onChange={(rate) => setLine(idx, { rate })} placeholder="0" /></td>
                   <td className="px-2 py-2">
                     <select className={cn(inp, "text-right tabular-nums")} value={l.gst} onChange={(e) => setLine(idx, { gst: Number(e.target.value) || 0 })}>
                       {[...new Set([0, 5, 12, 18, 28, l.gst || 0])].sort((a, b) => a - b).map((r) => <option key={r} value={r}>{r}%</option>)}
                     </select>
                   </td>
-                  <td className="px-2 py-2"><input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(l.mrp ?? 0)} onChange={(e) => setLine(idx, { mrp: rupeesToPaise(e.target.value) })} /></td>
-                  <td className="px-2 py-2"><input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(l.discount ?? 0)} onChange={(e) => setLine(idx, { discount: rupeesToPaise(e.target.value) })} /></td>
+                  <td className="px-2 py-2"><MoneyInput className={cn(inp, "text-right tabular-nums")} value={l.mrp ?? 0} onChange={(mrp) => setLine(idx, { mrp })} placeholder="MRP" /></td>
+                  <td className="px-2 py-2"><MoneyInput className={cn(inp, "text-right tabular-nums")} value={l.discount ?? 0} onChange={(discount) => setLine(idx, { discount: Math.min(discount, (l.qty || 0) * (l.rate || 0)) })} placeholder="0" /></td>
                   <td className="px-2 py-2 text-right font-semibold tabular-nums text-ink-900">
                     {paiseToRupees(Math.max(0, (l.qty || 0) * (l.rate || 0) - (l.discount || 0)))}
                   </td>
                   <td className="px-1 py-2 text-right">
-                    <button onClick={() => setDraft((d) => ({ ...d, items: d.items.filter((_, i) => i !== idx) }))} className="rounded-lg p-1.5 text-ink-400 hover:bg-danger/10 hover:text-danger" aria-label="Remove line">
+                    <button onClick={() => removeLine(idx)} className="rounded-lg p-1.5 text-ink-400 hover:bg-danger/10 hover:text-danger" aria-label="Remove line">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -269,11 +296,11 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Bill-level discount ₹</label>
-              <input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(draft.discount ?? 0)} onChange={(e) => setField("discount", rupeesToPaise(e.target.value))} />
+              <MoneyInput className={cn(inp, "text-right tabular-nums")} value={draft.discount ?? 0} onChange={(v) => setField("discount", v)} placeholder="0" />
             </div>
             <div>
               <label className={lbl}>Delivery ₹</label>
-              <input className={cn(inp, "text-right tabular-nums")} value={paiseToRupees(draft.delivery ?? 0)} onChange={(e) => setField("delivery", rupeesToPaise(e.target.value))} />
+              <MoneyInput className={cn(inp, "text-right tabular-nums")} value={draft.delivery ?? 0} onChange={(v) => setField("delivery", v)} placeholder="0" />
             </div>
           </div>
           <label className="flex items-center gap-2 text-xs text-ink-600">
@@ -295,9 +322,11 @@ export function InvoiceEditor({ invoice, onCancel, onSaved }: { invoice: Invoice
         <div className="rounded-xl border border-ink-100 bg-ivory-50 p-4">
           <div className="grid grid-cols-2 gap-2 text-sm">
             <TotalRow label="Subtotal (taxable)" value={liveTotals.subtotal} editable={!autoTotals} onChange={(v) => setField("subtotal", v)} />
-            <TotalRow label="CGST" value={liveTotals.cgst} editable={!autoTotals} onChange={(v) => setField("cgst", v)} />
-            <TotalRow label="SGST" value={liveTotals.sgst} editable={!autoTotals} onChange={(v) => setField("sgst", v)} />
-            <TotalRow label="IGST" value={liveTotals.igst} editable={!autoTotals} onChange={(v) => setField("igst", v)} />
+            <TotalRow label={taxLabel("CGST", split)} value={liveTotals.cgst} editable={!autoTotals} onChange={(v) => setField("cgst", v)} />
+            <TotalRow label={taxLabel("SGST", split)} value={liveTotals.sgst} editable={!autoTotals} onChange={(v) => setField("sgst", v)} />
+            <TotalRow label={taxLabel("IGST", split)} value={liveTotals.igst} editable={!autoTotals} onChange={(v) => setField("igst", v)} />
+            <span className="text-ink-600">Total GST</span>
+            <span className="text-right tabular-nums text-ink-900">₹ {paiseToRupees(liveTotals.cgst + liveTotals.sgst + liveTotals.igst)}</span>
             <TotalRow label="Grand total" value={liveTotals.total} editable={!autoTotals} onChange={(v) => setField("total", v)} strong />
           </div>
         </div>
@@ -311,10 +340,10 @@ function TotalRow({ label, value, editable, onChange, strong }: { label: string;
     <>
       <span className={cn("text-ink-600", strong && "font-bold text-ink-900")}>{label}</span>
       {editable ? (
-        <input
+        <MoneyInput
           className="w-full rounded-md border border-ink-200 bg-white px-2 py-1 text-right tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none"
-          value={paiseToRupees(value)}
-          onChange={(e) => onChange(rupeesToPaise(e.target.value))}
+          value={value}
+          onChange={onChange}
         />
       ) : (
         <span className={cn("text-right tabular-nums text-ink-900", strong && "font-bold")}>₹ {paiseToRupees(value)}</span>

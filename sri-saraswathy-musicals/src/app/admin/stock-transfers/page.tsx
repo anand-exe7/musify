@@ -16,6 +16,17 @@ interface TransferRow {
   toBranch: string;
   note: string;
   transferredAt: string;
+  createdBy?: string;
+  /** Readable staff name resolved by the API (INV-06); falls back to the id. */
+  createdByName?: string;
+}
+
+/** yyyy-mm-dd of a timestamp in local time. */
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(+d)) return iso.slice(0, 10);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 /** One editable table line; the product is resolved live so stock stays fresh. */
@@ -57,6 +68,27 @@ export default function StockTransfersPage() {
   const batchRef = useRef<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
+
+  // INV-05: filters for the recent-transfers log.
+  const [fFrom, setFFrom] = useState("");
+  const [fTo, setFTo] = useState("");
+  const [fSrc, setFSrc] = useState<string>("all");
+  const [fDest, setFDest] = useState<string>("all");
+  const [fQuery, setFQuery] = useState("");
+  const shownTransfers = useMemo(() => {
+    const q = fQuery.trim().toLowerCase();
+    return transfers.filter((r) => {
+      const day = localDay(r.transferredAt);
+      return (
+        (!fFrom || day >= fFrom) &&
+        (!fTo || day <= fTo) &&
+        (fSrc === "all" || r.fromBranch === fSrc) &&
+        (fDest === "all" || r.toBranch === fDest) &&
+        (!q || r.productName.toLowerCase().includes(q) || r.variant.toLowerCase().includes(q) || (r.createdByName || "").toLowerCase().includes(q))
+      );
+    });
+  }, [transfers, fFrom, fTo, fSrc, fDest, fQuery]);
+  const hasTransferFilter = !!(fFrom || fTo || fSrc !== "all" || fDest !== "all" || fQuery);
 
   useEffect(() => {
     setFromBranch(lockedSource ?? effectiveBranch(scopeSelected));
@@ -305,19 +337,55 @@ export default function StockTransfersPage() {
 
         {/* Recent transfers */}
         <section>
-          <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-ink-500">Recent transfers</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-ink-500">Recent transfers</h2>
+            <span className="text-[11px] text-ink-400">{shownTransfers.length} of {transfers.length}</span>
+          </div>
+
+          {/* INV-05: filters — date range, from/to branch, product/person search */}
+          <div className="mb-3 flex flex-wrap items-end gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
+              <input type="date" value={fFrom} max={fTo || undefined} onChange={(e) => setFFrom(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+            </label>
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
+              <input type="date" value={fTo} min={fFrom || undefined} onChange={(e) => setFTo(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+            </label>
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From branch
+              <select value={fSrc} onChange={(e) => setFSrc(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
+                <option value="all">All</option>
+                {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To branch
+              <select value={fDest} onChange={(e) => setFDest(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
+                <option value="all">All</option>
+                {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+              </select>
+            </label>
+            <label className="flex-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Search
+              <div className="mt-1 flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 focus-within:border-gold-500">
+                <Search className="h-4 w-4 shrink-0 text-ink-400" />
+                <input value={fQuery} onChange={(e) => setFQuery(e.target.value)} placeholder="Product, variant or who transferred…" className="w-full bg-transparent text-sm normal-case tracking-normal focus:outline-none" />
+              </div>
+            </label>
+            {hasTransferFilter && (
+              <button onClick={() => { setFFrom(""); setFTo(""); setFSrc("all"); setFDest("all"); setFQuery(""); }} className="pb-2 text-xs font-semibold text-gold-600 hover:underline">Clear</button>
+            )}
+          </div>
+
           <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-            <table className="w-full min-w-[520px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
                   <th className="px-4 py-3">When</th>
                   <th>Product</th>
                   <th>Direction</th>
+                  <th>By</th>
                   <th className="pr-4 text-right">Qty</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-50">
-                {transfers.map((r) => (
+                {shownTransfers.map((r) => (
                   <tr key={r.id} className="text-ink-700">
                     <td className="px-4 py-3 text-xs text-ink-500">{fmt(r.transferredAt)}</td>
                     <td>
@@ -328,12 +396,13 @@ export default function StockTransfersPage() {
                       {branchLabel(r.fromBranch)} → {branchLabel(r.toBranch)}
                       {r.note && <div className="text-[10px] text-ink-400">{r.note}</div>}
                     </td>
+                    <td className="text-xs text-ink-600">{r.createdByName || r.createdBy || "—"}</td>
                     <td className="pr-4 text-right font-semibold tabular-nums">{r.quantity}</td>
                   </tr>
                 ))}
-                {transfers.length === 0 && (
+                {shownTransfers.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-12 text-center text-sm text-ink-400">No transfers yet.</td>
+                    <td colSpan={5} className="px-4 py-12 text-center text-sm text-ink-400">{transfers.length === 0 ? "No transfers yet." : "No transfers match these filters."}</td>
                   </tr>
                 )}
               </tbody>

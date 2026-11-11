@@ -2,7 +2,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Printer, Pencil, Trash2, Link2, MessageCircle, Check, FileCheck2, X } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Link2, Check, FileCheck2, X } from "lucide-react";
+import { OutputActions } from "@/components/print/OutputActions";
+import { quotationToDoc } from "@/lib/print/doc";
 import type { Quotation } from "@/types";
 import { QuotationSheet, QUOTATION_PRINT_CSS } from "@/components/quotation/QuotationSheet";
 import { QuotationEditor } from "@/components/quotation/QuotationEditor";
@@ -11,6 +13,7 @@ import { formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 import { PaymentBox } from "@/components/ui/PaymentBox";
 import { freshPayBox, resolvePayBox, type PayBox } from "@/lib/paymentSplit";
+import { E } from "@/lib/whatsapp";
 
 const btn = "flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm font-semibold text-ink-900 hover:bg-ivory-100";
 
@@ -65,16 +68,19 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
     }
   }
 
-  function whatsapp() {
-    const text =
-      `*${BUSINESS.name}* — Quotation ${current.number}\n` +
-      `Total: ${formatINR(current.total)}` +
-      `${(current.advance ?? 0) > 0 ? `\nAdvance to pay: ${formatINR(current.advance ?? 0)}` : ""}\n` +
-      `Valid until ${new Date(current.validUntil).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}\n` +
-      shareUrl();
-    const phone = (current.customerPhone ?? "").replace(/\D/g, "");
-    const to = phone.length === 10 ? `91${phone}` : phone;
-    window.open(`https://wa.me/${to}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  function whatsappText() {
+    const items = current.items.map((l) => `${E.note} ${l.name} × ${l.qty} — ${formatINR(l.amount)}`).join("\n");
+    return (
+      `${E.notes} *${BUSINESS.name}* ${E.notes}\n` +
+      `Hi${current.customer ? ` ${current.customer}` : ""}! ${E.wave} Here is your quotation.\n\n` +
+      `${E.memo} *Quotation:* ${current.number}\n` +
+      `${E.calendar} *Valid until:* ${new Date(current.validUntil).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}\n\n` +
+      `${E.cart} *Items*\n${items}\n\n` +
+      `${E.money} *Total: ${formatINR(current.total)}*` +
+      `${(current.advance ?? 0) > 0 ? `\n${E.card} Advance to pay: ${formatINR(current.advance ?? 0)}` : ""}\n\n` +
+      `${E.doc} View / download:\n${shareUrl()}\n\n` +
+      `We look forward to serving you! ${E.pray}`
+    );
   }
 
   async function del() {
@@ -97,7 +103,7 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
     <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
       <style>{QUOTATION_PRINT_CSS}</style>
 
-      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
         <Link href="/admin/quotations" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">
           <ArrowLeft className="h-4 w-4" /> Back to quotations
         </Link>
@@ -114,7 +120,6 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
               </button>
             )}
             <button onClick={copyLink} className={btn}>{copied ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />} {copied ? "Copied" : "Copy link"}</button>
-            <button onClick={whatsapp} className={btn}><MessageCircle className="h-4 w-4" /> WhatsApp</button>
             {!invoiced && <button onClick={() => setEditing(true)} className={btn}><Pencil className="h-4 w-4" /> Edit</button>}
             {isAdmin && !invoiced && (
               <button
@@ -125,12 +130,15 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
                 <Trash2 className="h-4 w-4" /> {deleting ? "Deleting…" : "Delete"}
               </button>
             )}
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900"
-            >
-              <Printer className="h-4 w-4" /> Print / Save PDF
-            </button>
+            {/* QUO-01 / QUO-04: WhatsApp, Download and Print (thermal or A4). */}
+            <OutputActions
+              doc={quotationToDoc(current)}
+              a4TargetId="quotation-sheet"
+              phone={current.customerPhone}
+              shareLink={typeof window !== "undefined" ? shareUrl() : undefined}
+              whatsappText={typeof window !== "undefined" ? whatsappText() : undefined}
+              pdfName={`Quotation-${current.number}`}
+            />
           </div>
         )}
       </div>

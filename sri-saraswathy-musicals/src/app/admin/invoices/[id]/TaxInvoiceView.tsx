@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Printer, Lock, Pencil, Ban } from "lucide-react";
+import { ArrowLeft, Lock, Pencil, Ban } from "lucide-react";
 import type { Invoice } from "@/types";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 import { InvoiceEditor } from "./InvoiceEditor";
+import { OutputActions } from "@/components/print/OutputActions";
+import { invoiceToDoc } from "@/lib/print/doc";
 
 /**
  * Admin wrapper around the shared tax-invoice sheet — same content the
@@ -38,11 +40,11 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
       <style>{TAX_INVOICE_PRINT_CSS}</style>
 
       {/* Toolbar (hidden on print) */}
-      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
         <Link href="/admin/invoices" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">
           <ArrowLeft className="h-4 w-4" /> Back to ledger
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-600">
             <Lock className="h-3 w-3" /> Admin view
           </span>
@@ -63,12 +65,14 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
                   <Ban className="h-4 w-4" /> {cancelling ? "Cancelling…" : "Cancel invoice"}
                 </button>
               )}
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900"
-              >
-                <Printer className="h-4 w-4" /> Print / Save PDF
-              </button>
+              {/* LED-01: WhatsApp, print (thermal / A4) and download, per the customer's need. */}
+              <OutputActions
+                doc={invoiceToDoc(current)}
+                a4TargetId="invoice-sheet"
+                phone={current.customerPhone}
+                shareLink={current.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(current.refId)}` : undefined}
+                pdfName={`Invoice-${current.number}`}
+              />
             </>
           )}
         </div>

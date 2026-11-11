@@ -3,15 +3,17 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import dynamic from "next/dynamic";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { usePOS, productsChanged, type InvProduct } from "@/lib/store/pos";
+import { useSettings } from "@/lib/store/settings";
 import { Pager } from "@/components/ui/Pager";
 import { fetchJson, errMsg, readError } from "@/lib/client/api";
 import { downloadCsv, stamp } from "@/lib/csv";
 import { stockRows } from "@/lib/reports/inventory";
 import { formatINR, cn } from "@/lib/utils";
 import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
-import { Bell, Plus, Pencil, Trash2, AlertTriangle, X, Download, FileClock, ChevronDown, ChevronRight } from "lucide-react";
+import { Bell, Plus, Pencil, Trash2, AlertTriangle, X, Download, FileClock, ChevronDown, ChevronRight, History } from "lucide-react";
 import type { InvPage, InvRow, InvVariantRow, StockAlert } from "@/lib/db/queries/inventoryPage";
 import type { HistoryJob } from "./HistoryExport";
+import { StockLogModal } from "@/components/admin/StockLogModal";
 
 // The product editor and the CSV history builder are big and only needed on demand, so they load when first used.
 const ProductModal = dynamic(() => import("@/components/admin/ProductModal").then((m) => m.ProductModal), { ssr: false });
@@ -36,6 +38,10 @@ export default function InventoryPage() {
   const loadError = usePOS((s) => s.loadError);
   const invVersion = usePOS((s) => s.invVersion);
 
+  // ADM-04 / INV-07: master switch for low-stock alerts & highlighting.
+  const lowStockAlerts = useSettings((s) => s.lowStockAlerts);
+  const setSettings = useSettings((s) => s.set);
+
   const [statusFilter, setStatusFilter] = useState<"all" | "low" | "out">("all");
   const [category, setCategory] = useState("all");
   const [dept, setDept] = useState("all");
@@ -54,6 +60,7 @@ export default function InventoryPage() {
   const [adding, setAdding] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<InvRow | null>(null);
   const [delError, setDelError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -171,8 +178,12 @@ export default function InventoryPage() {
   };
   const startJob = (j: HistoryJob) => { setExportOpen(false); setNotice("Preparing the export…"); setJob(j); };
 
+  // When low-stock alerts are off, only out-of-stock warnings remain (INV-07).
+  const shownAlerts = useMemo(() => (lowStockAlerts ? alerts : alerts.filter((a) => a.state === "out")), [alerts, lowStockAlerts]);
   const outCount = alerts.filter((a) => a.state === "out").length;
   const lowCount = alerts.filter((a) => a.state === "low").length;
+  // If the filter was pinned to "low" and the toggle is turned off, fall back to "all".
+  useEffect(() => { if (!lowStockAlerts && statusFilter === "low") setStatusFilter("all"); }, [lowStockAlerts, statusFilter]);
   const items = data?.items ?? [];
   const from = data && data.total ? (data.page - 1) * data.pageSize + 1 : 0;
   const to = data ? from + items.length - (from ? 1 : 0) : 0;
@@ -201,17 +212,19 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {logOpen && <StockLogModal onClose={() => setLogOpen(false)} />}
+
       {/* Alerts modal */}
       {alertsOpen && (
         <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain bg-ink-950/50 p-4 backdrop-blur-sm" onClick={() => setAlertsOpen(false)}>
           <div className="my-auto w-full max-w-md rounded-2xl bg-ivory-50 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3 border-b border-ink-100 p-5">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-warning/20 text-warning"><AlertTriangle className="h-5 w-5" /></div>
-              <div className="flex-1"><h3 className="text-lg font-bold text-ink-900">Stock Alert</h3><p className="text-sm text-ink-500">{alerts.length} variant(s) need attention</p></div>
+              <div className="flex-1"><h3 className="text-lg font-bold text-ink-900">Stock Alert</h3><p className="text-sm text-ink-500">{shownAlerts.length} variant(s) need attention</p></div>
               <button onClick={() => setAlertsOpen(false)} className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
             </div>
             <div className="max-h-80 space-y-2 overflow-y-auto p-4">
-              {alerts.map((a, i) => (
+              {shownAlerts.map((a, i) => (
                 <div key={i} className={cn("flex items-center justify-between gap-3 rounded-xl border p-3", a.state === "out" ? "border-danger/30 bg-danger/[0.04]" : "border-warning/30 bg-warning/[0.06]")}>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-ink-900">{a.productName}</p>
@@ -226,7 +239,7 @@ export default function InventoryPage() {
                   >Edit</button>
                 </div>
               ))}
-              {alerts.length === 0 && <p className="py-8 text-center text-sm text-ink-400">Everything is well stocked.</p>}
+              {shownAlerts.length === 0 && <p className="py-8 text-center text-sm text-ink-400">Everything is well stocked.</p>}
             </div>
             <div className="border-t border-ink-100 p-3"><button onClick={() => setAlertsOpen(false)} className="w-full rounded-xl border border-ink-200 py-3 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Dismiss</button></div>
           </div>
@@ -254,10 +267,21 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold text-ink-900">Inventory</h1>
           <p className="mt-1 text-sm text-ink-500">{data ? `${data.total} product${data.total === 1 ? "" : "s"}` : "Loading…"} · same catalog customers see</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ADM-04 / INV-07: low-stock alerts master switch */}
+          <button
+            onClick={() => setSettings({ lowStockAlerts: !lowStockAlerts })}
+            title={lowStockAlerts ? "Low-stock alerts are ON — click to turn off" : "Low-stock alerts are OFF — click to turn on"}
+            className={cn("flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold", lowStockAlerts ? "border-gold-500 text-gold-700 bg-gold-50" : "border-ink-200 text-ink-500")}
+          >
+            <AlertTriangle className="h-4 w-4" /> Low-stock alerts: {lowStockAlerts ? "On" : "Off"}
+          </button>
+          <button onClick={() => setLogOpen(true)} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
+            <History className="h-4 w-4" /> Stock log
+          </button>
           <button onClick={() => setAlertsOpen(true)} className="relative flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
             <Bell className="h-4 w-4" /> Alerts
-            {alerts.length > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{alerts.length}</span>}
+            {shownAlerts.length > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{shownAlerts.length}</span>}
           </button>
           <div className="relative">
             <button onClick={() => setExportOpen((o) => !o)} className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
@@ -286,17 +310,17 @@ export default function InventoryPage() {
       </div>
 
       {/* Banner */}
-      {alerts.length > 0 && (
+      {shownAlerts.length > 0 && (
         <div className="mb-5 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/[0.08] px-4 py-3 text-sm text-ink-700">
           <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-          <span><b className="text-ink-900">{outCount}</b> variants out of stock · <b className="text-ink-900">{lowCount}</b> running low — restock soon.</span>
+          <span><b className="text-ink-900">{outCount}</b> variants out of stock{lowStockAlerts && <> · <b className="text-ink-900">{lowCount}</b> running low</>} — restock soon.</span>
         </div>
       )}
 
       {/* Filters */}
       <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-ink-100 bg-ivory-50 p-3">
         <button onClick={() => setStatusFilter("all")} className={chip(statusFilter === "all")}>All</button>
-        <button onClick={() => setStatusFilter("low")} className={chip(statusFilter === "low")}>Low Stock</button>
+        {lowStockAlerts && <button onClick={() => setStatusFilter("low")} className={chip(statusFilter === "low")}>Low Stock</button>}
         <button onClick={() => setStatusFilter("out")} className={chip(statusFilter === "out")}>Out Of Stock</button>
         <select value={category} onChange={(e) => setCategory(e.target.value)} className={selCls}><option value="all">All Categories</option>{(data?.categories ?? []).map((c) => <option key={c}>{c}</option>)}</select>
         <select value={dept} onChange={(e) => setDept(e.target.value)} className={selCls}><option value="all">All Depts</option>{(data?.departments ?? []).map((d) => <option key={d}>{d}</option>)}</select>
@@ -321,7 +345,9 @@ export default function InventoryPage() {
           </thead>
           <tbody>
             {items.map((p) => {
-              const meta = STATUS_META[p.state];
+              // INV-07: when the toggle is off, a "low" row reads as In Stock (no highlight).
+              const dispState = lowStockAlerts ? p.state : p.state === "low" ? "in" : p.state;
+              const meta = STATUS_META[dispState];
               const isOpen = open.has(p.id);
               const vs = variants[p.id];
               return (
@@ -358,7 +384,7 @@ export default function InventoryPage() {
                     <td className="px-3 py-3 text-right font-bold tabular-nums text-ink-900">{p.total}</td>
                     <td className="px-3 py-3">
                       <span className={cn("whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", meta.badge)}>{meta.label}</span>
-                      {p.state === "low" && <p className="mt-0.5 text-[10px] text-warning">reorder @ {p.lowStockAt}</p>}
+                      {lowStockAlerts && p.state === "low" && <p className="mt-0.5 text-[10px] text-warning">reorder @ {p.lowStockAt}</p>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1.5">
@@ -389,7 +415,7 @@ export default function InventoryPage() {
                             </thead>
                             <tbody>
                               {vs.map((v) => {
-                                const st = variantState(v.total, p.lowStockAt);
+                                const st = variantState(v.total, lowStockAlerts ? p.lowStockAt : 0);
                                 return (
                                   <tr key={v.id} className={cn("border-t border-ink-100", v.disabled && "opacity-55")}>
                                     <td className="py-2 pr-3">

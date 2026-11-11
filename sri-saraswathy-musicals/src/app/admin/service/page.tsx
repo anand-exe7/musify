@@ -317,7 +317,49 @@ export default function ServicePage() {
 
 /* ─────────────────────────  Report tab  ───────────────────────── */
 
-function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
+type ReportPeriod = "all" | "today" | "week" | "month" | "custom";
+
+/** yyyy-mm-dd of an ISO timestamp in local time. */
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(+d)) return iso.slice(0, 10);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Start-of-day keys for the quick presets, computed in local time. */
+function periodBounds(period: ReportPeriod, from: string, to: string): { lo: string; hi: string } | null {
+  if (period === "all") return null;
+  if (period === "custom") return from || to ? { lo: from || "0000-01-01", hi: to || "9999-12-31" } : null;
+  const now = new Date();
+  const todayKey = dayKey(now.toISOString());
+  if (period === "today") return { lo: todayKey, hi: todayKey };
+  if (period === "week") {
+    const d = new Date(now);
+    const dow = (d.getDay() + 6) % 7; // Monday = 0
+    d.setDate(d.getDate() - dow);
+    return { lo: dayKey(d.toISOString()), hi: todayKey };
+  }
+  // month
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { lo: dayKey(first.toISOString()), hi: todayKey };
+}
+
+function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) {
+  const [period, setPeriod] = useState<ReportPeriod>("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  // REP-06: date-wise report — filter tickets by when they were raised.
+  const tickets = useMemo(() => {
+    const b = periodBounds(period, from, to);
+    if (!b) return allTickets;
+    return allTickets.filter((t) => {
+      const k = dayKey(t.createdAt);
+      return k >= b.lo && k <= b.hi;
+    });
+  }, [allTickets, period, from, to]);
+
   const m = useMemo(() => {
     const completed = tickets.filter((t) => t.status === "completed");
     const active = tickets.filter((t) => !isClosed(t.status));
@@ -374,8 +416,37 @@ function ReportTab({ tickets }: { tickets: RepairTicket[] }) {
   const maxCat = Math.max(...m.byCategory.map((c) => c.n), 1);
   const catColors = ["#C9A24B", "#A98337", "#DFBE58", "#5B1E1E", "#87672A", "#EAD48F", "#3D6A8B"];
 
+  const periods: { key: ReportPeriod; label: string }[] = [
+    { key: "all", label: "All time" },
+    { key: "today", label: "Today" },
+    { key: "week", label: "This week" },
+    { key: "month", label: "This month" },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* REP-06: date-wise report filters */}
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
+        <div className="flex items-center gap-1 rounded-full bg-white p-1 ring-1 ring-ink-100">
+          {periods.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => { setPeriod(p.key); setFrom(""); setTo(""); }}
+              className={cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all", period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
+          <input type="date" value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPeriod("custom"); }} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        </label>
+        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
+          <input type="date" value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPeriod("custom"); }} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        </label>
+        <span className="pb-2 text-xs text-ink-400">{tickets.length} ticket{tickets.length === 1 ? "" : "s"} in range</span>
+      </div>
+
       {/* KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Repair Revenue" value={formatINR(m.revenue)} accent="green" hint={`${m.completed.length} completed · advances included · incl GST`} />

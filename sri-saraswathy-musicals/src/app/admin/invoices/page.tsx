@@ -7,6 +7,8 @@ import { FileText, Search, Globe, Store, Wrench, ExternalLink, Receipt, Banknote
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
+import { RowOutputMenu } from "@/components/print/RowOutputMenu";
+import { invoiceToDoc } from "@/lib/print/doc";
 import { useBranchScope } from "@/lib/store/branch";
 import { AdminStat } from "@/components/admin/AdminStat";
 
@@ -19,6 +21,7 @@ function localDay(iso: string): string {
 }
 
 type SourceFilter = "all" | "web" | "pos" | "service" | "manual";
+type StatusFilter = "all" | "paid" | "pending" | "cancelled";
 
 function fmtDate(d: string) {
   const date = new Date(d);
@@ -36,6 +39,7 @@ export default function InvoicesLedgerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [source, setSource] = useState<SourceFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -85,20 +89,23 @@ export default function InvoicesLedgerPage() {
     return inScope.filter(
       (v) =>
         (source === "all" || (v.source ?? "manual") === source) &&
+        (status === "all" || v.status === status) &&
         (q === "" ||
           v.number.toLowerCase().includes(q) ||
           (v.reference ?? "").toLowerCase().includes(q) ||
           v.customer.toLowerCase().includes(q) ||
           v.id.toLowerCase().includes(q)),
     );
-  }, [inScope, source, query]);
-  const pg = usePaged(rows, `${query}|${from}|${to}|${branch}`);
+  }, [inScope, source, status, query]);
+  const pg = usePaged(rows, `${query}|${from}|${to}|${branch}|${status}`);
 
   const stats = useMemo(() => {
     const sum = (list: Invoice[]) => list.reduce((n, v) => n + v.total, 0);
+    // LED-03: cancelled bills stay visible in the ledger but are never counted in "Total billed".
+    const live = inScope.filter((v) => v.status !== "cancelled");
     return {
       count: inScope.length,
-      total: sum(inScope),
+      total: sum(live),
       web: inScope.filter((v) => v.source === "web").length,
       pos: inScope.filter((v) => v.source === "pos").length,
     };
@@ -111,6 +118,12 @@ export default function InvoicesLedgerPage() {
     { key: "pos", label: "In-store" },
     { key: "service", label: "Service" },
     { key: "manual", label: "Manual" },
+  ];
+  const statusFilters: { key: StatusFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "paid", label: "Paid" },
+    { key: "pending", label: "Pending" },
+    { key: "cancelled", label: "Cancelled" },
   ];
 
   return (
@@ -155,20 +168,37 @@ export default function InvoicesLedgerPage() {
       </div>
 
       {/* Controls */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 ring-1 ring-ink-100">
-          {filters.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setSource(f.key)}
-              className={cn(
-                "rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
-                source === f.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 ring-1 ring-ink-100">
+            {filters.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setSource(f.key)}
+                className={cn(
+                  "rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
+                  source === f.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {/* LED-05: Paid / Pending / Cancelled status filter. */}
+          <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 ring-1 ring-ink-100">
+            {statusFilters.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setStatus(f.key)}
+                className={cn(
+                  "rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all",
+                  status === f.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 focus-within:border-gold-500 sm:w-72">
           <Search className="h-4 w-4 shrink-0 text-ink-400" />
@@ -231,9 +261,18 @@ export default function InvoicesLedgerPage() {
                     <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[v.status] ?? "bg-ink-100 text-ink-600")}>{v.status}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link href={`/admin/invoices/${v.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-gold-600 hover:text-gold-700">
-                      View <ExternalLink className="h-3 w-3" />
-                    </Link>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Link href={`/admin/invoices/${v.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-gold-600 hover:text-gold-700">
+                        View <ExternalLink className="h-3 w-3" />
+                      </Link>
+                      {/* LED-01: WhatsApp / thermal / A4 / download, straight from the ledger. */}
+                      <RowOutputMenu
+                        href={`/admin/invoices/${v.id}`}
+                        doc={invoiceToDoc(v)}
+                        phone={v.customerPhone}
+                        shareLink={v.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(v.refId)}` : undefined}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))

@@ -25,7 +25,8 @@ export function POST(request: NextRequest) {
     if (access !== "all" && !branchAllowed(access, body.branch)) body.branch = primaryBranchOf(access, DEFAULT_BRANCH);
     // Branch staff sell catalogue products at catalogue prices only.
     const bill = await createBill(await lockBill(body, access));
-    await recordBillInvoice(bill);
-    return created(bill);
+    // The invoice comes back with the bill, so the billing screen can print / share it without asking again.
+    const invoice = await recordBillInvoice(bill, { fresh: true });
+    return created({ ...bill, invoice: invoice ?? null });
   });
 }

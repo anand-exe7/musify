@@ -6,6 +6,7 @@ import { lockRepairParts } from "@/lib/auth/catalogLines";
 import type { RepairTicket } from "@/lib/store/repair";
 import { branchAllowed, primaryBranchOf } from "@/lib/auth/session";
 import { DEFAULT_BRANCH } from "@/lib/stock";
+import { cleanPayments, paymentsTotal, isPayMode } from "@/lib/billing/repairPayments";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,17 @@ export function POST(request: NextRequest) {
     // Products picked at intake are checked, and leave stock only once the repair is Ready (see the PATCH route).
     body.parts = cleanParts(await lockRepairParts(body.parts ?? [], access));
     delete body.stockTaken;
+    // REP-01 / REP-03: money taken at intake is the first part-payment on the ticket, in the chosen payment mode.
+    if (!isPayMode(body.paymentMode)) body.paymentMode = "CASH";
+    try {
+      body.payments = cleanPayments(body.payments ?? []);
+    } catch (e) {
+      return badRequest(e instanceof Error ? e.message : "Invalid payments");
+    }
+    if (body.payments.length === 0 && (body.advance || 0) > 0) {
+      body.payments = [{ id: crypto.randomUUID(), at: body.createdAt || new Date().toISOString(), amount: Math.round(body.advance), mode: body.paymentMode, note: "Paid at intake", receiptNo: `${body.id}/R1` }];
+    }
+    body.advance = paymentsTotal(body.payments);
     const sync = await syncPartsStock({ branch: body.branch, status: "", stockTaken: [] }, body);
     try {
       return created(await createTicket({ ...body, stockTaken: sync.taken }));

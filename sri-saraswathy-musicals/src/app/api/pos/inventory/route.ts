@@ -1,12 +1,16 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
-import { getInventory, createInventoryProduct } from "@/lib/db/queries/pos";
+import { getInventoryList, createInventoryProduct } from "@/lib/db/queries/pos";
 import type { InvProduct } from "@/lib/store/pos";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The whole catalogue for billing / purchases / pickers — one photo per product, without the gallery or variant
+ * photos (those made this take 10+ seconds). The product editor loads a product in full from `/api/pos/inventory/[id]`.
+ */
 export function GET() {
-  return handle("staff", async () => ok(await getInventory()));
+  return handle("staff", async () => ok(await getInventoryList()));
 }
 
 /** Creating a new product sets its prices, so it's admin-only (Phase 7). */

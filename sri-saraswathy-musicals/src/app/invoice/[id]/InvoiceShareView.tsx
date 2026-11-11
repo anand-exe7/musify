@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Printer, Link2, Check } from "lucide-react";
+import { ArrowLeft, Link2, Check } from "lucide-react";
+import { OutputActions } from "@/components/print/OutputActions";
+import { invoiceToDoc, type PrintDoc } from "@/lib/print/doc";
 import type { Invoice } from "@/types";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 
@@ -9,7 +11,7 @@ import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/Tax
  * Public share wrapper for the tax invoice. Anyone with the link (opaque ref
  * id) can open it without signing in. Admin-only routes get their own toolbar.
  */
-export function InvoiceShareView({ invoice, payment }: { invoice: Invoice; payment?: { paid: number; balance: number } }) {
+export function InvoiceShareView({ invoice, payment, receipt }: { invoice: Invoice; payment?: { paid: number; balance: number }; receipt?: PrintDoc }) {
   const [copied, setCopied] = useState(false);
   const isBillOfSupply = (invoice.cgst ?? 0) + (invoice.sgst ?? 0) + (invoice.igst ?? 0) === 0;
 
@@ -28,7 +30,7 @@ export function InvoiceShareView({ invoice, payment }: { invoice: Invoice; payme
       <style>{TAX_INVOICE_PRINT_CSS}</style>
 
       {/* Toolbar (hidden on print) */}
-      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">
           <ArrowLeft className="h-4 w-4" /> Back to shop
         </Link>
@@ -40,12 +42,13 @@ export function InvoiceShareView({ invoice, payment }: { invoice: Invoice; payme
             {copied ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
             {copied ? "Link copied" : "Copy share link"}
           </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900"
-          >
-            <Printer className="h-4 w-4" /> Print / Save PDF
-          </button>
+          <OutputActions
+            doc={receipt ?? invoiceToDoc(invoice, payment)}
+            a4TargetId="invoice-sheet"
+            phone={invoice.customerPhone}
+            shareLink={typeof window !== "undefined" ? window.location.href.split("?")[0] : undefined}
+            pdfName={`Invoice-${invoice.number}`}
+          />
         </div>
       </div>
 

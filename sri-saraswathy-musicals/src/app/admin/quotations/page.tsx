@@ -7,6 +7,8 @@ import { FileSignature, Plus, Search } from "lucide-react";
 import type { Quotation } from "@/types";
 import { formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
+import { RowOutputMenu } from "@/components/print/RowOutputMenu";
+import { quotationToDoc } from "@/lib/print/doc";
 
 function fmtDate(d: string) {
   const date = new Date(d);
@@ -84,7 +86,7 @@ export default function QuotationsPage() {
                 <td className="px-4 py-3 text-ink-800">{q.customer}{q.customerPhone && <span className="block text-xs text-ink-400">{q.customerPhone}</span>}</td>
                 <td className="px-4 py-3 text-ink-600">{branchLabel(q.branch)}</td>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums text-ink-900">{formatINR(q.total)}</td>
-                <td className="px-4 py-3 text-right"><Link href={`/admin/quotations/${encodeURIComponent(q.id)}`} className="font-semibold text-gold-600 hover:underline">View</Link></td>
+                <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-2"><Link href={`/admin/quotations/${encodeURIComponent(q.id)}`} className="font-semibold text-gold-600 hover:underline">View</Link><RowOutputMenu href={`/admin/quotations/${encodeURIComponent(q.id)}`} doc={quotationToDoc(q)} phone={q.customerPhone} shareLink={typeof window !== "undefined" ? `${window.location.origin}/quotation/${encodeURIComponent(q.id)}` : undefined} /></div></td>
               </tr>
             ))}
             {loading && Array.from({ length: 6 }, (_, i) => (

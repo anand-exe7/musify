@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle, ok, notFound, badRequest, readJson } from "@/lib/api/http";
 import { getBillDetail } from "@/lib/db/queries/purchaseBills";
 import type { Branch } from "@/lib/stock";
-import { updatePurchase, deletePurchase,purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
+import { setPurchaseInAnalytics, updatePurchase, deletePurchase,purchaseVisibleTo, scopePurchaseLines, PurchaseValidationError, type PurchasePatch } from "@/lib/db/queries/purchases";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,11 @@ export function GET(_req: NextRequest, { params }: { params: Promise<{ id: strin
 export function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return handle("admin", async () => {
     const { id } = await params;
-    const body = await readJson<PurchasePatch>(request);
+    const body = await readJson<PurchasePatch & { inAnalytics?: boolean }>(request);
+    // EXP-01: the "subtract in analytics" switch on its own — no money fields change.
+    if (typeof body.inAnalytics === "boolean" && Object.keys(body).length === 1) {
+      return (await setPurchaseInAnalytics(id, body.inAnalytics)) ? ok({ id, inAnalytics: body.inAnalytics }) : notFound("Purchase not found");
+    }
     try {
       const rec = await updatePurchase(id, body);
       return rec ? ok(rec) : notFound("Purchase not found");
