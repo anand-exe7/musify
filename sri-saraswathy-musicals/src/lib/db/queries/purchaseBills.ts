@@ -47,6 +47,10 @@ export interface BillRow {
   branches: BranchBill[];
   /** Some branch paid more than its part. */
   overpaid: boolean;
+  /** EXP-01: payments on this bill are subtracted in the sales analytics. */
+  inAnalytics: boolean;
+  /** EXP-02: how the amount paid at purchase was paid ("" when nothing was paid then). */
+  paymentMode: string;
 }
 
 export interface BillsSummary {
@@ -166,6 +170,8 @@ export async function loadBills(f: BillFilter, scope: Branch[] | null): Promise<
       status: billStatus(total, paid),
       branches: shown,
       overpaid: shown.some((b) => b.over > 0),
+      inAnalytics: !!h.inAnalytics,
+      paymentMode: h.paymentMode ?? "",
     };
   });
 

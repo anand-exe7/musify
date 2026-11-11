@@ -95,6 +95,8 @@ export interface PurchaseInput {
   paidAllocations?: PaidAllocationInput[];
   paymentMode?: PurchasePaymentMode;
   notes?: string;
+  /** EXP-01: subtract payments on this bill in the sales analytics (admin only). */
+  inAnalytics?: boolean;
   lines: InwardBatchLine[];
 }
 
@@ -350,6 +352,7 @@ export async function createPurchase(input: PurchaseInput, createdBy: string, al
     paidAllocations,
     paymentMode: input.paymentMode ?? "",
     notes: input.notes ?? "",
+    inAnalytics: allowed === null && input.inAnalytics === true,
     createdBy,
     createdAt: new Date().toISOString(),
   };

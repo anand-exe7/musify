@@ -207,3 +207,18 @@ describe("purchase analytics", () => {
     expect((await getPurchaseAnalytics({}, ["Branch 3"])).totals).toMatchObject({ bought: 177_000, paid: 177_000, left: 0 });
   });
 });
+
+describe("EXP-01 / EXP-02: linking a bill to analytics", () => {
+  it("saves 'subtract in analytics' and the payment mode for an admin, and shows both on the bill line", async () => {
+    const rec = await createPurchase(bill("vb", { "Branch 1": 1 }, { batchId: "link-admin", inAnalytics: true, paymentMode: "UPI", amountPaid: 50000, paidAllocations: [{ branch: "Branch 1", amount: 50000 }] }), "admin", null);
+    expect(rec.inAnalytics).toBe(true);
+    const page = await getBillsPage({ vendorId: "vb", page: 1, pageSize: 50 }, null);
+    const row = page.rows.find((r) => r.id === rec.id);
+    expect(row).toMatchObject({ inAnalytics: true, paymentMode: "UPI" });
+  });
+
+  it("ignores the flag from branch staff (only an admin links bills)", async () => {
+    const rec = await createPurchase(bill("vb", { "Branch 1": 1 }, { batchId: "link-staff", inAnalytics: true }), "staff", ["Branch 1"]);
+    expect(rec.inAnalytics).toBe(false);
+  });
+});

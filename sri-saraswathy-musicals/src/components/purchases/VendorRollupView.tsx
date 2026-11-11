@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
+import { LoadingPanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 import { useBranchScope } from "@/lib/store/branch";
@@ -73,8 +74,6 @@ export function VendorRollupView({
     if (row) { setStatement(row); setLinked(true); }
   }, [data, openVendor, linked]);
 
-  const input = "rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:border-gold-500 focus:outline-none";
-  const lab = "text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500";
   const sum = data?.summary;
   const from = data && data.rows.length ? (data.page - 1) * data.pageSize + 1 : 0;
 
@@ -99,26 +98,24 @@ export function VendorRollupView({
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <label className={lab}>Search
-          <span className="relative mt-1 block">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-ink-400" />
-            <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Vendor name…" className={cn(input, "w-60 pl-8")} />
-          </span>
-        </label>
+      <div className="mb-5 flex flex-col gap-2.5 rounded-2xl border border-ink-100 bg-ivory-50 p-4 md:flex-row md:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+          <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Search vendor name…" className="h-10 w-full rounded-xl border border-ink-200 bg-white pl-10 pr-3 text-sm focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20" />
+        </div>
         {allowed.length > 1 && (
-          <label className={lab}>Branch
-            <select value={branch} onChange={(e) => { setBranch(e.target.value); setPage(1); }} className={cn(input, "mt-1 block")}>
-              <option value="all">All branches</option>
-              {allowed.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
-            </select>
-          </label>
+          <select value={branch} onChange={(e) => { setBranch(e.target.value); setPage(1); }} aria-label="Branch" className="h-10 rounded-xl border border-ink-200 bg-white px-3 text-sm focus:border-gold-500 focus:outline-none md:w-44">
+            <option value="all">All branches</option>
+            {allowed.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
+          </select>
         )}
-        <label className="flex items-center gap-2 pb-2 text-xs font-semibold text-ink-700">
-          <input type="checkbox" checked={openOnly} onChange={(e) => { setOpenOnly(e.target.checked); setPage(1); }} /> Only vendors I owe
+        <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-700">
+          <input type="checkbox" checked={openOnly} onChange={(e) => { setOpenOnly(e.target.checked); setPage(1); }} className="h-3.5 w-3.5 accent-ink-900" /> Only vendors I owe
         </label>
       </div>
 
+      {!data && loading && !error && <LoadingPanel label="Loading vendors…" />}
+      {loading && data && <p className="mb-2 flex justify-end"><span className="inline-flex items-center gap-1.5 rounded-full bg-ink-900 px-3 py-1 text-[11px] font-semibold text-ivory-50"><Loader2 className="h-3 w-3 animate-spin" /> Updating…</span></p>}
       <div className={cn("space-y-3 transition-opacity", loading && data && "opacity-60")} aria-busy={loading}>
         {data?.rows.map((v) => (
           <div key={v.vendorId} className="rounded-2xl border border-ink-100 bg-ivory-50 p-4">
@@ -155,7 +152,6 @@ export function VendorRollupView({
             </div>
           </div>
         ))}
-        {!data && loading && Array.from({ length: 3 }, (_, i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-ink-100/60" />)}
         {data && data.rows.length === 0 && <p className="rounded-2xl border border-dashed border-ink-200 px-4 py-14 text-center text-sm text-ink-400">{openOnly || q ? "No vendors match." : "No vendor bills yet."}</p>}
         {error && <p className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-4 text-sm text-danger">Couldn&apos;t load the vendors. <button onClick={() => setRetry((n) => n + 1)} className="font-semibold underline">Try again</button></p>}
       </div>
