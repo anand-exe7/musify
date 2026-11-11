@@ -7,7 +7,7 @@
  */
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { products, type ProductRow } from "@/lib/db/schema";
+import { products, stockMovements, type ProductRow } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { isBranch, type StockDelta, branchLabel } from "@/lib/stock";
 import { bumpStock, selectProduct, setVariantPrice as setPrice } from "./variants";
@@ -19,6 +19,43 @@ export interface StockWriteOptions {
   allowShort?: boolean;
   /** Also set the product's unit cost in the same write (stock-inward). */
   cost?: number;
+  /** LED-04: record each applied change in the stock movement log under this reason. */
+  log?: StockLogEntry;
+}
+
+/** Why a stock change happened, for the movement log (`stock_movements`). */
+export interface StockLogEntry {
+  reason: "bill_cancelled" | "order_cancelled" | "invoice_cancelled" | "transfer" | "purchase" | "purchase_deleted" | "repair" | "adjustment";
+  /** The document behind it (bill / order / transfer / ticket id). */
+  ref?: string;
+  note?: string;
+}
+
+/** Best-effort append to the movement log — never lets a logging failure undo a stock change that already happened. */
+async function logMovements(prod: ProductRow, applied: StockDelta[], log: StockLogEntry): Promise<void> {
+  if (applied.length === 0) return;
+  try {
+    const at = new Date().toISOString();
+    await db.insert(stockMovements).values(
+      applied.map((d) => {
+        const v = prod.variants[d.variantIndex];
+        return {
+          id: crypto.randomUUID(),
+          at,
+          productId: prod.id,
+          productName: prod.name,
+          variant: v ? `${v.attr}${v.finish ? ` · ${v.finish}` : ""}` : "",
+          branch: d.branch,
+          delta: d.delta,
+          reason: log.reason,
+          ref: log.ref ?? "",
+          note: log.note ?? "",
+        };
+      }),
+    );
+  } catch (err) {
+    console.error("[stock] couldn't write the movement log", log, err);
+  }
 }
 
 /**
@@ -74,6 +111,7 @@ export async function adjustProductStock(
     await reverse();
     throw err;
   }
+  if (opts.log) await logMovements(prod, applied, opts.log);
   return prod;
 }
 
@@ -113,9 +151,23 @@ export async function takeStock(
     }
   };
   try {
-    for (const l of lines) {
-      if (l.quantity <= 0) continue;
-      const r = await bumpStock(l.productId, l.variantIndex, branch, -l.quantity, !!opts.allowShort);
+    // Every line is its own atomic, guarded update, so they can all go to the database together; if any fails,
+    // the ones that went through are put back below.
+    const todo = lines.filter((l) => l.quantity > 0);
+    const results = await Promise.allSettled(todo.map((l) => bumpStock(l.productId, l.variantIndex, branch, -l.quantity, !!opts.allowShort)));
+    // Record what was actually taken first, so `undo` covers it whatever fails next.
+    results.forEach((res, i) => {
+      if (res.status === "fulfilled" && res.value) {
+        const l = todo[i];
+        const taken = Math.min(l.quantity, res.value.before);
+        if (taken > 0) done.push({ ...l, quantity: taken });
+      }
+    });
+    for (let i = 0; i < todo.length; i++) {
+      const l = todo[i];
+      const res = results[i];
+      if (res.status === "rejected") throw res.reason;
+      const r = res.value;
       if (r === undefined) {
         const exists = await selectProduct(l.productId);
         throw new HttpError(exists ? 400 : 404, exists ? "Unknown variant on this product" : `Unknown product: ${l.productId}`);
@@ -125,10 +177,7 @@ export async function takeStock(
         const onHand = prod?.variants[l.variantIndex]?.stockByBranch[branch] ?? 0;
         throw new HttpError(409, `${prod?.name ?? l.productId} — only ${onHand} in stock at ${branchLabel(branch)}, ${l.quantity} needed`);
       }
-      // `before` is the balance this very write started from, so a clamped line
-      // took only what was there.
-      const taken = Math.min(l.quantity, r.before);
-      if (taken > 0) done.push({ ...l, quantity: taken });
+      // `before` is the balance this very write started from, so a clamped line took only what was there.
       if (r.before < l.quantity) shortfalls.push({ ...l, onHand: r.before });
     }
   } catch (err) {

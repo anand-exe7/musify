@@ -8,7 +8,10 @@ import { useBranchScope } from "@/lib/store/branch";
 import { LoadingPanel, OfflinePanel } from "@/components/admin/LoadState";
 import { formatINR, cn } from "@/lib/utils";
 import { downloadCsv } from "@/lib/csv";
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import { downloadXlsx, rupeesNum } from "@/lib/reports/excel";
+import { fetchJson } from "@/lib/client/api";
+import { useAuth } from "@/lib/store/auth";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { AdminStat } from "@/components/admin/AdminStat";
 import { Pager } from "@/components/ui/Pager";
@@ -45,6 +48,17 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   return <div className={cn("rounded-2xl border border-ink-100 bg-ivory-50 p-5", className)}>{children}</div>;
 }
 
+/** ANA-01: bucket a free-text payment label into a reporting mode. */
+function paymentModeOf(label: string | undefined | null): "Cash" | "UPI" | "Card" | "Online" | "Other" {
+  const s = (label || "").toLowerCase();
+  if (s.includes("cash")) return "Cash";
+  if (s.includes("upi") || s.includes("gpay") || s.includes("google pay") || s.includes("phonepe") || s.includes("paytm")) return "UPI";
+  if (s.includes("card")) return "Card";
+  if (s.includes("razor") || s.includes("online") || s.includes("netbank") || s.includes("bank")) return "Online";
+  return "Other";
+}
+const PAYMODE_COLOR: Record<string, string> = { Cash: "#16A34A", UPI: "#2563EB", Card: "#C9A24B", Online: "#8B5CF6", Other: "#9CA3AF" };
+
 /** Re-export the shared stat tile under the local name used in this file. */
 const Stat = AdminStat;
 
@@ -72,6 +86,20 @@ export default function AnalyticsPage() {
   const [couponQuery, setCouponQuery] = useState("");
   const [txnQuery, setTxnQuery] = useState("");
   const [salesQuery, setSalesQuery] = useState("");
+  const [exporting, setExporting] = useState(false);
+  // ANA-04 / EXP-01: expenses & vendor-bill payments linked to analytics (admin only).
+  const isAdmin = useAuth((s) => s.adminAccess === "all" || Array.isArray(s.adminAccess));
+  const [deductions, setDeductions] = useState<{ modes: string[]; entries: { kind: string; id: string; date: string; branch: string; mode: string; amount: number; label: string }[] } | null>(null);
+  useEffect(() => {
+    if (!isAdmin) return;
+    let alive = true;
+    fetchJson<NonNullable<typeof deductions>>("/api/analytics/deductions")
+      .then((d) => alive && setDeductions(d))
+      .catch(() => alive && setDeductions(null));
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     void hydrateExpenses();
@@ -115,8 +143,16 @@ export default function AnalyticsPage() {
       qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
     }));
     const topItems = [...revByItem.entries()].sort((a, b) => b[1] - a[1]);
+    // ANA-01: billed total split by payment mode (Cash / UPI / Card / Online / Other).
+    const payModeMap = new Map<string, number>();
+    scoped.forEach((b) => {
+      const k = paymentModeOf(b.payment);
+      payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, b.total));
+    });
+    const paymentModes = [...payModeMap.entries()].sort((a, b) => b[1] - a[1]);
     return {
       totalRevenue,
+      paymentModes,
       gstCollected,
       deliveryTotal,
       grossSales,
@@ -179,6 +215,115 @@ export default function AnalyticsPage() {
     return scoped.reduce((n, b) => n + b.items.reduce((s, i) => s + (costByName.get(i.name) ?? 0) * i.qty, 0), 0);
   }, [scoped, invProducts]);
 
+  // ANA-04: linked deductions in this period + branch, for the payment modes switched on in expense settings.
+  const ded = useMemo(() => {
+    const list = (deductions?.entries ?? []).filter(
+      (d) => (deductions?.modes ?? []).includes(d.mode) && (branch === "all" || d.branch === branch) && inPeriod(d.date, period, new Date(), custom),
+    );
+    const byMode = new Map<string, number>();
+    for (const d of list) {
+      const k = paymentModeOf(d.mode === "BANK" ? "bank" : d.mode);
+      byMode.set(k, (byMode.get(k) || 0) + d.amount);
+    }
+    return { list, total: list.reduce((n, d) => n + d.amount, 0), byMode };
+  }, [deductions, branch, period, custom]);
+  const netAfterDeductions = m.grossSales - ded.total;
+
+  // ANA-05: CGST / SGST split of the tax collected (POS bills keep their own split; the rest is intra-state halves).
+  const taxSplit = useMemo(() => {
+    let cgst = 0;
+    let sgst = 0;
+    for (const b of scoped) {
+      if (b.source === "offline" && (b.cgst !== undefined || b.sgst !== undefined)) {
+        if (!b.gstEnabled) continue;
+        cgst += b.cgst ?? 0;
+        sgst += b.sgst ?? 0;
+      } else {
+        const g = billGst(b);
+        const half = Math.round(g / 2);
+        cgst += half;
+        sgst += g - half;
+      }
+    }
+    return { cgst, sgst };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, gstRate]);
+
+  // ANA-05: branch-wise comparison (always across all branches the user may see, for the same period / channel).
+  const byBranch = useMemo(() => {
+    const base = filterBills(bills, { period, branch: "all", source: channel, custom }).filter(
+      (b) => salesClass === "all" || (salesClass === "gst") === isGstBill(b),
+    );
+    return BRANCH_KEYS.filter((k) => !lockedBranch || k === lockedBranch).map((k) => {
+      const list = base.filter((b) => b.branch === k);
+      return { branch: k, count: list.length, gross: list.reduce((n, b) => n + Math.max(0, b.total), 0), net: list.reduce((n, b) => n + billNet(b), 0) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bills, period, channel, custom, salesClass, lockedBranch, gstRate]);
+
+  // ANA-02: Excel export of everything on this view (respects period, branch, channel and tax filters).
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const periodLabel = period === "custom" ? `${custom.from || "start"} to ${custom.to || "today"}` : (PERIODS.find((p) => p.key === period)?.label ?? period);
+      const dedModes = new Map(ded.byMode);
+      await downloadXlsx(`analytics-${new Date().toISOString().slice(0, 10)}`, [
+        {
+          name: "Summary",
+          rows: [
+            ["Item", "Value"],
+            ["Period", periodLabel],
+            ["Branch", branch === "all" ? "All branches" : branchLabel(branch)],
+            ["Channel", channel === "all" ? "All channels" : channel],
+            ["Tax filter", salesClass],
+            ["Bills", m.count],
+            ["Gross sales (₹, incl. GST + delivery)", rupeesNum(m.grossSales)],
+            ["Net sales (₹, ex-GST, ex-delivery)", rupeesNum(m.totalRevenue)],
+            ["GST collected (₹)", rupeesNum(m.gstCollected)],
+            ["CGST (₹)", rupeesNum(taxSplit.cgst)],
+            ["SGST (₹)", rupeesNum(taxSplit.sgst)],
+            ["Delivery (₹)", rupeesNum(m.deliveryTotal)],
+            ["Linked expenses & vendor payments (₹)", rupeesNum(ded.total)],
+            ["Net sales after expenses (₹)", rupeesNum(netAfterDeductions)],
+            ["All expenses in period (₹)", rupeesNum(totalExpenses)],
+            ["Net profit (₹)", rupeesNum(netProfit)],
+          ],
+        },
+        {
+          name: "Payment modes",
+          rows: [["Mode", "Billed (₹)", "Deducted (₹)", "Net (₹)"], ...m.paymentModes.map(([mode, v]) => [mode, rupeesNum(v), rupeesNum(dedModes.get(mode) ?? 0), rupeesNum(v - (dedModes.get(mode) ?? 0))])],
+        },
+        {
+          name: "Branches",
+          rows: [["Branch", "Bills", "Gross sales (₹)", "Net sales (₹)"], ...byBranch.map((b) => [branchLabel(b.branch), b.count, rupeesNum(b.gross), rupeesNum(b.net)])],
+        },
+        {
+          name: "Bills",
+          rows: [
+            ["Date", "Bill", "Customer", "Phone", "Branch", "Channel", "Products", "Units", "Subtotal (₹)", "Discount (₹)", "GST (₹)", "Delivery (₹)", "Total (₹)", "Payment"],
+            ...scoped.map((b) => [
+              new Date(b.createdAt).toLocaleDateString("en-IN"), b.id, b.customerName || "", b.phone || "", branchLabel(b.branch), b.source,
+              b.items.map((i) => `${i.name} × ${i.qty}`).join("; "), b.items.reduce((n, i) => n + i.qty, 0),
+              rupeesNum(b.subtotal), rupeesNum(b.discount), rupeesNum(billGst(b)), rupeesNum(b.delivery || 0), rupeesNum(b.total), b.payment ?? "",
+            ]),
+          ],
+        },
+        {
+          name: "Top items",
+          rows: [["Item", "Units", "Net revenue (₹)"], ...m.topItems.map(([name, rev]) => [name, m.qtyByItem.get(name) ?? 0, rupeesNum(rev)])],
+        },
+        {
+          name: "Deductions",
+          rows: [["Date", "Type", "Detail", "Branch", "Mode", "Amount (₹)"], ...ded.list.map((d) => [String(d.date).slice(0, 10), d.kind === "expense" ? "Expense" : "Vendor bill", d.label, branchLabel(d.branch), d.mode, rupeesNum(d.amount)])],
+        },
+      ]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Couldn't create the Excel file");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // net profit = sales − GST collected − expenses = net-of-GST revenue − expenses
   const netProfit = m.totalRevenue - totalExpenses;
   const grossProfit = m.totalRevenue - cogs; // estimated (cost known where matched)
@@ -219,8 +364,15 @@ export default function AnalyticsPage() {
       <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink-900">Analytics</h1>
-          <p className="mt-1 text-sm text-ink-500">Real-time insights across in-store POS and online storefront orders</p>
+          <p className="mt-1 text-sm text-ink-500">Real-time insights across in-store POS and online storefront orders · cancelled bills are never counted</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {/* ANA-02: Export to Excel (respects the filters below) */}
+        {tab !== "today" && (
+          <button onClick={() => void exportExcel()} disabled={exporting} className="flex items-center gap-2 rounded-full border border-ink-200 bg-ivory-50 px-4 py-2 text-xs font-semibold text-ink-700 shadow-sm hover:border-gold-500 hover:text-gold-700 disabled:opacity-50">
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />} Export to Excel
+          </button>
+        )}
         {tab !== "today" && (
           <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
             <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
@@ -231,6 +383,7 @@ export default function AnalyticsPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {/* custom range */}
@@ -322,17 +475,24 @@ export default function AnalyticsPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Gross Sales" value={formatINR(m.grossSales)} hint="Billed total · incl. GST + delivery" accent="gold" />
             <Stat label="Net Sales" value={formatINR(m.totalRevenue)} hint="After discounts · ex-GST · ex-delivery" accent="green" />
-            <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint="Actual output tax" accent="gold" />
+            <Stat label="GST Collected" value={formatINR(m.gstCollected)} hint={`CGST ${formatINR(taxSplit.cgst)} · SGST ${formatINR(taxSplit.sgst)}`} accent="gold" />
             <Stat label="Avg Order Value" value={formatINR(m.aov)} hint="Net, per bill" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="In-store Net Sales" value={formatINR(m.offlineRev)} hint={`${m.offlineCount} POS bill${m.offlineCount === 1 ? "" : "s"}`} accent="gold" />
             <Stat label="Online Net Sales" value={formatINR(m.onlineRev)} hint={`${m.onlineCount} storefront order${m.onlineCount === 1 ? "" : "s"}`} accent="green" />
-            <Stat label="Service Net Sales" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"} · advances count when received`} />
+            <Stat label="Service Net Sales" value={formatINR(m.serviceRev)} hint={`${m.serviceCount} repair${m.serviceCount === 1 ? "" : "s"} · part-payments count when received`} />
             <Stat label="Completed Bills" value={String(m.count)} hint={`${m.items} items in view`} />
           </div>
+          {/* ANA-04: net view after linked expenses / vendor bills */}
+          {deductions && (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <Stat label="Net Sales after Expenses" value={`${netAfterDeductions < 0 ? "-" : ""}${formatINR(Math.abs(netAfterDeductions))}`} hint="Gross sales − linked expenses & vendor bills" accent="green" />
+              <Stat label="Linked Deductions" value={formatINR(ded.total)} hint={`${ded.list.length} entr${ded.list.length === 1 ? "y" : "ies"} · modes: ${deductions.modes.join(", ") || "none"}`} />
+            </div>
+          )}
           <p className="-mt-2 mb-5 rounded-xl border border-ink-100 bg-ivory-50 px-4 py-2.5 text-xs text-ink-500">
-            <b className="text-ink-700">How Net Sales is worked out:</b> billed total <b className="tabular-nums text-ink-900">{formatINR(m.grossSales)}</b> − delivery <b className="tabular-nums text-ink-900">{formatINR(m.deliveryTotal)}</b> − GST <b className="tabular-nums text-ink-900">{formatINR(m.gstCollected)}</b> = <b className="tabular-nums text-success">{formatINR(m.totalRevenue)}</b>. Discounts are already taken off, and an advance paid on a repair counts on the day it is received.
+            <b className="text-ink-700">How Net Sales is worked out:</b> billed total <b className="tabular-nums text-ink-900">{formatINR(m.grossSales)}</b> − delivery <b className="tabular-nums text-ink-900">{formatINR(m.deliveryTotal)}</b> − GST <b className="tabular-nums text-ink-900">{formatINR(m.gstCollected)}</b> = <b className="tabular-nums text-success">{formatINR(m.totalRevenue)}</b>. Discounts are already taken off, and a part-payment on a repair counts on the day it is received.
           </p>
 
           <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
@@ -366,6 +526,51 @@ export default function AnalyticsPage() {
 
             {/* order source + top items */}
             <div className="space-y-4">
+              {/* ANA-01: payment-mode breakdown */}
+              <Card>
+                <p className="mb-4 text-sm font-bold text-ink-900">Payment Mode Split <span className="font-normal text-ink-400">(billed)</span></p>
+                {m.paymentModes.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-ink-400">No sales in this view.</p>
+                ) : (
+                  (() => {
+                    const tot = m.paymentModes.reduce((n, [, v]) => n + v, 0) || 1;
+                    return m.paymentModes.map(([mode, val]) => (
+                      <div key={mode} className="mb-4 last:mb-0">
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="font-semibold uppercase tracking-wider text-ink-500">{mode}</span>
+                          <span className="font-bold tabular-nums text-ink-900">{formatINR(val)} · {Math.round((val / tot) * 100)}%</span>
+                        </div>
+                        {(ded.byMode.get(mode) ?? 0) > 0 && (
+                          <p className="mb-1 text-right text-[11px] tabular-nums text-ink-500">− {formatINR(ded.byMode.get(mode) ?? 0)} expenses = <b className="text-ink-800">{formatINR(val - (ded.byMode.get(mode) ?? 0))}</b></p>
+                        )}
+                        <div className="h-2 overflow-hidden rounded-full bg-ink-100">
+                          <div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: PAYMODE_COLOR[mode] ?? PAYMODE_COLOR.Other }} />
+                        </div>
+                      </div>
+                    ));
+                  })()
+                )}
+              </Card>
+              {/* ANA-05: branch-wise comparison */}
+              {byBranch.length > 1 && (
+                <Card>
+                  <p className="mb-4 text-sm font-bold text-ink-900">Branch Comparison <span className="font-normal text-ink-400">(net sales)</span></p>
+                  {(() => {
+                    const top = Math.max(1, ...byBranch.map((b) => b.net));
+                    return byBranch.map((b) => (
+                      <div key={b.branch} className="mb-4 last:mb-0">
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="font-semibold uppercase tracking-wider text-ink-500">{branchLabel(b.branch)} · {b.count}</span>
+                          <span className="font-bold tabular-nums text-ink-900">{formatINR(b.net)}</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-ink-100">
+                          <div className="h-full rounded-full bg-gold-500" style={{ width: `${(b.net / top) * 100}%` }} />
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </Card>
+              )}
               <Card>
                 <p className="mb-4 text-sm font-bold text-ink-900">Order Source</p>
                 {([["In-store", m.offlineRev, m.offlineCount, "#C9A24B"], ["Online", m.onlineRev, m.onlineCount, "#128C4B"], ["Service", m.serviceRev, m.serviceCount, "#8B5CF6"]] as const).map(([label, rev, cnt, color]) => (

@@ -1,0 +1,1 @@
+ALTER TABLE "delivery_settings" ADD COLUMN "low_stock_alerts" boolean DEFAULT true NOT NULL;

@@ -260,6 +260,20 @@
       "when": 1792689210613,
       "tag": "0036_repair_stock_taken",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794040397512,
+      "tag": "0037_low_stock_alerts",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794402699333,
+      "tag": "0038_expenses_payments_stock_log",
+      "breakpoints": true
     }
   ]
 }

@@ -15,14 +15,23 @@ import { cn } from "@/lib/utils";
 import { downloadCsv, stamp } from "@/lib/csv";
 import { isBranch, BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { AdminStat } from "@/components/admin/AdminStat";
+import { E } from "@/lib/whatsapp";
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+/** yyyy-mm-dd of a timestamp in local time (so an evening enquiry stays on its day). */
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(+d)) return iso.slice(0, 10);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function replyMessage(i: Inquiry) {
   return (
-    `Hi ${i.name.split(" ")[0]}, thanks for reaching out to *${BUSINESS.name}*! 🎶\n\n` +
+    `Hi ${i.name.split(" ")[0]}, thanks for reaching out to *${BUSINESS.name}*! ${E.notes}\n\n` +
     `Regarding your enquiry about ${i.productInterest || i.topic.toLowerCase()} — how can we help you further?`
   );
 }
@@ -48,6 +57,8 @@ export default function InquiriesPage() {
 
   const [statusF, setStatusF] = useState<InquiryStatus | "all">("all");
   const [query, setQuery] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const [showAdd, setShowAdd] = useState(false);
@@ -79,10 +90,14 @@ export default function InquiriesPage() {
     const q = query.trim().toLowerCase();
     return scopedInquiries
       .filter((i) => statusF === "all" || i.status === statusF)
+      .filter((i) => {
+        const day = localDay(i.createdAt);
+        return (!from || day >= from) && (!to || day <= to);
+      })
       .filter((i) => !q || i.name.toLowerCase().includes(q) || i.phone.includes(query.trim()) || i.topic.toLowerCase().includes(q) || (i.productInterest || "").toLowerCase().includes(q) || i.message.toLowerCase().includes(q))
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  }, [scopedInquiries, statusF, query]);
-  const pg = usePaged(rows, `${query}|${statusF}|${branch}`);
+  }, [scopedInquiries, statusF, query, from, to]);
+  const pg = usePaged(rows, `${query}|${statusF}|${branch}|${from}|${to}`);
 
   const contact = (i: Inquiry) => {
     if (i.status === "new") updateInquiry(i.id, { status: "contacted" });
@@ -232,6 +247,12 @@ export default function InquiriesPage() {
             {(["all", "new", "contacted", "resolved"] as const).map((s) => (
               <button key={s} onClick={() => setStatusF(s)} className={chip(statusF === s)}>{s === "all" ? "All Status" : INQUIRY_STATUS_META[s].label}</button>
             ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} aria-label="From date" className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+            <span className="text-xs text-ink-400">–</span>
+            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} aria-label="To date" className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+            {(from || to) && <button onClick={() => { setFrom(""); setTo(""); }} className="text-xs font-semibold text-gold-600 hover:underline">Clear</button>}
           </div>
         </div>
         <div className="relative">

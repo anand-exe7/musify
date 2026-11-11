@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Receipt, Tag, Search } from "lucide-react";
+import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Receipt, Tag, Search, Pencil, Settings2, BarChart3 } from "lucide-react";
+import { ExpenseCategoriesModal, useExpenseCategoryList } from "@/components/expenses/ExpenseCategoriesModal";
+import { ExpenseEditModal } from "@/components/expenses/ExpenseEditModal";
+import { PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
 import {
   useExpenses,
   EXPENSE_CATEGORIES,
@@ -48,7 +51,7 @@ const PAY_TONE: Record<PaymentMode, string> = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const blankForm = () => ({ title: "", amount: "" as number | "", category: "", date: today(), paymentMode: "CASH" as PaymentMode, notes: "", branch: "" });
+const blankForm = () => ({ title: "", amount: "" as number | "", category: "", date: today(), paymentMode: "CASH" as PaymentMode, notes: "", branch: "", inAnalytics: false });
 
 export default function ExpensesPage() {
   const expensesAll = useExpenses((s) => s.expenses);
@@ -56,6 +59,10 @@ export default function ExpensesPage() {
   const hydrate = useExpenses((s) => s.hydrate);
   const addExpense = useExpenses((s) => s.addExpense);
   const deleteExpense = useExpenses((s) => s.deleteExpense);
+  const updateExpense = useExpenses((s) => s.updateExpense);
+  const categoryList = useExpenseCategoryList();
+  const [catsOpen, setCatsOpen] = useState(false);
+  const [editing, setEditing] = useState<Expense | null>(null);
 
   const scopeSelected = useBranchScope((s) => s.selected);
   const canSwitchBranch = useBranchScope((s) => s.canSwitch);
@@ -150,11 +157,14 @@ export default function ExpensesPage() {
     return [...list].sort(cmp[sort]);
   }, [periodExpenses, search, catFilter, sort]);
 
+  // Filter list: every category; the add form only offers enabled ones (EXP-04).
   const categoryOptions = useMemo(() => {
     const set = new Set<string>(EXPENSE_CATEGORIES);
     for (const e of expensesAll) set.add(e.category);
+    for (const c of categoryList) set.add(c.name);
     return [...set].sort();
-  }, [expensesAll]);
+  }, [expensesAll, categoryList]);
+  const activeCategories = categoryList.filter((c) => c.active).map((c) => c.name);
 
   // Which branch a new expense is booked to: the one picked in the form, else the branch being viewed. Admins may
   // pick any branch; branch staff only their own.
@@ -176,6 +186,7 @@ export default function ExpensesPage() {
       expenseDate: form.date || today(),
       createdAt: new Date().toISOString(),
       branch: formBranch,
+      inAnalytics: form.inAnalytics,
     };
     const okSave = await addExpense(expense);
     if (!okSave) return notify("Couldn't save the expense.");
@@ -189,6 +200,8 @@ export default function ExpensesPage() {
   return (
     <div className="p-5 md:p-8">
       <LoadErrorBanner message={loadError} onRetry={() => void useExpenses.getState().hydrate()} />
+      {catsOpen && <ExpenseCategoriesModal onClose={() => setCatsOpen(false)} />}
+      {editing && <ExpenseEditModal expense={editing} onClose={() => setEditing(null)} />}
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">{toast}</div>
       )}
@@ -198,6 +211,12 @@ export default function ExpensesPage() {
           <h1 className="text-2xl font-bold text-ink-900">Expense Tracker</h1>
           <p className="mt-1 text-sm text-ink-500">Outgoings &amp; true net profit{scopeSelected !== "all" ? ` · ${branchLabel(scopeSelected)}` : ""}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {fullAdmin && (
+          <button onClick={() => setCatsOpen(true)} className="flex items-center gap-2 rounded-full border border-ink-200 bg-ivory-50 px-4 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
+            <Settings2 className="h-3.5 w-3.5" /> Categories &amp; analytics
+          </button>
+        )}
         {/* Period filter */}
         <div className="flex flex-wrap items-center gap-1.5 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           {PERIODS.map((p) => (
@@ -205,6 +224,7 @@ export default function ExpensesPage() {
               {p.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -267,15 +287,20 @@ export default function ExpensesPage() {
               <div>
                 <label className={label}>Category</label>
                 <input list="expense-cats" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Pick or type a custom one" className={field} />
-                <datalist id="expense-cats">{categoryOptions.map((c) => <option key={c} value={c} />)}</datalist>
+                <datalist id="expense-cats">{activeCategories.map((c) => <option key={c} value={c} />)}</datalist>
               </div>
               <div>
                 <label className={label}>Paid via</label>
                 <select value={form.paymentMode} onChange={(e) => setForm({ ...form, paymentMode: e.target.value as PaymentMode })} className={field}>
-                  {PAYMENT_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {PAYMENT_MODES.map((m) => <option key={m} value={m}>{PAY_MODE_LABEL[m] ?? m}</option>)}
                 </select>
               </div>
               <div><label className={label}>Notes (optional)</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Supplier, bill no…" className={field} /></div>
+              {/* EXP-01: link to analytics */}
+              <label className="flex items-start gap-2 rounded-lg bg-white px-3 py-2.5 text-sm text-ink-800 ring-1 ring-ink-100">
+                <input type="checkbox" checked={form.inAnalytics} onChange={(e) => setForm({ ...form, inAnalytics: e.target.checked })} className="mt-0.5 h-4 w-4 accent-ink-900" />
+                <span>Subtract in analytics<span className="block text-[11px] text-ink-400">Shows on Analytics as a deduction from sales (net view).</span></span>
+              </label>
               <button onClick={submit} className="w-full rounded-xl bg-ink-900 py-3 text-sm font-semibold text-ivory-50 transition-colors hover:bg-ink-800">Add Expense</button>
             </div>
           </section>
@@ -317,11 +342,11 @@ export default function ExpensesPage() {
             </select>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-                  <th className="px-4 py-3">Date</th><th>Title</th><th>Category</th><th>Paid</th><th className="pr-4 text-right">Amount</th><th className="pr-4"></th>
+                  <th className="px-4 py-3">Date</th><th>Title</th><th>Category</th><th>Paid</th><th title="Subtracted in analytics">Analytics</th><th className="pr-4 text-right">Amount</th><th className="pr-4"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-50">
@@ -330,20 +355,30 @@ export default function ExpensesPage() {
                     <td className="px-4 py-3 text-xs text-ink-500 tabular-nums">{e.expenseDate}</td>
                     <td><p className="font-medium text-ink-900">{e.title}</p><p className="text-[11px] text-ink-400">{branchLabel(e.branch)}{e.notes ? ` · ${e.notes}` : ""}</p></td>
                     <td><span className="inline-block rounded bg-ink-900/5 px-2 py-0.5 text-[11px] font-medium text-ink-600">{e.category}</span></td>
-                    <td><span className={cn("inline-block rounded px-2 py-0.5 text-[10px] font-bold", PAY_TONE[e.paymentMode] ?? PAY_TONE.OTHER)}>{e.paymentMode}</span></td>
+                    <td><span className={cn("inline-block rounded px-2 py-0.5 text-[10px] font-bold", PAY_TONE[e.paymentMode] ?? PAY_TONE.OTHER)}>{PAY_MODE_LABEL[e.paymentMode] ?? e.paymentMode}</span></td>
+                    <td>
+                      <button
+                        onClick={() => void updateExpense(e.id, { inAnalytics: !e.inAnalytics })}
+                        title={e.inAnalytics ? "Subtracted in analytics — click to stop" : "Not in analytics — click to subtract it"}
+                        className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase", e.inAnalytics ? "bg-ink-900 text-ivory-50" : "bg-ink-100 text-ink-400")}
+                      >
+                        <BarChart3 className="h-3 w-3" /> {e.inAnalytics ? "Linked" : "Off"}
+                      </button>
+                    </td>
                     <td className="pr-4 text-right font-semibold tabular-nums text-danger">− {formatINR(e.amount)}</td>
-                    <td className="pr-4 text-right">
+                    <td className="whitespace-nowrap pr-4 text-right">
+                      <button onClick={() => setEditing(e)} aria-label="Edit expense" className="inline-grid h-8 w-8 place-items-center rounded-lg text-ink-500 hover:bg-ink-900/5"><Pencil className="h-4 w-4" /></button>
                       <button
                         onClick={() => { if (confirm(`Delete "${e.title}" (${formatINR(e.amount)})?`)) void deleteExpense(e.id); }}
                         aria-label="Delete expense"
-                        className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10"
+                        className="inline-grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger/10"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
                   </tr>
                 ))}
-                {ledger.length === 0 && <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-ink-400">No expenses in this period.</td></tr>}
+                {ledger.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-ink-400">No expenses in this period.</td></tr>}
               </tbody>
             </table>
           </div>

@@ -9,17 +9,23 @@ import {
   Plus,
   Minus,
   Trash2,
-  MessageCircle,
   Search,
   X,
   Eye,
   Loader2,
+  Receipt,
+  CheckCircle2,
 } from "lucide-react";
+import { isValidGstin } from "@/lib/gst/gstin";
+import { gstSummary, taxLabel } from "@/lib/print/doc";
+import { BillOutputPanel } from "@/components/print/BillOutputPanel";
+import type { Invoice } from "@/types";
+import { useCategories } from "@/lib/client/catalog";
 import { motion, AnimatePresence } from "framer-motion";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { usePOS, useInventory, productStockAt, variantStockAt, genInvoiceId, billTax, type Bill, type BillItem, type Source, type Branch } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
-import { BUSINESS, waLink } from "@/lib/data/business";
+import { BUSINESS } from "@/lib/data/business";
 import { formatINR, toPaise, cn } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
@@ -27,6 +33,7 @@ import { BRANCH_KEYS, isBranch, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
 import { useAuth } from "@/lib/store/auth";
 import { normalizePhone } from "@/lib/customers/phone";
+import { E, waUrl } from "@/lib/whatsapp";
 
 interface Row {
   id: string;
@@ -82,7 +89,7 @@ export default function BillingPage() {
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [customerGstin, setCustomerGstin] = useState("");
-  // Result of pressing Lookup next to the mobile number (one request per press, never while typing).
+  // BIL-04: result of the customer lookup — runs by itself once a full 10-digit number is typed (or on Enter / the eye button).
   const [lookup, setLookup] = useState<
     | { kind: "idle" } | { kind: "loading" } | { kind: "new" } | { kind: "error"; message: string }
     | { kind: "found"; bills: number; last: string | null }
@@ -90,6 +97,9 @@ export default function BillingPage() {
   const [rows, setRows] = useState<Row[]>([{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
+  // Category chip picked in the catalog ("all" = every category).
+  const [catalogCat, setCatalogCat] = useState<string>("all");
+  const { categories: shopCategories } = useCategories();
   // Product whose variant list is expanded in the catalog (multi-variant products only).
   const [pickFor, setPickFor] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState("");
@@ -98,6 +108,10 @@ export default function BillingPage() {
   const [delivery, setDelivery] = useState(0);
   const [payBox, setPayBox] = useState<PayBox>(freshPayBox);
   const [toast, setToast] = useState<string | null>(null);
+  // BIL-05/06/07: the bill just generated, waiting for the output choice (print thermal / A4, WhatsApp, PDF).
+  const [saved, setSaved] = useState<{ id: string; total: number; phone: string; message: string; saving: boolean; invoice: Invoice | null } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const gstinBad = customerGstin.trim() !== "" && !isValidGstin(customerGstin);
 
   const activeRows = rows.filter((r) => r.name.trim() && r.price > 0);
   const lineDiscount = (r: Row) => Math.min(r.price * r.qty, r.discount || 0);
@@ -134,6 +148,8 @@ export default function BillingPage() {
   // so the GST recorded is the GST actually contained in what is charged.
   const billDiscount = Math.min(netSubtotal, couponDiscount + manualDiscount);
   const tax = billTax(billItems, true, billDiscount);
+  // BIL-01: GST rate labels for the summary (CGST @ 9% …).
+  const taxSplit = gstSummary(billItems.map((i) => ({ gst: i.gstRate ?? 0, amount: i.price * i.qty - (i.discount || 0) })), tax.cgst, tax.sgst, 0);
   const totalDiscount = itemDiscounts + billDiscount;
   const grand = Math.max(0, subtotal - totalDiscount) + (Number(delivery) || 0);
   const couponProblem = couponCheck && !couponCheck.ok ? couponCheck.reason : null;
@@ -184,6 +200,20 @@ export default function BillingPage() {
     });
   };
 
+  /** Units of one catalogue product + variant already on the bill. */
+  const catalogQty = (productId: string, variantIndex: number) =>
+    rows.reduce((n, r) => n + (r.productId === productId && (r.variantIndex ?? 0) === variantIndex ? r.qty : 0), 0);
+  /** − / + from the catalog stepper. Going below 1 takes the line off the bill. */
+  const changeCatalogQty = (productId: string, variantIndex: number, delta: number) =>
+    setRows((rs) => {
+      const idx = rs.findIndex((r) => r.productId === productId && (r.variantIndex ?? 0) === variantIndex);
+      if (idx < 0) return rs;
+      const qty = rs[idx].qty + delta;
+      if (qty >= 1) return rs.map((r, i) => (i === idx ? { ...r, qty } : r));
+      const rest = rs.filter((_, i) => i !== idx);
+      return rest.length > 0 ? rest : [{ id: crypto.randomUUID(), name: "", price: 0, qty: 1, gstRate: 18 }];
+    });
+
   /** Ask the server whether this mobile number belongs to a returning customer, and fill in their name (and GST number if blank). */
   const lookupCustomer = async () => {
     if (!normalizePhone(phone)) {
@@ -219,7 +249,7 @@ export default function BillingPage() {
       return null;
     }
     const gstin = customerGstin.trim();
-    if (gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin)) {
+    if (gstin && !isValidGstin(gstin)) {
       setToast("GST number must be a valid 15-character GSTIN, or leave it blank.");
       setTimeout(() => setToast(null), 3000);
       return null;
@@ -260,12 +290,7 @@ export default function BillingPage() {
     };
   };
 
-  const saveOnly = () => {
-    const bill = buildBill();
-    if (!bill) return;
-    addBill(bill);
-    setToast(`Saved ${bill.id} · ${formatINR(bill.total)}`);
-    setTimeout(() => setToast(null), 3000);
+  const resetForm = () => {
     clearOrder();
     setCustomerName("");
     setPhone("");
@@ -273,46 +298,93 @@ export default function BillingPage() {
     setLookup({ kind: "idle" });
   };
 
-  const sendWhatsApp = () => {
-    const bill = buildBill();
-    if (!bill) return;
-    if (!phone.trim()) {
-      setToast("Enter a mobile number to send via WhatsApp.");
-      setTimeout(() => setToast(null), 2500);
-      return;
-    }
-    addBill(bill);
-    // Public, shareable invoice the customer can open from the WhatsApp link
-    // (resolves via /invoice/[id] → getBill, no admin sign-in needed).
-    const link = `${window.location.origin}/invoice/${bill.id}`;
-    const lines = bill.items.map((i) => `• ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty - (i.discount || 0))}${i.discount ? ` (after -${formatINR(i.discount)} disc.)` : ""}`).join("\n");
+  /** The WhatsApp message for a bill: items, GST split-up (with rates) and the public invoice link. */
+  const billMessage = (bill: Bill, link: string) => {
+    const lines = bill.items
+      .map((i) => `${E.note} ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty - (i.discount || 0))}${i.discount ? ` _(after ${formatINR(i.discount)} off)_` : ""}`)
+      .join("\n");
+    const split = gstSummary(bill.items.map((i) => ({ gst: i.gstRate ?? 0, amount: i.price * i.qty - (i.discount || 0) })), bill.cgst ?? 0, bill.sgst ?? 0, 0);
     const gstLines =
       bill.gstEnabled && (bill.gst ?? 0) > 0
-        ? `Taxable: ${formatINR(bill.taxable ?? 0)}\n` +
-          `CGST: ${formatINR(bill.cgst ?? 0)}\n` +
-          `SGST: ${formatINR(bill.sgst ?? 0)}\n` +
-          `(GST incl. ${formatINR(bill.gst ?? 0)})\n`
+        ? `${E.chart} Taxable value: ${formatINR(bill.taxable ?? 0)}\n` +
+          `${E.tag} ${taxLabel("CGST", split)}: ${formatINR(bill.cgst ?? 0)}\n` +
+          `${E.tag} ${taxLabel("SGST", split)}: ${formatINR(bill.sgst ?? 0)}\n` +
+          `${E.tag} Total GST (incl.): ${formatINR(bill.gst ?? 0)}\n`
         : "";
-    const msg =
-      `*${BUSINESS.name}*\nInvoice ${bill.id}\n\n${lines}\n\n` +
-      `Subtotal: ${formatINR(bill.subtotal)}\n` +
-      `Discount: -${formatINR(bill.discount)}\n` +
-      `Delivery: ${formatINR(bill.delivery)}\n` +
+    const name = bill.customerName && bill.customerName !== "Walk-in" ? ` ${bill.customerName}` : "";
+    return (
+      `${E.notes} *${BUSINESS.name}* ${E.notes}\n` +
+      `Hi${name}! ${E.wave} Thank you for shopping with us.\n\n` +
+      `${E.receipt} *Invoice:* ${bill.id}\n` +
+      `${E.calendar} *Date:* ${new Date(bill.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}\n` +
+      `${E.pin} *Branch:* ${branchLabel(bill.branch)}\n\n` +
+      `${E.cart} *Your items*\n${lines}\n\n` +
+      `${E.dollar} Subtotal: ${formatINR(bill.subtotal)}\n` +
+      (bill.discount > 0 ? `${E.gift} Discount: -${formatINR(bill.discount)}\n` : "") +
+      (bill.delivery > 0 ? `${E.truck} Delivery: ${formatINR(bill.delivery)}\n` : "") +
       gstLines +
-      `*Grand Total: ${formatINR(bill.total)}*\n\n` +
-      `📄 View your invoice:\n${link}\n\nThank you!`;
-    window.open(waLink(phone, msg), "_blank", "noopener,noreferrer");
-    setToast(`Bill saved · WhatsApp opened for ${phone}`);
-    setTimeout(() => setToast(null), 3000);
-    clearOrder();
-    setCustomerName("");
-    setPhone("");
-    setCustomerGstin("");
+      `\n${E.money} *Grand Total: ${formatINR(bill.total)}*\n` +
+      (bill.status === "completed" ? `${E.check} Paid${bill.payment ? ` (${bill.payment})` : ""}\n` : `${E.hourglass} Balance pending\n`) +
+      `\n${E.doc} View / download your invoice:\n${link}\n\n` +
+      `${E.pray} Thank you! Visit again ${E.guitar}${E.keyboard}${E.drum}`
+    );
   };
+
+  /** BIL-05: generate the bill, then ask how to hand it over — Print (thermal / A4), WhatsApp or PDF. */
+  const generateBill = async () => {
+    const bill = buildBill();
+    if (!bill) return;
+    // Open the "Bill generated" box straight away; the save finishes behind it (the print buttons wait for it,
+    // WhatsApp doesn't need to). The form is cleared only once the save has gone through.
+    const link = `${window.location.origin}/invoice/${bill.id}`;
+    setSaved({ id: bill.id, total: bill.total, phone: phone.trim(), message: billMessage(bill, link), saving: true, invoice: null });
+    setSaving(true);
+    const r = await addBill(bill);
+    setSaving(false);
+    if (!r.ok) {
+      setSaved(null); // the store already said why; the form still has everything entered
+      return;
+    }
+    setSaved((cur) => (cur && cur.id === bill.id ? { ...cur, saving: false, invoice: r.invoice } : cur));
+    resetForm();
+  };
+
+  const sendSavedWhatsApp = () => {
+    if (!saved) return;
+    if (!saved.phone) {
+      setToast("No mobile number on this bill — opening WhatsApp without a recipient.");
+      setTimeout(() => setToast(null), 3000);
+    }
+    const url = waUrl(saved.phone, saved.message);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  // BIL-04: look the customer up as soon as a full mobile number is typed (name + GST number fill in).
+  useEffect(() => {
+    if (lookup.kind !== "idle" || !normalizePhone(phone)) return;
+    const t = setTimeout(() => void lookupCustomer(), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, lookup.kind]);
+
+  // Categories that actually have products to sell, with a readable name and a count — only shown when there is
+  // more than one, so a single-category catalog stays as before.
+  const catalogCategories = useMemo(() => {
+    const nameOf = new Map(shopCategories.map((c) => [String(c.id), c.name]));
+    const counts = new Map<string, number>();
+    for (const p of invProducts) if (p.active && p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    return [...counts.entries()]
+      .map(([id, count]) => ({ id, count, name: nameOf.get(id) ?? id.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [invProducts, shopCategories]);
+  const activeCat = catalogCategories.some((c) => c.id === catalogCat) ? catalogCat : "all";
 
   const catalogItems = invProducts
     .filter((p) => p.active)
-    .filter((p) => p.name.toLowerCase().includes(catalogQuery.toLowerCase()));
+    .filter((p) => activeCat === "all" || p.category === activeCat)
+    .filter((p) => `${p.brand ?? ""} ${p.name}`.toLowerCase().includes(catalogQuery.toLowerCase()))
+    // Grouped by category, then A–Z, so related products sit together.
+    .sort((a, b) => (a.category ?? "").localeCompare(b.category ?? "") || a.name.localeCompare(b.name));
 
   // Compact input used inside the order-items table cells.
   const cell =
@@ -328,6 +400,23 @@ export default function BillingPage() {
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-ivory-50 shadow-lg">
           {toast}
+        </div>
+      )}
+
+      {/* BIL-05/06/07: output choice after the bill is generated */}
+      {saved && (
+        <div className="fixed inset-0 z-[60] flex justify-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Bill saved">
+          <div className="my-auto w-full max-w-md rounded-3xl bg-ivory-50 p-6 shadow-2xl ring-1 ring-ink-900/5">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-success/15 text-success">{saved.saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}</div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-lg font-bold text-ink-900">{saved.saving ? "Saving bill…" : "Bill generated"}</h3>
+                <p className="text-sm text-ink-500">{saved.id} · {formatINR(saved.total)}</p>
+              </div>
+              {!saved.saving && <button onClick={() => setSaved(null)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>}
+            </div>
+            <BillOutputPanel billId={saved.id} saving={saved.saving} invoice={saved.invoice} onWhatsApp={sendSavedWhatsApp} onNewBill={() => setSaved(null)} />
+          </div>
         </div>
       )}
 
@@ -357,7 +446,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
         {/* ── LEFT ── (min-w-0 lets the wide items table scroll inside its card instead of pushing the summary off-screen) */}
         <div className="min-w-0 space-y-6">
           {/* Customer */}
@@ -366,20 +455,29 @@ export default function BillingPage() {
               <UserIcon className="h-4 w-4 text-gold-600" />
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">Customer Details</h2>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid items-start gap-4 md:grid-cols-3">
               <div>
-                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Customer Name</label>
+                <label className="mb-1.5 block truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Customer Name</label>
                 <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Enter name" className={fieldCls} />
               </div>
               <div>
-                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Mobile Number (WhatsApp)</label>
+                <label className="mb-1.5 block truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">Mobile (WhatsApp)</label>
                 <div className="relative">
                   <input
                     value={phone}
-                    onChange={(e) => { setPhone(e.target.value); if (lookup.kind !== "idle") setLookup({ kind: "idle" }); }}
+                    onChange={(e) => {
+                      // Digits only, at most 10. A pasted "+91 98765 43210" or "098765 43210" keeps just the 10-digit number.
+                      let d = e.target.value.replace(/\D/g, "");
+                      if (d.length > 10 && d.startsWith("91")) d = d.slice(2);
+                      if (d.length > 10 && d.startsWith("0")) d = d.slice(1);
+                      setPhone(d.slice(0, 10));
+                      if (lookup.kind !== "idle") setLookup({ kind: "idle" });
+                    }}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookupCustomer(); } }}
                     placeholder="Enter 10-digit number"
                     inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    autoComplete="tel-national"
                     className={fieldCls + " pr-11"}
                   />
                   <button
@@ -394,16 +492,17 @@ export default function BillingPage() {
                   </button>
                 </div>
                 {lookup.kind === "found" && (
-                  <p className="mt-1.5 text-xs font-medium text-success">
-                    Returning customer · {lookup.bills} earlier bill{lookup.bills === 1 ? "" : "s"}{lookup.last ? ` · last on ${new Date(lookup.last).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+                  <p className="mt-1.5 truncate text-[11px] font-medium text-success" title={lookup.last ? `Last on ${new Date(lookup.last).toLocaleDateString("en-IN")}` : undefined}>
+                    ✓ Returning customer · {lookup.bills} bill{lookup.bills === 1 ? "" : "s"}{lookup.last ? ` · last ${new Date(lookup.last).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}` : ""}
                   </p>
                 )}
-                {lookup.kind === "new" && <p className="mt-1.5 text-xs text-ink-500">New customer — no earlier bills on this number.</p>}
-                {lookup.kind === "error" && <p className="mt-1.5 text-xs text-danger">{lookup.message}</p>}
+                {lookup.kind === "new" && <p className="mt-1.5 truncate text-[11px] text-ink-500">New customer</p>}
+                {lookup.kind === "error" && <p className="mt-1.5 truncate text-[11px] text-danger">{lookup.message}</p>}
               </div>
               <div>
-                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">GST Number (optional)</label>
-                <input value={customerGstin} onChange={(e) => setCustomerGstin(e.target.value.toUpperCase())} maxLength={15} placeholder="33XXXXX0000X1ZV" className={fieldCls + " font-mono tracking-wide"} />
+                <label className="mb-1.5 block truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500">GST No. (optional)</label>
+                <input value={customerGstin} onChange={(e) => setCustomerGstin(e.target.value.toUpperCase())} maxLength={15} placeholder="33XXXXX0000X1ZV" aria-invalid={gstinBad} className={cn(fieldCls, "font-mono tracking-wide", gstinBad && "border-danger focus:border-danger")} />
+                {gstinBad && <p className="mt-1.5 truncate text-[11px] text-danger">Enter a valid 15-character GSTIN</p>}
               </div>
             </div>
           </section>
@@ -455,7 +554,7 @@ export default function BillingPage() {
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6 md:pl-10">
+                    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 sm:pl-10">
                       <div>
                         <label className={lbl}>HSN</label>
                         <input
@@ -665,8 +764,8 @@ export default function BillingPage() {
                     <span className="tabular-nums font-medium text-ink-900">{formatINR(tax.gst)}</span>
                   </div>
                   <div className="flex items-center justify-between text-ink-500"><span>Taxable value</span><span className="tabular-nums">{formatINR(tax.taxable)}</span></div>
-                  <div className="flex items-center justify-between text-ink-500"><span>CGST</span><span className="tabular-nums">{formatINR(tax.cgst)}</span></div>
-                  <div className="flex items-center justify-between text-ink-500"><span>SGST</span><span className="tabular-nums">{formatINR(tax.sgst)}</span></div>
+                  <div className="flex items-center justify-between text-ink-500"><span>{taxLabel("CGST", taxSplit)}</span><span className="tabular-nums">{formatINR(tax.cgst)}</span></div>
+                  <div className="flex items-center justify-between text-ink-500"><span>{taxLabel("SGST", taxSplit)}</span><span className="tabular-nums">{formatINR(tax.sgst)}</span></div>
                 </div>
               )}
             </div>
@@ -679,13 +778,11 @@ export default function BillingPage() {
             {/* payment */}
             {source === "offline" && <PaymentBox className="mt-4" total={grand} value={payBox} onChange={setPayBox} />}
 
-            {/* actions */}
-            <button onClick={sendWhatsApp} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#128C4B] py-3.5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-[#0f7a41]">
-              <MessageCircle className="h-4 w-4" /> Send Bill via WhatsApp
+            {/* actions — BIL-05: generate first, then choose Print (thermal / A4), WhatsApp or PDF */}
+            <button onClick={() => void generateBill()} disabled={saving} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-ink-900 py-3.5 text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />} {saving ? "Saving…" : "Generate Bill"}
             </button>
-            <button onClick={saveOnly} className="mt-2 w-full rounded-xl border border-ink-200 py-3.5 text-xs font-bold uppercase tracking-wider text-ink-700 transition-colors hover:border-gold-500 hover:text-gold-600">
-              Save Bill Only
-            </button>
+            <p className="mt-2 text-center text-[11px] text-ink-400">You&apos;ll choose Print, WhatsApp or PDF next.</p>
           </div>
         </aside>
       </div>
@@ -706,7 +803,7 @@ export default function BillingPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 60, scale: 0.98 }}
               transition={{ type: "spring", stiffness: 280, damping: 28 }}
-              className="flex max-h-[88vh] w-full flex-col overflow-hidden rounded-t-3xl bg-ivory-50 shadow-2xl sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl"
+              className="flex max-h-[88vh] w-full flex-col overflow-hidden rounded-t-3xl bg-ivory-50 shadow-2xl sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
               role="dialog"
               aria-modal="true"
               aria-label="Product catalog"
@@ -748,6 +845,26 @@ export default function BillingPage() {
                     </button>
                   )}
                 </div>
+                {/* Category-wise picking — only when the catalog has more than one category */}
+                {catalogCategories.length > 1 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Filter by category">
+                    {[{ id: "all", name: "All", count: invProducts.filter((p) => p.active).length }, ...catalogCategories].map((c) => (
+                      <button
+                        key={c.id}
+                        role="tab"
+                        aria-selected={activeCat === c.id}
+                        onClick={() => { setCatalogCat(c.id); setPickFor(null); }}
+                        className={cn(
+                          "flex items-center gap-1.5 whitespace-nowrap rounded-full py-1 pl-3 pr-1.5 text-xs font-semibold ring-1 transition-colors",
+                          activeCat === c.id ? "bg-ink-900 text-ivory-50 ring-ink-900" : "bg-white text-ink-600 ring-ink-200 hover:text-ink-900 hover:ring-gold-400",
+                        )}
+                      >
+                        {c.name}
+                        <span className={cn("grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10px] tabular-nums", activeCat === c.id ? "bg-ivory-50/20" : "bg-ink-100 text-ink-500")}>{c.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Products grid */}
@@ -758,60 +875,101 @@ export default function BillingPage() {
                   const multi = enabled.length > 1;
                   const stock = productStockAt(p, branch);
                   const out = stock <= 0;
+                  const single = enabled[0];
+                  const singleQty = !multi && single ? catalogQty(p.id, single.vi) : 0;
+                  const addSingle = () => single && addFromCatalog(p.name, p.basePrice, p.gstRate ?? null, p.hsn, p.id, single.vi, p.mrp);
+                  const open = multi && pickFor === p.id;
                   return (
                     <Fragment key={p.id}>
-                    <button
-                      onClick={() => (multi ? setPickFor(pickFor === p.id ? null : p.id) : addFromCatalog(p.name, p.basePrice, p.gstRate ?? null, p.hsn, p.id, enabled[0]?.vi ?? 0, p.mrp))}
-                      disabled={out}
+                    <div
                       className={cn(
                         "group relative flex items-center gap-3 rounded-xl border p-2.5 text-left transition-all",
-                        inOrder > 0
-                          ? "border-gold-400 bg-gold-50/60"
-                          : "border-ink-100 bg-white hover:border-gold-400 hover:shadow-sm",
-                        out && "cursor-not-allowed opacity-50 hover:border-ink-100 hover:shadow-none",
+                        inOrder > 0 ? "border-gold-400 bg-gold-50/60" : "border-ink-100 bg-white hover:border-gold-400 hover:shadow-sm",
+                        open && "border-gold-400",
+                        out && inOrder === 0 && "opacity-50 hover:border-ink-100 hover:shadow-none",
                       )}
                     >
-                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-100">
-                        {(p.photo || p.variants.find((v) => !v.disabled && v.photo)?.photo || p.variants.find((v) => v.photo)?.photo || undefined) && <img src={p.photo || p.variants.find((v) => !v.disabled && v.photo)?.photo || p.variants.find((v) => v.photo)?.photo || undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
-                        {inOrder > 0 && (
-                          <span className="absolute -right-1 -top-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-ink-900 shadow">
-                            {inOrder}
-                          </span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
-                        <p className="text-xs font-medium tabular-nums text-ink-700">{formatINR(p.basePrice)}{multi && <span className="ml-1 text-ink-400">· {enabled.length} variants</span>}</p>
-                        <p className={cn("text-[11px]", out ? "text-danger" : "text-ink-400")}>
-                          {out ? "Out of stock" : `${stock} in stock · ${branchLabel(branch)}`}
-                        </p>
-                      </div>
-                      {!out && (
-                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink-900 text-ivory-50 transition-colors group-hover:bg-gold-500 group-hover:text-ink-900">
+                      <button
+                        type="button"
+                        onClick={() => (multi ? setPickFor(open ? null : p.id) : singleQty === 0 && addSingle())}
+                        disabled={out && !multi}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-not-allowed"
+                      >
+                        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-100">
+                          {p.photo && <img src={p.photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
+                          {inOrder > 0 && (
+                            <span className="absolute -right-1 -top-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-ink-900 shadow">
+                              {inOrder}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-ink-900">{p.name}</p>
+                          <p className="text-xs font-medium tabular-nums text-ink-700">{formatINR(p.basePrice)}{multi && <span className="ml-1 text-ink-400">· {enabled.length} variants</span>}</p>
+                          <p className={cn("text-[11px]", out ? "text-danger" : "text-ink-400")}>
+                            {out ? "Out of stock" : `${stock} in stock · ${branchLabel(branch)}`}
+                          </p>
+                        </div>
+                      </button>
+                      {/* No variants: once added, + becomes a − qty + stepper. With variants: + opens the variant list. */}
+                      {!multi && singleQty > 0 ? (
+                        <QtyStepper
+                          qty={singleQty}
+                          max={single ? variantStockAt(single.v, branch) : 0}
+                          onDec={() => single && changeCatalogQty(p.id, single.vi, -1)}
+                          onInc={() => single && changeCatalogQty(p.id, single.vi, 1)}
+                        />
+                      ) : multi ? (
+                        <button
+                          type="button"
+                          onClick={() => setPickFor(open ? null : p.id)}
+                          aria-label={open ? "Hide variants" : "Choose a variant"}
+                          className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors", open ? "bg-gold-500 text-ink-900" : "bg-ink-900 text-ivory-50 hover:bg-gold-500 hover:text-ink-900")}
+                        >
+                          <Plus className={cn("h-4 w-4 transition-transform", open && "rotate-45")} />
+                        </button>
+                      ) : !out ? (
+                        <button type="button" onClick={addSingle} aria-label={`Add ${p.name}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ink-900 text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900">
                           <Plus className="h-4 w-4" />
-                        </span>
-                      )}
-                    </button>
-                    {multi && pickFor === p.id && (
+                        </button>
+                      ) : null}
+                    </div>
+                    {open && (
                       <div className="col-span-full space-y-1.5 rounded-xl border border-gold-300 bg-gold-50/40 p-2.5">
                         <p className="px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">Choose a variant of {p.name} · {branchLabel(branch)}</p>
                         {enabled.map(({ v, vi }) => {
                           const vStock = variantStockAt(v, branch);
                           const vName = `${p.name} — ${v.attr}${v.finish ? ` · ${v.finish}` : ""}`;
                           const vPrice = v.price > 0 ? v.price : p.basePrice;
+                          const vQty = catalogQty(p.id, vi);
                           return (
-                            <button
+                            <div
                               key={vi}
-                              disabled={vStock <= 0}
-                              onClick={() => { addFromCatalog(vName, vPrice, p.gstRate ?? null, p.hsn, p.id, vi, p.mrp); setPickFor(null); }}
-                              className="flex w-full items-center justify-between gap-3 rounded-lg border border-ink-100 bg-white px-3 py-2 text-left text-sm transition-colors hover:border-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+                              className={cn(
+                                "flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-sm transition-colors",
+                                vQty > 0 ? "border-gold-400 bg-gold-50/60" : "border-ink-100",
+                                vStock <= 0 && vQty === 0 && "opacity-50",
+                              )}
                             >
-                              <span className="font-medium text-ink-900">{v.attr}{v.finish ? ` · ${v.finish}` : ""}</span>
-                              <span className="flex items-center gap-3 text-xs tabular-nums">
+                              <span className="min-w-0 truncate font-medium text-ink-900">{v.attr}{v.finish ? ` · ${v.finish}` : ""}</span>
+                              <span className="flex shrink-0 items-center gap-3 text-xs tabular-nums">
                                 <span className="text-ink-700">{formatINR(vPrice)}</span>
-                                <span className={vStock <= 0 ? "text-danger" : "text-ink-400"}>{vStock <= 0 ? "Out of stock" : `${vStock} in stock`}</span>
+                                <span className={cn("hidden sm:inline", vStock <= 0 ? "text-danger" : "text-ink-400")}>{vStock <= 0 ? "Out of stock" : `${vStock} in stock`}</span>
+                                {vQty > 0 ? (
+                                  <QtyStepper qty={vQty} max={vStock} onDec={() => changeCatalogQty(p.id, vi, -1)} onInc={() => changeCatalogQty(p.id, vi, 1)} small />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={vStock <= 0}
+                                    onClick={() => addFromCatalog(vName, vPrice, p.gstRate ?? null, p.hsn, p.id, vi, p.mrp)}
+                                    aria-label={`Add ${vName}`}
+                                    className="grid h-7 w-7 place-items-center rounded-lg bg-ink-900 text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                               </span>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -820,7 +978,10 @@ export default function BillingPage() {
                   );
                 })}
                 {catalogItems.length === 0 && (
-                  <p className="col-span-full py-12 text-center text-sm text-ink-400">No products found.</p>
+                  <p className="col-span-full py-12 text-center text-sm text-ink-400">
+                    No products found{activeCat !== "all" ? " in this category" : ""}.
+                    {activeCat !== "all" && <button onClick={() => setCatalogCat("all")} className="ml-1 font-semibold text-gold-600 hover:underline">Show all</button>}
+                  </p>
                 )}
               </div>
 
@@ -840,6 +1001,23 @@ export default function BillingPage() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** − qty + control shown in the catalog once a product (or variant) is on the bill. */
+function QtyStepper({ qty, max, onDec, onInc, small }: { qty: number; max: number; onDec: () => void; onInc: () => void; small?: boolean }) {
+  const atMax = max > 0 && qty >= max;
+  const btn = cn("grid place-items-center rounded-md text-ivory-50 transition-colors", small ? "h-6 w-6" : "h-7 w-7");
+  return (
+    <div className={cn("flex shrink-0 items-center gap-1 rounded-lg bg-ink-900 p-0.5 shadow-sm", small && "rounded-md")} role="group" aria-label="Quantity">
+      <button type="button" onClick={onDec} aria-label={qty === 1 ? "Remove from bill" : "Decrease quantity"} className={cn(btn, "hover:bg-danger")}>
+        {qty === 1 ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
+      </button>
+      <span className={cn("min-w-[1.75rem] text-center font-bold tabular-nums text-ivory-50", small ? "text-xs" : "text-sm")} aria-live="polite">{qty}</span>
+      <button type="button" onClick={onInc} disabled={atMax} title={atMax ? `Only ${max} in stock` : undefined} aria-label="Increase quantity" className={cn(btn, "hover:bg-gold-500 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-40")}>
+        <Plus className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

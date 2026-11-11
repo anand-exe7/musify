@@ -23,6 +23,12 @@ type Scalars = {
   standardCharge: number;
   expressCharge: number;
   storePickup: boolean;
+  /** ADM-04 / INV-07: show low-stock alerts & highlights when true. */
+  lowStockAlerts: boolean;
+  /** EXP-01: payment modes whose linked expenses / vendor payments are subtracted in analytics. */
+  expenseDeductModes: string[];
+  /** EXP-04: managed expense categories. */
+  expenseCategories: { name: string; active: boolean }[];
 };
 
 interface SettingsState extends Scalars {
@@ -42,6 +48,9 @@ const DEFAULTS: Scalars = {
   standardCharge: 25000,
   expressCharge: 60000,
   storePickup: true,
+  lowStockAlerts: true,
+  expenseDeductModes: ["CASH", "UPI", "CARD", "BANK", "OTHER"],
+  expenseCategories: [],
 };
 
 const send = makeSender("delivery settings");

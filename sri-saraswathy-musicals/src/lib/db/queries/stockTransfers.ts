@@ -89,7 +89,7 @@ export async function createTransfer(input: StockTransferInput): Promise<StockTr
     await adjustProductStock(input.productId, [
       { variantIndex: input.variantIndex, branch: input.fromBranch, delta: -input.quantity },
       { variantIndex: input.variantIndex, branch: input.toBranch, delta: input.quantity },
-    ]);
+    ], { log: { reason: "transfer", ref: input.id } });
   } catch (err) {
     await db.delete(stockTransfers).where(eq(stockTransfers.id, input.id));
     throw err;

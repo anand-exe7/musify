@@ -4,7 +4,7 @@
  * `variants` array (each with a `stockByBranch` map), so this module is the one
  * place that reads those tables into that shape and writes edits back.
  */
-import { asc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { asc, eq, getTableColumns, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, productVariants, variantStock, type ProductRow, type VariantData } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
@@ -17,10 +17,11 @@ type ProductColumns = typeof products.$inferSelect;
  * Two reads, not one join: a variant carries a photo (tens of KB), and joining it to its stock rows would send
  * that photo once per branch, so a catalogue with photos grew past what one database response can carry.
  */
-async function loadVariants(productIds: string[]): Promise<Map<string, VariantData[]>> {
+async function loadVariants(productIds: string[], opts: { photos?: boolean } = {}): Promise<Map<string, VariantData[]>> {
   const out = new Map<string, VariantData[]>();
   if (productIds.length === 0) return out;
-  const vars = await db
+  const withPhotos = opts.photos !== false;
+  const varsQ = db
     .select({
       id: productVariants.id,
       productId: productVariants.productId,
@@ -28,17 +29,20 @@ async function loadVariants(productIds: string[]): Promise<Map<string, VariantDa
       finish: productVariants.finish,
       price: productVariants.price,
       weight: productVariants.weight,
-      photo: productVariants.photo,
+      // Without photos the column is read as NULL — variant photos are most of the catalogue's bytes.
+      photo: withPhotos ? productVariants.photo : sql<string | null>`null`,
       disabled: productVariants.disabled,
     })
     .from(productVariants)
     .where(inArray(productVariants.productId, productIds))
     .orderBy(asc(productVariants.productId), asc(productVariants.position));
-  const stock = await db
+  const stockQ = db
     .select({ variantId: variantStock.variantId, branch: variantStock.branch, qty: variantStock.qty })
     .from(variantStock)
     .innerJoin(productVariants, eq(productVariants.id, variantStock.variantId))
     .where(inArray(productVariants.productId, productIds));
+  // Independent reads — run them together.
+  const [vars, stock] = await Promise.all([varsQ, stockQ]);
 
   const byId = new Map<string, VariantData>();
   for (const x of vars) {
@@ -58,6 +62,48 @@ async function loadVariants(productIds: string[]): Promise<Map<string, VariantDa
 export async function attachVariants(rows: ProductColumns[]): Promise<ProductRow[]> {
   const map = await loadVariants(rows.map((r) => r.id));
   return rows.map((r) => ({ ...r, variants: map.get(r.id) ?? [] }));
+}
+
+/**
+ * The whole catalogue for lists (billing, purchases, pickers): every product with its variants and stock, but only
+ * ONE photo per product — its own, or else its first variant's — and no gallery or variant photos. Reading those
+ * from the database is what made the catalogue take 10+ seconds; the product editor loads one product in full.
+ */
+export async function selectProductsLean(): Promise<ProductRow[]> {
+  const { photos: _gallery, photo: _photo, ...cols } = getTableColumns(products);
+  void _gallery;
+  void _photo;
+  // Instead of the photo itself, a short fingerprint of the photo to show (the product's own, else its first
+  // variant's). The list then points at `/api/pos/inventory/<id>/photo?v=<fingerprint>`, which the browser caches.
+  const rows = await db
+    .select({
+      ...cols,
+      // Fully qualified on purpose: inside the sub-select an unqualified "id" would mean the variant's id.
+      photoKey: sql<string | null>`coalesce(
+        md5(nullif("products"."photo", '')),
+        (select md5(pv.photo) from product_variants pv
+          where pv.product_id = "products"."id" and pv.photo is not null and pv.photo <> ''
+          order by pv.disabled, pv.position limit 1))`,
+    })
+    .from(products);
+  const variants = await loadVariants(rows.map((r) => r.id), { photos: false });
+  return rows.map(({ photoKey, ...r }) => ({
+    ...r,
+    photos: null,
+    photo: photoKey ? `/api/pos/inventory/${encodeURIComponent(r.id)}/photo?v=${photoKey.slice(0, 12)}` : null,
+    variants: variants.get(r.id) ?? [],
+  }) as ProductRow);
+}
+
+/** The photo a list shows for a product: its own, else its first variant's (a data URL or a plain URL). */
+export async function productListPhoto(id: string): Promise<string | null> {
+  const res = await db.execute(sql`
+    select coalesce(nullif(p.photo, ''),
+      (select pv.photo from product_variants pv
+        where pv.product_id = p.id and pv.photo is not null and pv.photo <> ''
+        order by pv.disabled, pv.position limit 1)) as photo
+      from products p where p.id = ${id}`);
+  return ((res.rows as { photo: string | null }[])[0]?.photo) ?? null;
 }
 
 /** Products (with variants and stock) matching `where`, or all of them. */

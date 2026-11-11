@@ -29,6 +29,8 @@ export interface Expense {
   expenseDate: string; // yyyy-mm-dd
   createdAt: string; // ISO
   branch: string;
+  /** EXP-01: subtract this expense in the sales analytics (net view). */
+  inAnalytics?: boolean;
 }
 
 interface ExpenseState {
@@ -38,6 +40,10 @@ interface ExpenseState {
   hydrate: () => Promise<boolean>;
   addExpense: (e: Expense) => Promise<boolean>;
   deleteExpense: (id: string) => Promise<void>;
+  /** EXP-03: edit an expense in place (optimistic). */
+  updateExpense: (id: string, patch: Partial<Expense>) => Promise<boolean>;
+  /** EXP-04: rename a category across every expense. */
+  renameCategory: (from: string, to: string) => Promise<boolean>;
 }
 
 export const useExpenses = create<ExpenseState>()((set, get) => ({
@@ -72,6 +78,33 @@ export const useExpenses = create<ExpenseState>()((set, get) => ({
     } catch (err) {
       set((s) => ({ expenses: s.expenses.filter((x) => x.id !== e.id) }));
       alert(`Couldn't save the expense: ${errMsg(err)}`);
+      return false;
+    }
+  },
+  updateExpense: async (id, patch) => {
+    const before = get().expenses.find((x) => x.id === id);
+    if (!before) return false;
+    set((s) => ({ expenses: s.expenses.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+    try {
+      const res = await fetch(`/api/expenses/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+      if (!res.ok) throw new Error(await readError(res, "Save failed"));
+      const saved = (await res.json()) as Expense;
+      set((s) => ({ expenses: s.expenses.map((x) => (x.id === id ? saved : x)) }));
+      return true;
+    } catch (err) {
+      set((s) => ({ expenses: s.expenses.map((x) => (x.id === id ? before : x)) }));
+      alert(`Couldn't update the expense: ${errMsg(err)}`);
+      return false;
+    }
+  },
+  renameCategory: async (from, to) => {
+    try {
+      const res = await fetch("/api/expenses/categories", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, to }) });
+      if (!res.ok) throw new Error(await readError(res, "Rename failed"));
+      set((s) => ({ expenses: s.expenses.map((x) => (x.category === from ? { ...x, category: to } : x)) }));
+      return true;
+    } catch (err) {
+      alert(`Couldn't rename the category: ${errMsg(err)}`);
       return false;
     }
   },

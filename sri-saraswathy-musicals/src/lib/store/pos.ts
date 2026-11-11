@@ -160,7 +160,9 @@ interface POSState {
   hydrate: () => Promise<boolean>;
   setBranchFilter: (b: BranchFilter) => void;
   setActiveBranch: (b: Branch) => void;
-  addBill: (b: Bill) => void;
+  /** Resolves once the server has saved the bill: `ok` false if it was rejected (and rolled back), with the
+   *  bill's tax invoice when it was recorded in the same request. */
+  addBill: (b: Bill) => Promise<{ ok: boolean; invoice: import("@/types").Invoice | null }>;
   deleteBill: (id: string) => void;
   /** `stockChanges` are the stock figures the editor changed (what it saw → what it wants);
    *  the server applies those as differences, so concurrent sales aren't overwritten. */
@@ -238,12 +240,49 @@ export const usePOS = create<POSState>()((set, get) => ({
   setBranchFilter: (b) => set({ branch: b }),
   setActiveBranch: (b) => set({ activeBranch: b }),
 
-  addBill: (b) => {
+  addBill: async (b) => {
     const prev = get().bills;
     set((s) => ({ bills: [b, ...s.bills] }));
-    // A sale moves stock server-side, so re-read inventory once it is saved —
-    // otherwise the catalog keeps showing the pre-sale stock until a page reload.
-    void send("/api/pos/bills", "POST", b, get().hydrate, () => set({ bills: prev })).then((ok) => ok && void get().hydrate());
+    try {
+      const res = await fetch("/api/pos/bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
+      if (!res.ok) throw new Error(await readError(res, "Save failed"));
+      const { invoice, ...saved } = (await res.json()) as Bill & { invoice?: import("@/types").Invoice | null };
+      // The sale took stock on the server; take the same units off the catalogue here instead of re-downloading
+      // the whole catalogue (the slow part of saving a bill).
+      const taken = new Map<string, number>();
+      for (const it of saved.items ?? []) {
+        if (!it.productId) continue;
+        const k = `${it.productId}#${it.variantIndex ?? 0}`;
+        taken.set(k, (taken.get(k) ?? 0) + it.qty);
+      }
+      set((s) => ({
+        bills: s.bills.map((x) => (x.id === b.id ? (saved as Bill) : x)),
+        invProducts: taken.size
+          ? s.invProducts.map((p) =>
+              p.variants.some((_, vi) => taken.has(`${p.id}#${vi}`))
+                ? {
+                    ...p,
+                    variants: p.variants.map((v, vi) => {
+                      const q = taken.get(`${p.id}#${vi}`);
+                      if (!q) return v;
+                      const by = { ...(v.stockByBranch ?? {}) };
+                      by[saved.branch] = Math.max(0, (by[saved.branch] ?? 0) - q);
+                      return { ...v, stockByBranch: by };
+                    }),
+                  }
+                : p,
+            )
+          : s.invProducts,
+      }));
+      // A coupon redemption changes its "uses left" — refresh just the coupons.
+      if (saved.coupon) void fetchJson<Coupon[]>("/api/pos/coupons").then((coupons) => set({ coupons })).catch(() => {});
+      invalidateCatalog();
+      return { ok: true, invoice: invoice ?? null };
+    } catch (err) {
+      set({ bills: prev });
+      alert(`Couldn't save the bill: ${errMsg(err)}`);
+      return { ok: false, invoice: null };
+    }
   },
   deleteBill: (id) => {
     const prev = get().bills;
