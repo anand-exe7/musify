@@ -386,7 +386,7 @@ export function ProductModal({
                           onError={setError}
                         />
                       </td>
-                      <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? `Opening stock at ${branchLabel(b)}` : branchLabel(b)} value={variantStockAt(v, b)} onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
+                      <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? `Opening stock at ${branchLabel(b)}` : branchLabel(b)} value={variantStockAt(v, b) || ""} placeholder="0" onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
                       <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
                     </tr>
                   ))}

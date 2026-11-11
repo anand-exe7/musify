@@ -23,6 +23,8 @@ export interface PurchaseRow {
   createdAt: string;
   /** Part-payments recorded after the purchase (on top of amountPaid). */
   paymentsTotal: number;
+  /** EXP-01: payments on this bill are subtracted in analytics. */
+  inAnalytics?: boolean;
   /** What each branch still owes on this bill (branches that received stock, even at 0). */
   branchOwed?: Record<string, number>;
   /** What each branch has paid since the purchase (part-payments). */

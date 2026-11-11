@@ -15,6 +15,8 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { PartsEditor } from "@/components/admin/TicketParts";
 import { BRANCH_KEYS, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
+import { REPAIR_PAY_MODES, PAY_MODE_LABEL, withPayment } from "@/lib/billing/repairPayments";
+import { E } from "@/lib/whatsapp";
 
 /** Date input helper — ISO ⇄ yyyy-mm-dd */
 function toDateInput(iso?: string) {
@@ -58,6 +60,8 @@ function blank(): RepairTicket {
     estimate: 0,
     finalCost: 0,
     advance: 0,
+    paymentMode: "CASH",
+    payments: [],
     gstRate: 18,
     events: [],
   };
@@ -68,13 +72,13 @@ export function repairIntakeMessage(t: RepairTicket): string {
   return (
     `*${BUSINESS.name} — Service Ticket*\n` +
     `Hi ${t.customerName || "there"}, we've received your instrument for repair.\n\n` +
-    `🎫 Ticket: ${t.id}\n` +
-    `🎸 Item: ${t.productName}${t.brand ? ` (${t.brand})` : ""}\n` +
-    `🛠 Reported issue: ${t.problem}\n\n` +
-    `💰 Estimate: ${formatINR(t.estimate)}${t.advance > 0 ? `\nAdvance paid: ${formatINR(t.advance)}\nBalance (approx): ${formatINR(balance)}` : ""}\n` +
-    `📅 Ready by: ${fmtDeadline(t.deadline)}\n\n` +
+    `${E.ticket} Ticket: ${t.id}\n` +
+    `${E.guitar} Item: ${t.productName}${t.brand ? ` (${t.brand})` : ""}\n` +
+    `${E.wrench} Reported issue: ${t.problem}\n\n` +
+    `${E.money} Estimate: ${formatINR(t.estimate)}${t.advance > 0 ? `\nPaid so far: ${formatINR(t.advance)}\nBalance (approx): ${formatINR(balance)}` : ""}\n` +
+    `${E.calendar} Ready by: ${fmtDeadline(t.deadline)}\n\n` +
     // The invoice only exists once the repair is billable — don't send a dead link at intake.
-    (t.invoiceNo || t.status === "ready" || t.status === "completed" ? `📄 Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n\n` : "") +
+    (t.invoiceNo || t.status === "ready" || t.status === "completed" ? `${E.doc} Track your repair / invoice:\n${serviceInvoiceUrl(t.id)}\n\n` : "") +
     `We'll keep you posted. Reply here for any questions.\n${BUSINESS.branches[0].phone}`
   );
 }
@@ -125,6 +129,10 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
       parts: (d.parts ?? []).filter((x) => x.name.trim() && x.qty > 0),
     };
     if (isNew) {
+      // REP-03: money taken at intake is the ticket's first part-payment (with its own receipt), not an advance order.
+      if (clean.advance > 0) {
+        Object.assign(clean, withPayment({ ...clean, payments: [], advance: 0 }, { amount: clean.advance, mode: clean.paymentMode ?? "CASH", note: "Paid at intake", at: clean.createdAt }));
+      }
       clean.events = [
         { at: new Date().toISOString(), label: `Ticket raised · received at ${branchLabel(clean.branch)}${clean.parts?.length ? ` · ${clean.parts.length} product${clean.parts.length === 1 ? "" : "s"} noted` : ""}` },
       ];
@@ -259,14 +267,29 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
                 <label className={label}>Cost Estimate (₹, incl. GST)</label>
                 <MoneyInput value={d.estimate || 0} onChange={(paise) => set({ estimate: paise })} className={field} placeholder="0" />
               </div>
-              <div>
-                <label className={label}>Advance Collected (₹)</label>
-                <MoneyInput value={d.advance || 0} onChange={(paise) => set({ advance: paise })} className={field} placeholder="0" />
-              </div>
+              {isNew ? (
+                <>
+                  <div>
+                    <label className={label}>Paid now (₹) · part payment</label>
+                    <MoneyInput value={d.advance || 0} onChange={(paise) => set({ advance: paise })} className={field} placeholder="0" />
+                  </div>
+                  {/* REP-01: payment mode on the Raise Repair Ticket form */}
+                  <div>
+                    <label className={label}>Payment mode</label>
+                    <select value={d.paymentMode ?? "CASH"} onChange={(e) => set({ paymentMode: e.target.value })} className={field}>
+                      {REPAIR_PAY_MODES.map((m) => <option key={m} value={m}>{PAY_MODE_LABEL[m]}</option>)}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <div className="sm:col-span-2 rounded-lg bg-ivory-100 px-3 py-2 text-xs text-ink-500">
+                  Paid so far <span className="font-semibold text-ink-900">{formatINR(d.advance || 0)}</span> — record more payments from the ticket page (each gets its own receipt).
+                </div>
+              )}
             </div>
             {d.estimate > 0 && (
               <p className="mt-3 rounded-lg bg-[#FAF7EF] px-3 py-2 text-xs text-ink-500">
-                Estimate {formatINR(d.estimate)} · Advance {formatINR(d.advance || 0)} ·{" "}
+                Estimate {formatINR(d.estimate)} · Paid {formatINR(d.advance || 0)} ·{" "}
                 <span className="font-semibold text-ink-900">Balance approx {formatINR(Math.max(0, d.estimate - (d.advance || 0)))}</span>
                 <span className="text-ink-400"> (GST added on final invoice)</span>
               </p>

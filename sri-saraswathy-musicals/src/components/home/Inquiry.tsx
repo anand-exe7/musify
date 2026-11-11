@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { MessageCircle, Phone, Mail, MapPin, CheckCircle2, ArrowRight, Send } from "lucide-react";
 import { useInquiry, genInquiryId, INQUIRY_TOPICS, type Inquiry as InquiryRecord } from "@/lib/store/inquiry";
 import { BUSINESS, waLink } from "@/lib/data/business";
+import { E } from "@/lib/whatsapp";
 
 /**
  * Enquiry section embedded directly on the home page (id="inquiry"), so the
@@ -27,7 +28,7 @@ export function Inquiry() {
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   const customerMessage = (i: InquiryRecord) =>
-    `Hi ${BUSINESS.name}! 👋\n\n` +
+    `Hi ${BUSINESS.name}! ${E.wave}\n\n` +
     `I'd like to enquire about: *${i.topic}*\n` +
     (i.productInterest ? `Interested in: ${i.productInterest}\n` : "") +
     `\n${i.message}\n\n` +

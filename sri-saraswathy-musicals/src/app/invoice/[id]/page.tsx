@@ -8,6 +8,8 @@ import { recordOrderInvoice, recordBillInvoice, recordServiceInvoice } from "@/l
 import { BUSINESS } from "@/lib/data/business";
 import type { Invoice } from "@/types";
 import { InvoiceShareView } from "./InvoiceShareView";
+import { ReceiptShareView } from "./ReceiptShareView";
+import { ticketReceiptDoc } from "@/lib/billing/repairReceipt";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     if (ticket) {
       await recordServiceInvoice(ticket);
       invoice = await getInvoiceByRefId(id);
+      // REP-02: not fully paid yet → the customer gets the payment receipt, not a tax invoice.
+      if (!invoice && ticket.status !== "cancelled" && ticket.advance > 0) return <ReceiptShareView doc={ticketReceiptDoc(ticket)} />;
     }
   }
 
@@ -67,6 +71,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       const total = invoice.total;
       const paid = Math.min(total, ticket.advance || 0);
       payment = { paid, balance: ticket.status === "cancelled" ? 0 : Math.max(0, total - paid) };
+      // An invoice minted before this rule existed, but the ticket still has a balance: show the receipt.
+      if (payment.balance > 0) return <ReceiptShareView doc={ticketReceiptDoc(ticket)} />;
     }
   }
   return <InvoiceShareView invoice={invoice} payment={payment} />;

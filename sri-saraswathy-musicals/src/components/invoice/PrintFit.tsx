@@ -18,6 +18,8 @@ export function PrintFit({ target = "invoice-sheet" }: { target?: string }) {
     let sheet: HTMLElement | null = null;
 
     const before = () => {
+      // A thermal receipt is being printed instead — leave the page alone.
+      if (document.documentElement.dataset.printMode === "thermal") return;
       sheet = document.getElementById(target);
       if (!sheet) return;
       // Everything that is not the sheet or one of its ancestors leaves the layout.

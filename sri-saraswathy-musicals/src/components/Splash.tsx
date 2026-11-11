@@ -12,7 +12,8 @@ import { MusicLoader } from "./MusicLoader";
  */
 export function Splash() {
   const pathname = usePathname();
-  const isAdmin = pathname?.startsWith("/admin") ?? false;
+  // No marketing splash on the dashboard, nor on invoice / quotation documents (they open to print straight away).
+  const isAdmin = /^\/(admin|invoice|quotation)(\/|$)/.test(pathname ?? "");
   const [show, setShow] = useState(true);
 
   useEffect(() => {

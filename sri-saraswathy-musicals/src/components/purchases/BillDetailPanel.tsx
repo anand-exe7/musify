@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Receipt, Trash2 } from "lucide-react";
+import { Pencil, Receipt, Trash2, BarChart3 } from "lucide-react";
 import { formatINR, cn } from "@/lib/utils";
 import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import type { BranchBill } from "@/lib/billShares";
@@ -36,6 +36,20 @@ export function BillDetailPanel({
   const [delError, setDelError] = useState("");
   /** Whether deleting the bill also takes its stock back out; leaving stock alone is the safe default. */
   const [stockMode, setStockMode] = useState<"keep" | "reverse">("keep");
+  const [linking, setLinking] = useState(false);
+
+  /** EXP-01: link / unlink this vendor bill to the analytics deduction. */
+  const toggleAnalytics = async () => {
+    if (!d) return;
+    setLinking(true);
+    try {
+      const res = await fetch(`/api/purchases/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inAnalytics: !d.inAnalytics }) });
+      if (res.ok) setD({ ...d, inAnalytics: !d.inAnalytics });
+      else alert("Couldn't change the analytics link.");
+    } finally {
+      setLinking(false);
+    }
+  };
 
   const remove = async () => {
     setDeleting(true);
@@ -215,6 +229,16 @@ export function BillDetailPanel({
         <button onClick={() => onPay(d)} disabled={left <= 0} className="inline-flex items-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2 text-sm font-semibold text-ivory-50 hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40">
           <Receipt className="h-4 w-4" /> {left > 0 ? `Pay (${formatINR(left)} left)` : "Fully paid"}
         </button>
+        {canEdit && (
+          <button
+            onClick={() => void toggleAnalytics()}
+            disabled={linking}
+            title="Subtract the payments on this bill from the sales analytics"
+            className={cn("inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50", d.inAnalytics ? "border-ink-900 bg-ink-900 text-ivory-50" : "border-ink-200 text-ink-700 hover:bg-ink-900/5")}
+          >
+            <BarChart3 className="h-4 w-4" /> {d.inAnalytics ? "Subtracted in analytics" : "Subtract in analytics"}
+          </button>
+        )}
         {canEdit && (
           <button onClick={() => onEdit(d)} className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">
             <Pencil className="h-4 w-4" /> Edit bill

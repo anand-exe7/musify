@@ -3,6 +3,7 @@ import { BUSINESS, branchInfo } from "@/lib/data/business";
 import { amountInWords, formatINR, cn } from "@/lib/utils";
 import { paymentText } from "@/lib/paymentSplit";
 import { PrintFit } from "@/components/invoice/PrintFit";
+import { gstSummary, taxLabel, halfRate } from "@/lib/print/doc";
 
 /**
  * Print stylesheet shared by every route that renders the tax invoice — isolates
@@ -57,6 +58,8 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
   const showDiscount = invoice.items.some((l) => (l.discount ?? 0) > 0);
   const saved = invoice.items.reduce((n, l) => n + Math.max(0, Math.max(l.mrp ?? 0, l.rate) * l.qty - l.amount), 0) + overall;
   const docTitle = isBillOfSupply ? "Bill of Supply" : "Tax Invoice";
+  // BIL-01: GST split-up — rate, CGST / SGST (or IGST) and total tax.
+  const gs = gstSummary(invoice.items, invoice.cgst ?? 0, invoice.sgst ?? 0, invoice.igst ?? 0);
 
   return (
     <div
@@ -209,6 +212,39 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
           </table>
         </div>
 
+        {/* BIL-01: rate-wise GST split-up (only when the bill carries more than one GST rate). */}
+        {!isBillOfSupply && gs.rows.length > 1 && (
+          <div className="mt-4 overflow-x-auto print:mt-2 print:overflow-visible">
+            <table className="w-full border border-ink-200 text-[11px] tabular-nums">
+              <thead className="bg-ivory-50 text-[9px] font-bold uppercase tracking-[0.16em] text-ink-500">
+                <tr className="[&>th]:border-b [&>th]:border-ink-200 [&>th]:px-3 [&>th]:py-1.5">
+                  <th className="text-left">GST rate</th>
+                  <th className="text-right">Taxable value</th>
+                  {intra ? (<><th className="text-right">CGST</th><th className="text-right">SGST</th></>) : <th className="text-right">IGST</th>}
+                  <th className="text-right">Total tax</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gs.rows.map((r) => (
+                  <tr key={r.rate} className="[&>td]:border-b [&>td]:border-ink-100 [&>td]:px-3 [&>td]:py-1.5">
+                    <td className="text-left font-semibold">{r.rate}%</td>
+                    <td className="text-right">{formatINR(r.taxable)}</td>
+                    {intra ? (
+                      <>
+                        <td className="text-right">{formatINR(r.cgst)} <span className="text-ink-400">@{halfRate(r.rate)}</span></td>
+                        <td className="text-right">{formatINR(r.sgst)} <span className="text-ink-400">@{halfRate(r.rate)}</span></td>
+                      </>
+                    ) : (
+                      <td className="text-right">{formatINR(r.igst)}</td>
+                    )}
+                    <td className="text-right font-semibold">{formatINR(r.cgst + r.sgst + r.igst)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* ─────────────────────────────────────────────────────────────
             Amount-in-words + totals, boxed like a bank cheque stub.
             ───────────────────────────────────────────────────────────── */}
@@ -238,11 +274,12 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
               {!isBillOfSupply && (
                 intra ? (
                   <>
-                    <Row dt="CGST" dd={formatINR(invoice.cgst)} />
-                    <Row dt="SGST" dd={formatINR(invoice.sgst)} />
+                    <Row dt={taxLabel("CGST", gs)} dd={formatINR(invoice.cgst)} />
+                    <Row dt={taxLabel("SGST", gs)} dd={formatINR(invoice.sgst)} />
+                    <Row dt="Total GST" dd={formatINR(totalTax)} />
                   </>
                 ) : (
-                  <Row dt="IGST" dd={formatINR(invoice.igst ?? 0)} />
+                  <Row dt={taxLabel("IGST", gs)} dd={formatINR(invoice.igst ?? 0)} />
                 )
               )}
               {(invoice.delivery ?? 0) > 0 && <Row dt="Delivery" dd={formatINR(invoice.delivery ?? 0)} />}
