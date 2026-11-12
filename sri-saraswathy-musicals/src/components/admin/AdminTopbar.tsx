@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock, ShoppingBag, Volume2, VolumeX } from "lucide-react";
+import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock, ShoppingBag, Volume2, VolumeX, Activity } from "lucide-react";
 import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repair";
 import { useInquiry } from "@/lib/store/inquiry";
 import { useOrderAlerts } from "@/lib/store/orderAlerts";
@@ -180,10 +180,14 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
               </div>
 
               <div className="grid grid-cols-2 gap-2 border-t border-ink-100 bg-[#FAF7EF] px-3 py-2.5">
+                {/* The bell is the short version; the Activity page is the whole picture, stock included. */}
+                <Link href="/admin/activity" onClick={() => setOpen(false)} className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 py-2 text-[11px] font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
+                  <Activity className="h-3.5 w-3.5" /> See everything
+                </Link>
                 <Link href="/admin/orders" onClick={() => setOpen(false)} className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-gold-500/40 bg-gold-50 py-2 text-[11px] font-bold uppercase tracking-wider text-gold-800 hover:bg-gold-100">
                   <ShoppingBag className="h-3.5 w-3.5" /> Orders
                 </Link>
-                <Link href="/admin/service" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 py-2 text-[11px] font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
+                <Link href="/admin/service" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 py-2 text-[11px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
                   <Wrench className="h-3.5 w-3.5" /> Repairs
                 </Link>
                 <Link href="/admin/inquiries" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 py-2 text-[11px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">

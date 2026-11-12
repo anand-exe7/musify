@@ -288,6 +288,13 @@
       "when": 1794471262263,
       "tag": "0040_category_active",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794472694804,
+      "tag": "0041_departments",
+      "breakpoints": true
     }
   ]
 }
