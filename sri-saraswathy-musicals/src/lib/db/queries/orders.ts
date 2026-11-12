@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { HttpError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { orders, invoices } from "@/lib/db/schema";
@@ -27,6 +27,20 @@ export async function getOrderByPaymentId(paymentId: string): Promise<Order | un
   if (!paymentId) return undefined;
   const [r] = await db.select().from(orders).where(eq(orders.paymentId, paymentId)).limit(1);
   return r ? row<Order>(r) : undefined;
+}
+
+/**
+ * Orders still waiting to be dispatched, soonest deadline first. The shop needs this at a glance:
+ * once a few orders stack up, an overdue one is otherwise invisible until the customer calls.
+ * Only `processing` orders count — once it is shipped, the clock has stopped.
+ */
+export async function getPendingDispatch(): Promise<Order[]> {
+  const rs = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.status, "processing"), isNotNull(orders.dispatchBy)))
+    .orderBy(asc(orders.dispatchBy));
+  return rows<Order>(rs);
 }
 
 /** Orders placed by a specific signed-in customer, newest first. */
@@ -146,22 +160,39 @@ export interface OrderAlert {
   total: number;
   date: string;
   branch: string;
+  /** yyyy-mm-dd the parcel has to reach the courier by, null when the order predates dispatch tracking. */
+  dispatchBy: string | null;
+  deliveryMethod: string;
 }
 
 /** Online orders still waiting to be shipped — the count for the badge and the latest few for the bell. `branches`
  *  limits it to a branch user's own stores; `null` means every branch. */
-export async function getOrderAlerts(branches: string[] | null, limit = 8): Promise<{ count: number; latest: OrderAlert[] }> {
+export async function getOrderAlerts(
+  branches: string[] | null,
+  limit = 8,
+): Promise<{ count: number; latest: OrderAlert[]; dispatch: OrderAlert[] }> {
   const where = branches
     ? and(eq(orders.status, "processing"), inArray(orders.branch, branches.length ? branches : ["-"]))
     : eq(orders.status, "processing");
-  const [[{ n }], latest] = await Promise.all([
+  const cols = {
+    id: orders.id,
+    customerName: orders.customerName,
+    total: orders.total,
+    date: orders.date,
+    branch: orders.branch,
+    dispatchBy: orders.dispatchBy,
+    deliveryMethod: orders.deliveryMethod,
+  };
+  const [[{ n }], latest, dispatch] = await Promise.all([
     db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(orders).where(where),
+    db.select(cols).from(orders).where(where).orderBy(desc(orders.date), desc(orders.id)).limit(limit),
+    // Soonest deadline first — this is the list the shop has to act on, not the newest.
     db
-      .select({ id: orders.id, customerName: orders.customerName, total: orders.total, date: orders.date, branch: orders.branch })
+      .select(cols)
       .from(orders)
-      .where(where)
-      .orderBy(desc(orders.date), desc(orders.id))
+      .where(and(where, isNotNull(orders.dispatchBy)))
+      .orderBy(asc(orders.dispatchBy))
       .limit(limit),
   ]);
-  return { count: n, latest };
+  return { count: n, latest, dispatch };
 }

@@ -116,6 +116,10 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
       igst: taxed.totals.igst,
       total: order.total,
       paymentMode: order.paymentMethod || "razorpay",
+      // Copied from the order so the ledger can show how and by when it ships.
+      deliveryMethod: order.deliveryMethod ?? "",
+      deliveryEta: order.deliveryEta ?? "",
+      dispatchBy: order.dispatchBy ?? null,
       status: order.paymentMethod === "cod" ? "pending" : "paid",
       source: "web",
       refId: order.id,

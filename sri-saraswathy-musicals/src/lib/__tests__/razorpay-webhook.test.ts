@@ -37,8 +37,11 @@ const variant: Variant = { attr: "Std", finish: "", price: 100000, weight: 0, st
 const draft = (rpOrder: string): CheckoutDraft => ({
   items: [{ productId: "wh-p", variantKey: "Std|", name: "Thing", price: 100000, quantity: 2, gstRate: 18, hsn: "9207", variantLabel: "Std" }],
   subtotal: 200000, discount: 0, couponCode: null, taxable: 169492, gst: 30508, cgst: 15254, sgst: 15254, igst: 0, intra: true,
-  shipping: 0, shippingOptions: { standard: 0, "white-glove": 0, express: 0 }, total: 200000,
+  shipping: 0, shippingOptions: [{ id: "standard", name: "Standard", description: "", eta: "3–5 days", price: 0, dispatchDays: 2, priced: true }],
+  deliveryId: "standard", deliveryName: "Standard", deliveryEta: "3–5 days", dispatchDays: 2, weightG: 0, zoneName: "Tamil Nadu",
+  total: 200000,
   userId: "wh-user", customerName: "Tester", email: "", phone: "9876543210", address: "Chennai", shipState: "Tamil Nadu", branch: "Branch 1",
+  deliveryMethod: "Standard", dispatchBy: "2026-11-14",
   razorpayOrderId: rpOrder,
 } as unknown as CheckoutDraft);
 

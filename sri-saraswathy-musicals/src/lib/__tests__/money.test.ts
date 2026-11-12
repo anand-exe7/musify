@@ -137,16 +137,30 @@ const catalog = vi.hoisted(() => [
   {
     id: "p1", name: "Flute", brand: "Acme", hsn: "9205", price: 10000, gstRate: 18, isGstApplicable: true,
     variants: [
-      { attr: "A", finish: "x", price: 11800, weight: 0, stockByBranch: { "Branch 1": 5, "Branch 2": 0 } },
-      { attr: "B", finish: "y", price: 15000, weight: 0, stock: 5, disabled: true },
+      { attr: "A", finish: "x", price: 11800, weight: 300, stockByBranch: { "Branch 1": 5, "Branch 2": 0 } },
+      { attr: "B", finish: "y", price: 15000, weight: 300, stock: 5, disabled: true },
     ],
   },
   { id: "p2", name: "Tabla", brand: "", hsn: "", price: 5000, gstRate: 5, isGstApplicable: true, variants: [] },
   { id: "p3", name: "Book", brand: "", hsn: "", price: 3000, gstRate: null, isGstApplicable: false, variants: [] },
 ]);
 const zones = vi.hoisted(() => [
-  { id: "tn", name: "TN", states: ["Tamil Nadu"], charge: 0, eta: "", uptoGm250: 4000, uptoGm500: 6000, perAddl500: 0, above5kgPerKg: 0, above10kgPerKg: 0 },
-  { id: "rest", name: "Rest", states: [], charge: 9000, eta: "", uptoGm250: 0, uptoGm500: 0, perAddl500: 0, above5kgPerKg: 0, above10kgPerKg: 0 },
+  {
+    id: "tn", name: "TN", states: ["Tamil Nadu"], eta: "",
+    rates: [
+      { id: "t1", minG: 0, maxG: 500, price: 6000, position: 0 },
+      { id: "t2", minG: 501, maxG: 2000, price: 9000, position: 1 },
+      { id: "t3", minG: 2001, maxG: 20000, price: 15000, position: 2 },
+    ],
+  },
+  // No states → the "Rest of India" catch-all.
+  { id: "rest", name: "Rest", states: [], eta: "", rates: [{ id: "r1", minG: 0, maxG: 20000, price: 9000, position: 0 }] },
+]);
+const methods = vi.hoisted(() => [
+  { id: "standard", name: "Standard", description: "", eta: "3–5 days", pricing: "zone", flatPrice: 0, surcharge: 0, dispatchDays: 2, active: true, position: 0 },
+  { id: "express", name: "Express", description: "", eta: "next day", pricing: "flat", flatPrice: 50000, surcharge: 0, dispatchDays: 1, active: true, position: 1 },
+  { id: "priority", name: "Priority", description: "", eta: "", pricing: "zone", flatPrice: 0, surcharge: 2000, dispatchDays: 1, active: true, position: 2 },
+  { id: "retired", name: "Retired", description: "", eta: "", pricing: "flat", flatPrice: 100, surcharge: 0, dispatchDays: 9, active: false, position: 3 },
 ]);
 const coupons = vi.hoisted(
   () =>
@@ -161,6 +175,7 @@ vi.mock("@/lib/db/queries/products", () => ({ getPricingCatalog: async () => cat
 vi.mock("@/lib/db/queries/settings", () => ({
   getZones: async () => zones,
   getGstSettings: async () => ({ homeState: "Tamil Nadu", standardRate: 18 }),
+  getDeliveryMethods: async () => methods,
 }));
 vi.mock("@/lib/db/queries/pos", () => ({ getCoupon: async (c: string) => coupons[c.trim().toUpperCase()] }));
 
@@ -170,11 +185,16 @@ describe("priceOrder (GST-inclusive)", () => {
     ({ priceOrder } = await import("@/lib/checkout/pricing"));
   });
 
-  it("rejects an empty cart, unknown products and bad delivery with 400", async () => {
+  it("rejects an empty cart and unknown products with 400", async () => {
     await expect(priceOrder([], "standard")).rejects.toMatchObject({ status: 400 });
     await expect(priceOrder([{ productId: "p2", quantity: 0 }], "standard")).rejects.toMatchObject({ status: 400 });
     await expect(priceOrder([{ productId: "nope", quantity: 1 }], "standard")).rejects.toMatchObject({ status: 400 });
-    await expect(priceOrder([{ productId: "p2", quantity: 1 }], "teleport" as never)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("a delivery method that no longer exists falls back to the first one, and says so", async () => {
+    const o = await priceOrder([{ productId: "p2", quantity: 1 }], "teleport", "Tamil Nadu");
+    expect(o.deliveryId).toBe("standard");
+    expect(o.issues).toContainEqual(expect.objectContaining({ kind: "delivery" }));
   });
 
   it("tax is contained in the price: total = subtotal − discount + shipping (C3)", async () => {
@@ -186,44 +206,45 @@ describe("priceOrder (GST-inclusive)", () => {
     expect(o.taxable + o.gst).toBe(10000);
   });
   it("the flute costs the same online as at the counter", async () => {
-    const o = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove");
-    expect(o.total).toBe(11800);
+    const o = await priceOrder([{ productId: "p1", quantity: 1 }], "standard");
+    expect(o.total - o.shipping).toBe(11800);
     expect(o.gst).toBe(lineTax(11800, 18).tax);
   });
 
   it("splits CGST+SGST in-state and IGST out of state", async () => {
-    const inState = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove", "Tamil Nadu");
+    const inState = await priceOrder([{ productId: "p1", quantity: 1 }], "standard", "Tamil Nadu");
     expect(inState.intra).toBe(true);
     expect(inState.cgst + inState.sgst).toBe(inState.gst);
     expect(inState.igst).toBe(0);
-    const out = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove", "Kerala");
+    const out = await priceOrder([{ productId: "p1", quantity: 1 }], "standard", "Kerala");
     expect(out.intra).toBe(false);
     expect(out.igst).toBe(out.gst);
-    expect(out.total).toBe(inState.total);
+    // Same goods, same tax — only the courier differs between the two destinations.
+    expect(out.total - out.shipping).toBe(inState.total - inState.shipping);
   });
 
   it("charges no GST on exempt products (H9)", async () => {
-    const o = await priceOrder([{ productId: "p3", quantity: 1 }], "white-glove");
+    const o = await priceOrder([{ productId: "p3", quantity: 1 }], "standard");
     expect(o.gst).toBe(0);
-    expect(o.total).toBe(3000);
+    expect(o.total - o.shipping).toBe(3000);
   });
 
   describe("variants (H10) and quantity (H11)", () => {
     it("uses the first enabled variant when none is named", async () => {
-      const o = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove");
+      const o = await priceOrder([{ productId: "p1", quantity: 1 }], "standard");
       expect(o.items[0]).toMatchObject({ price: 11800, variantKey: "A|x" });
       expect(o.issues).toEqual([]);
     });
     it("flags a stale variant key instead of silently charging another variant", async () => {
-      const o = await priceOrder([{ productId: "p1", variantKey: "Gone|z", quantity: 1 }], "white-glove");
+      const o = await priceOrder([{ productId: "p1", variantKey: "Gone|z", quantity: 1 }], "standard");
       expect(o.issues.map((i) => i.kind)).toContain("variant");
     });
     it("flags a disabled variant", async () => {
-      const o = await priceOrder([{ productId: "p1", variantKey: "B|y", quantity: 1 }], "white-glove");
+      const o = await priceOrder([{ productId: "p1", variantKey: "B|y", quantity: 1 }], "standard");
       expect(o.issues.map((i) => i.kind)).toContain("variant");
     });
     it("floors fractional quantity and merges duplicate lines", async () => {
-      const o = await priceOrder([{ productId: "p2", quantity: 2.9 }, { productId: "p2", quantity: 1 }], "white-glove");
+      const o = await priceOrder([{ productId: "p2", quantity: 2.9 }, { productId: "p2", quantity: 1 }], "standard");
       expect(o.items).toHaveLength(1);
       expect(o.items[0].quantity).toBe(3);
     });
@@ -231,12 +252,12 @@ describe("priceOrder (GST-inclusive)", () => {
 
   describe("stock (H2)", () => {
     it("flags a cart that exceeds stock at the chosen branch", async () => {
-      const o = await priceOrder([{ productId: "p1", quantity: 6 }], "white-glove", "", { branch: "Branch 1" });
+      const o = await priceOrder([{ productId: "p1", quantity: 6 }], "standard", "", { branch: "Branch 1" });
       expect(o.issues).toEqual([expect.objectContaining({ kind: "stock" })]);
     });
     it("stock is per branch", async () => {
-      const b1 = await priceOrder([{ productId: "p1", quantity: 5 }], "white-glove", "", { branch: "Branch 1" });
-      const b2 = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove", "", { branch: "Branch 2" });
+      const b1 = await priceOrder([{ productId: "p1", quantity: 5 }], "standard", "", { branch: "Branch 1" });
+      const b2 = await priceOrder([{ productId: "p1", quantity: 1 }], "standard", "", { branch: "Branch 2" });
       expect(b1.issues).toEqual([]);
       expect(b2.issues.map((i) => i.kind)).toContain("stock");
     });
@@ -244,10 +265,10 @@ describe("priceOrder (GST-inclusive)", () => {
 
   describe("coupons (H8)", () => {
     it("takes the discount off BEFORE tax", async () => {
-      const o = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove", "", { couponCode: "save10" });
+      const o = await priceOrder([{ productId: "p1", quantity: 1 }], "standard", "", { couponCode: "save10" });
       expect(o.couponCode).toBe("SAVE10");
       expect(o.discount).toBe(1180);
-      expect(o.total).toBe(10620);
+      expect(o.total - o.shipping).toBe(10620);
       expect(o.taxable + o.gst).toBe(10620); // tax is on what is paid, not on ₹118
       expect(o.gst).toBe(lineTax(10620, 18).tax);
     });
@@ -257,7 +278,7 @@ describe("priceOrder (GST-inclusive)", () => {
       ["OLD", /expired/],
       ["GONE", /fully redeemed/],
     ])("reports %s without discounting", async (code, msg) => {
-      const o = await priceOrder([{ productId: "p1", quantity: 1 }], "white-glove", "", { couponCode: code });
+      const o = await priceOrder([{ productId: "p1", quantity: 1 }], "standard", "", { couponCode: code });
       expect(o.discount).toBe(0);
       expect(o.couponCode).toBeNull();
       expect(o.issues).toEqual([expect.objectContaining({ kind: "coupon", message: expect.stringMatching(msg) })]);
@@ -266,20 +287,43 @@ describe("priceOrder (GST-inclusive)", () => {
 
   describe("shipping (H3)", () => {
     const one = [{ productId: "p2", quantity: 1 }];
-    it("express is flat 50000, white-glove is free, and there is no free-shipping threshold", async () => {
+    it("a flat-priced method ignores weight and zone; there is no free-shipping threshold", async () => {
       expect((await priceOrder(one, "express")).shipping).toBe(50000);
-      expect((await priceOrder(one, "white-glove")).shipping).toBe(0);
       const big = await priceOrder([{ productId: "p2", quantity: 200 }], "standard", "Tamil Nadu"); // ₹10,000 cart
       expect(big.subtotal).toBeGreaterThan(500000);
-      expect(big.shipping).toBe(6000);
+      expect(big.shipping).toBe(6000); // weightless lines still sit in the lightest band
     });
-    it("standard falls back to the catch-all zone's legacy charge; matches states case-insensitively", async () => {
+    it("a state no zone names is charged the catch-all; matching ignores case", async () => {
       expect((await priceOrder(one, "standard", "Kerala")).shipping).toBe(9000);
+      expect((await priceOrder(one, "standard", "Kerala")).zoneName).toBe("Rest");
       expect((await priceOrder(one, "standard", "tamil nadu")).shipping).toBe(6000);
     });
-    it("returns every method's price so the UI never computes shipping", async () => {
-      const o = await priceOrder(one, "white-glove", "Tamil Nadu");
-      expect(o.shippingOptions).toEqual({ standard: 6000, "white-glove": 0, express: 50000 });
+    it("adds the cart's weights up and charges the band they land in", async () => {
+      // One 300 g flute → the 0–500 g band; two → 600 g → the 501–2000 g band.
+      const oneFlute = await priceOrder([{ productId: "p1", quantity: 1 }], "standard", "Tamil Nadu");
+      expect(oneFlute.weightG).toBe(300);
+      expect(oneFlute.shipping).toBe(6000);
+      const two = await priceOrder([{ productId: "p1", quantity: 2 }], "standard", "Tamil Nadu");
+      expect(two.weightG).toBe(600);
+      expect(two.shipping).toBe(9000);
+    });
+    it("a parcel over the top of the ladder pays the heaviest band", async () => {
+      const heavy = await priceOrder([{ productId: "p1", quantity: 20 }], "standard", "Tamil Nadu"); // 6 kg
+      expect(heavy.weightG).toBe(6000);
+      expect(heavy.shipping).toBe(15000);
+    });
+    it("a surcharge is added on top of the courier rate", async () => {
+      expect((await priceOrder(one, "priority", "Tamil Nadu")).shipping).toBe(8000);
+    });
+    it("quotes every ACTIVE method for this cart, so the UI never computes shipping", async () => {
+      const o = await priceOrder(one, "standard", "Tamil Nadu");
+      expect(o.shippingOptions.map((m) => [m.id, m.price])).toEqual([
+        ["standard", 6000],
+        ["express", 50000],
+        ["priority", 8000],
+      ]);
+      expect(o.deliveryName).toBe("Standard");
+      expect(o.dispatchDays).toBe(2);
     });
   });
 });

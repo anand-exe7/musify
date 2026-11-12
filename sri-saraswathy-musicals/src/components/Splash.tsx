@@ -5,31 +5,31 @@ import { AnimatePresence, motion } from "framer-motion";
 import { MusicLoader } from "./MusicLoader";
 
 /**
- * Intro splash shown on a hard page load. Guarantees the musical loader is on
- * screen for a minimum beat (so it doesn't just flash by), then fades away.
- * It does NOT re-show on in-app (client-side) navigation, since the root
- * layout — and therefore this component — stays mounted across those.
+ * Intro splash on a hard load of the HOME page only. It is an arrival moment, not a loading screen:
+ * landing straight on a product or the shop (a link, a search result, a reload) used to sit behind nearly
+ * two seconds of logo before anything could be read. It does NOT re-show on in-app navigation, since the
+ * root layout — and therefore this component — stays mounted across those.
  */
 export function Splash() {
   const pathname = usePathname();
-  // No marketing splash on the dashboard, nor on invoice / quotation documents (they open to print straight away).
-  const isAdmin = /^\/(admin|invoice|quotation)(\/|$)/.test(pathname ?? "");
   const [show, setShow] = useState(true);
+  // Only the front door gets it: never the dashboard, invoices or quotations, and never a deep link.
+  const splashHere = (pathname ?? "/") === "/";
 
   useEffect(() => {
-    if (isAdmin) return; // no marketing splash on the dashboard
+    if (!splashHere) return;
     document.body.style.overflow = "hidden";
     const t = setTimeout(() => {
       setShow(false);
       document.body.style.overflow = "";
-    }, 1100);
+    }, 700);
     return () => {
       clearTimeout(t);
       document.body.style.overflow = "";
     };
-  }, [isAdmin]);
+  }, [splashHere]);
 
-  if (isAdmin) return null;
+  if (!splashHere) return null;
 
   return (
     <AnimatePresence>
@@ -38,7 +38,7 @@ export function Splash() {
           className="fixed inset-0 z-[200]"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, filter: "blur(6px)" }}
-          transition={{ duration: 0.7, ease: "easeInOut" }}
+          transition={{ duration: 0.45, ease: "easeInOut" }}
         >
           <MusicLoader />
         </motion.div>

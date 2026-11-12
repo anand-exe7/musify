@@ -38,7 +38,12 @@ async function clearPending(razorpayOrderId: string): Promise<void> {
  * Record the order for a captured payment. Safe to call any number of times, from the browser and the webhook
  * at once: the unique index on the payment id lets exactly one caller create the order (and send the email).
  */
-export async function finalizePaidOrder(draft: CheckoutDraft, paymentId: string): Promise<Order> {
+export async function finalizePaidOrder(
+  draft: CheckoutDraft,
+  paymentId: string,
+  /** How it was paid ("upi", "card", …). Recorded on the order and copied to the invoice. */
+  instrument?: string,
+): Promise<Order> {
   const existing = await getOrderByPaymentId(paymentId);
   if (existing) {
     await clearPending(draft.razorpayOrderId);
@@ -53,7 +58,7 @@ export async function finalizePaidOrder(draft: CheckoutDraft, paymentId: string)
     customerName: draft.customerName,
     email: draft.email,
     phone: draft.phone,
-    paymentMethod: "razorpay",
+    paymentMethod: instrument || "razorpay",
     paymentId,
     shipState: draft.shipState,
     branch: draft.branch,
@@ -65,6 +70,10 @@ export async function finalizePaidOrder(draft: CheckoutDraft, paymentId: string)
     shipping: draft.shipping,
     total: draft.total,
     address: draft.address,
+    deliveryMethod: draft.deliveryMethod,
+    deliveryEta: draft.deliveryEta,
+    dispatchBy: draft.dispatchBy,
+    weightG: draft.weightG,
   };
 
   // The customer has already paid, so record the order even if stock ran short in the meantime. The loser of a

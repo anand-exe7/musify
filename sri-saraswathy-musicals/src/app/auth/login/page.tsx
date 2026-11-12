@@ -37,7 +37,7 @@ function LoginInner() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
-        className="relative hidden flex-col justify-between overflow-hidden border border-ink-100 text-ivory-100 md:flex"
+        className="relative hidden flex-col justify-between overflow-hidden rounded-3xl border border-ink-100 text-ivory-100 md:flex"
       >
         <Image
           src="https://images.unsplash.com/photo-1465847899084-d164df4dedc6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1400&q=80"
@@ -71,7 +71,7 @@ function LoginInner() {
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.08 }}
-        className="flex flex-col justify-center border border-ink-100 bg-ivory-50 p-8 md:p-10"
+        className="flex flex-col justify-center rounded-3xl border border-ink-100 bg-ivory-50 p-8 md:p-10"
       >
         <p className="eyebrow">Sign in</p>
         <h2 className="heading-serif mt-3 text-3xl text-ink-900">
@@ -82,7 +82,7 @@ function LoginInner() {
         </p>
 
         {error && (
-          <p className="mt-6 border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+          <p className="mt-6 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
             {ERRORS[error] ?? "Something went wrong signing you in. Please try again."}
           </p>
         )}

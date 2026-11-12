@@ -13,10 +13,10 @@ export function GET() {
   return handle("public", async () => ok(await getDeliverySettings()));
 }
 
-// PATCH updates the scalar delivery fields (zones have their own endpoint).
+// PATCH updates the scalar delivery fields (zones and methods have their own endpoints).
 export function PATCH(request: NextRequest) {
   return handle("admin", async () => {
-    const patch = await readJson<Partial<Omit<DeliverySettings, "zones">>>(request);
+    const patch = await readJson<Partial<Omit<DeliverySettings, "zones" | "methods">>>(request);
     return ok(await updateDeliverySettings(patch));
   });
 }

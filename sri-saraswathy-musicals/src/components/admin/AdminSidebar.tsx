@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRepair, alertLevel } from "@/lib/store/repair";
-import { useInquiry } from "@/lib/store/inquiry";
+import { useInquiry, useInquiriesLoaded } from "@/lib/store/inquiry";
 import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { useAuth } from "@/lib/store/auth";
 
@@ -136,6 +136,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const tickets = useRepair((s) => s.tickets);
   const inquiries = useInquiry((s) => s.inquiries);
+  useInquiriesLoaded();
   const newOrders = useOrderAlerts((s) => s.count);
   const adminAccess = useAuth((s) => s.adminAccess);
   const authHydrated = useAuth((s) => s.hydrated);

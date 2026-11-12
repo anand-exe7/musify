@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock, ShoppingBag, Volume2, VolumeX, Activity } from "lucide-react";
+import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock, ShoppingBag, Volume2, VolumeX, Activity, Truck } from "lucide-react";
 import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repair";
 import { useInquiry } from "@/lib/store/inquiry";
 import { useOrderAlerts } from "@/lib/store/orderAlerts";
+import { daysUntil as daysToDispatch } from "@/lib/delivery/types";
 import { useBranchScope, BRANCHES, type BranchScope } from "@/lib/store/branch";
 import { cn, formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
@@ -16,6 +17,7 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
   const inquiries = useInquiry((s) => s.inquiries);
   const orderCount = useOrderAlerts((s) => s.count);
   const orderLatest = useOrderAlerts((s) => s.latest);
+  const toDispatch = useOrderAlerts((s) => s.dispatch);
   const muted = useOrderAlerts((s) => s.muted);
   const setMuted = useOrderAlerts((s) => s.setMuted);
   const [open, setOpen] = useState(false);
@@ -37,6 +39,16 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
       window.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  // Orders whose dispatch deadline is today, tomorrow or already past — the ones that
+  // get buried once a few orders stack up.
+  const dispatchDue = useMemo(
+    () =>
+      toDispatch
+        .map((o) => ({ order: o, days: daysToDispatch(o.dispatchBy) }))
+        .filter((x): x is { order: (typeof toDispatch)[number]; days: number } => x.days !== null && x.days <= 2),
+    [toDispatch],
+  );
 
   const { overdue, dueSoon, newInq } = useMemo(() => {
     const overdue = tickets
@@ -109,6 +121,26 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
               <div className="max-h-[70vh] overflow-y-auto">
                 {count === 0 && (
                   <p className="px-4 py-10 text-center text-sm text-ink-400">You&apos;re all caught up 🎵</p>
+                )}
+
+                {dispatchDue.length > 0 && (
+                  <Section
+                    icon={<Truck className="h-3.5 w-3.5" />}
+                    label={`Dispatch due · ${dispatchDue.length}`}
+                    tone={dispatchDue.some((d) => d.days < 0) ? "text-danger" : "text-[#8a6a1f]"}
+                  >
+                    {dispatchDue.map(({ order: o, days }) => (
+                      <AlertRow
+                        key={`d-${o.id}`}
+                        onClick={() => go(`/admin/orders/${encodeURIComponent(o.id)}`)}
+                        title={o.customerName || "Online customer"}
+                        sub={`${o.id} · ${o.deliveryMethod || branchLabel(o.branch)}`}
+                        badge={days < 0 ? `${Math.abs(days)}d late` : days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days}d`}
+                        badgeTone={days < 0 ? "bg-danger/15 text-danger" : "bg-warning/20 text-[#8a6a1f]"}
+                        note={`Ship by ${o.dispatchBy}`}
+                      />
+                    ))}
+                  </Section>
                 )}
 
                 {orderCount > 0 && (

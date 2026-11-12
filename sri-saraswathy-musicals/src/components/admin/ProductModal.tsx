@@ -4,6 +4,7 @@ import { X, Plus, Trash2, ImagePlus } from "lucide-react";
 import { usePOS, variantStockAt, setVariantStockAt, type InvProduct, type Variant, type Branch } from "@/lib/store/pos";
 import { BRANCH_KEYS, emptyStockByBranch, branchLabel } from "@/lib/stock";
 import { compressImage } from "@/lib/client/image";
+import { BESTSELLER_SLOTS } from "@/lib/catalog/bestsellers";
 
 const MAX_PHOTOS = 4;
 import { useAuth } from "@/lib/store/auth";
@@ -64,14 +65,18 @@ export function ProductModal({
   product,
   onClose,
   onCreated,
+  onSaved,
   initialName,
 }: {
   product: InvProduct | null;
   onClose: () => void;
   /** Called with the new product right after it is created (e.g. to add it to a stock receipt). */
   onCreated?: (p: InvProduct) => void;
+  /** Called after a successful save, so the page behind can confirm it ("… added to the catalogue"). */
+  onSaved?: (p: InvProduct, created: boolean) => void;
   initialName?: string;
 }) {
+  const allProducts = usePOS((s) => s.invProducts);
   const addProduct = usePOS((s) => s.addProduct);
   const updateProduct = usePOS((s) => s.updateProduct);
   const allCategories = usePOS((s) => s.categories);
@@ -99,6 +104,13 @@ export function ProductModal({
     () => allDepartments.filter((d) => departmentActive[d] !== false || d === draft.department),
     [allDepartments, departmentActive, draft.department],
   );
+
+  // The home page shows a fixed number of bestsellers; count the OTHER products holding a slot.
+  const otherBestSellers = useMemo(
+    () => allProducts.filter((p) => p.bestSeller && p.id !== draft.id),
+    [allProducts, draft.id],
+  );
+  const bestSellerFull = !draft.bestSeller && otherBestSellers.length >= BESTSELLER_SLOTS;
 
   const set = (patch: Partial<InvProduct>) => setDraft((d) => ({ ...d, ...patch }));
   const setVariant = (i: number, patch: Partial<Variant>) =>
@@ -131,6 +143,22 @@ export function ProductModal({
     if (isNew && !/^\d{4,8}$/.test((draft.hsn ?? "").trim())) {
       setError("HSN / SAC code is required — enter 4 to 8 digits.");
       setTab("details");
+      return;
+    }
+    // Weight decides the courier band, so a product without one can't be shipped.
+    if (!(Number(draft.baseWeight) > 0)) {
+      setError("Base weight is required — delivery is charged by the parcel's weight.");
+      setTab("details");
+      return;
+    }
+    if (draft.variants.some((v) => !(Number(v.weight) > 0))) {
+      setError("Every variant needs a weight — delivery is charged by the parcel's weight.");
+      setTab("variants");
+      return;
+    }
+    if (draft.bestSeller && bestSellerFull) {
+      setError(`Only ${BESTSELLER_SLOTS} products can be bestsellers. Turn one of the others off first.`);
+      setTab("storefront");
       return;
     }
     const name = draft.name.trim() || "Untitled product";
@@ -176,6 +204,7 @@ export function ProductModal({
       });
       updateProduct(clean.id, clean, stockChanges);
     }
+    onSaved?.(clean, isNew);
     onClose();
   };
 
@@ -222,13 +251,29 @@ export function ProductModal({
           {/* ── Details ─────────────────────────────────────────────── */}
           {tab === "details" && (
             <div className="grid gap-4 lg:grid-cols-2">
+              {/* Everything that identifies the product lives here, and only here — brand, origin and
+                  the slug used to be asked again on the next tab, which read as being asked twice. */}
               <Card title="What it is">
-                <div>
-                  <label className={label}>Product name</label>
-                  <input value={draft.name} onChange={(e) => set({ name: e.target.value })} className={field} placeholder="e.g. Saraswathi Veena" />
-                </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className={label}>Category</label><select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                  <div className="col-span-2">
+                    <label className={label}>Product name</label>
+                    <input value={draft.name} onChange={(e) => set({ name: e.target.value })} className={field} placeholder="e.g. Saraswathi Veena" />
+                  </div>
+                  <div>
+                    <label className={label}>Brand</label>
+                    <input value={draft.brand ?? ""} onChange={(e) => set({ brand: e.target.value })} className={field} placeholder="e.g. Tanjore Classic" />
+                  </div>
+                  <div>
+                    <label className={label}>Origin</label>
+                    <select value={draft.origin ?? "indian"} onChange={(e) => set({ origin: e.target.value as "indian" | "western" })} className={field}>
+                      <option value="indian">Indian</option>
+                      <option value="western">Western</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={label}>Category</label>
+                    <select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
+                  </div>
                   <div>
                     <label className={label}>Department</label>
                     <select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>
@@ -236,26 +281,51 @@ export function ProductModal({
                       {DEPTS.map((c) => <option key={c}>{c}</option>)}
                     </select>
                   </div>
+                  <div className="col-span-2">
+                    <label className={label}>URL slug</label>
+                    <input value={draft.slug ?? ""} onChange={(e) => set({ slug: e.target.value })} className={field} placeholder={slugify(draft.name || "auto-from-name")} />
+                  </div>
                 </div>
                 <div>
                   <label className={label}>Description</label>
-                  <textarea value={draft.description} onChange={(e) => set({ description: e.target.value })} rows={5} className={cn(field, "resize-none")} placeholder="What a customer should know about it." />
+                  <textarea value={draft.description} onChange={(e) => set({ description: e.target.value })} rows={4} className={cn(field, "resize-none")} placeholder="What a customer should know about it." />
                 </div>
               </Card>
 
               <div className="space-y-4">
+                {/* Both money fields together — MRP used to sit on the next tab, which looked like
+                    being asked for the price a second time. */}
                 <Card title="Price &amp; weight">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={label}>Base price (₹){priceLocked && <span className="ml-1 normal-case tracking-normal text-[9px] text-ink-400">admin only</span>}</label>
                       <MoneyInput value={draft.basePrice || 0} onChange={(paise) => set({ basePrice: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")} />
                     </div>
-                    <div><label className={label}>Base weight (g)</label><input type="number" value={draft.baseWeight || ""} placeholder="500" onChange={(e) => set({ baseWeight: Number(e.target.value) })} className={field} /></div>
+                    <div>
+                      <label className={label}>MRP (₹){priceLocked && <span className="ml-1 normal-case tracking-normal text-[9px] text-ink-400">admin only</span>}</label>
+                      <MoneyInput value={draft.mrp || 0} onChange={(paise) => set({ mrp: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")} />
+                    </div>
+                    <div>
+                      <label className={label}>Base weight (g)<span className="text-danger"> *</span></label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={draft.baseWeight || ""}
+                        placeholder="500"
+                        onChange={(e) => { set({ baseWeight: Number(e.target.value) }); setError(null); }}
+                        aria-invalid={!(Number(draft.baseWeight) > 0)}
+                        className={cn(field, !(Number(draft.baseWeight) > 0) && "border-danger bg-danger/5")}
+                      />
+                    </div>
+                    <div>
+                      <label className={label}>Discount label</label>
+                      <input value={draft.discountLabel ?? ""} onChange={(e) => set({ discountLabel: e.target.value })} className={field} placeholder="e.g. Festive Offer" />
+                    </div>
                   </div>
-                  <div>
-                    <label className={label}>Discount label</label>
-                    <input value={draft.discountLabel ?? ""} onChange={(e) => set({ discountLabel: e.target.value })} className={field} placeholder="e.g. Festive Offer" />
-                  </div>
+                  <p className="-mt-1 text-[11px] text-ink-400">
+                    Weight is in grams, per piece, and is required — an online order adds up the weights of
+                    everything in the cart and charges the courier band that total falls into.
+                  </p>
                 </Card>
 
                 <Card title="Tax (GST)">
@@ -327,26 +397,51 @@ export function ProductModal({
               </Card>
 
               <Card title="How it is listed">
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className={label}>Brand</label><input value={draft.brand ?? ""} onChange={(e) => set({ brand: e.target.value })} className={field} placeholder="e.g. Tanjore Classic" /></div>
-                  <div>
-                    <label className={label}>Origin</label>
-                    <select value={draft.origin ?? "indian"} onChange={(e) => set({ origin: e.target.value as "indian" | "western" })} className={field}>
-                      <option value="indian">Indian</option>
-                      <option value="western">Western</option>
-                    </select>
-                  </div>
-                  <div><label className={label}>URL slug</label><input value={draft.slug ?? ""} onChange={(e) => set({ slug: e.target.value })} className={field} placeholder={slugify(draft.name || "auto-from-name")} /></div>
-                  <div>
-                    <label className={label}>MRP (₹){priceLocked && <span className="ml-1 normal-case tracking-normal text-[9px] text-ink-400">admin only</span>}</label>
-                    <MoneyInput value={draft.mrp || 0} onChange={(paise) => set({ mrp: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")} />
-                  </div>
-                </div>
                 <div><label className={label}>Tagline</label><input value={draft.tagline ?? ""} onChange={(e) => set({ tagline: e.target.value })} className={field} placeholder="A short line shown under the name" /></div>
-                <div className="flex flex-wrap gap-4 pt-1">
-                  <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={!!draft.featured} onChange={(e) => set({ featured: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Featured</label>
-                  <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={!!draft.bestSeller} onChange={(e) => set({ bestSeller: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Bestseller</label>
-                </div>
+                {/* The home page has exactly one featured slot: saving this on takes it off whatever
+                    product holds it now (enforced when saving, not just here). */}
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-ink-100 bg-white px-3 py-2.5">
+                  <input type="checkbox" checked={!!draft.featured} onChange={(e) => set({ featured: e.target.checked })} className="mt-0.5 h-4 w-4 shrink-0 accent-gold-500" />
+                  <span>
+                    <span className="block text-sm font-semibold text-ink-900">Show on the home page</span>
+                    <span className="block text-xs text-ink-500">
+                      The featured piece in the hero — photo, name and “Shop the piece”. Only one product at a
+                      time: switching this on takes it off the product that has it now.
+                    </span>
+                  </span>
+                </label>
+                {/* The home page has room for exactly BESTSELLER_SLOTS of these, so the box goes
+                    dead once they are taken rather than silently dropping one. */}
+                <label
+                  className={cn(
+                    "flex items-start gap-3 rounded-xl border bg-white px-3 py-2.5",
+                    bestSellerFull ? "cursor-not-allowed border-ink-100 opacity-60" : "cursor-pointer border-ink-100",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!draft.bestSeller}
+                    disabled={bestSellerFull}
+                    onChange={(e) => set({ bestSeller: e.target.checked })}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-gold-500 disabled:cursor-not-allowed"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-ink-900">Bestseller</span>
+                    <span className="block text-xs text-ink-500">
+                      {bestSellerFull ? (
+                        <>
+                          All {BESTSELLER_SLOTS} bestseller slots are taken ({otherBestSellers.map((p) => p.name).join(", ")}).
+                          Turn one of those off first.
+                        </>
+                      ) : (
+                        <>
+                          Shown on the home page under the hero. {BESTSELLER_SLOTS - otherBestSellers.length - (draft.bestSeller ? 1 : 0)} of{" "}
+                          {BESTSELLER_SLOTS} slots left.
+                        </>
+                      )}
+                    </span>
+                  </span>
+                </label>
               </Card>
 
               <Card title="Specifications">
