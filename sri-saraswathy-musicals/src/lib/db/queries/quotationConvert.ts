@@ -30,7 +30,11 @@ export async function convertQuotation(id: string, paymentsInput: unknown): Prom
   if (!pay.ok) throw bad(pay.error);
 
   // Every line must point at a live product variant — that is what moves stock.
-  const catalog = new Map((await getPricingCatalog()).map((p) => [p.id, p]));
+  const catalog = new Map(
+    (await getPricingCatalog([...new Set(q.items.map((l) => l.productId).filter((id): id is string => !!id))])).map(
+      (p) => [p.id, p],
+    ),
+  );
   const items: BillItem[] = q.items.map((l) => {
     const product = l.productId ? catalog.get(l.productId) : undefined;
     const idx = product && l.variantKey ? product.variants.findIndex((v) => variantKey(v) === l.variantKey) : -1;

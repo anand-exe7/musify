@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
-import { selectProduct, selectProducts, insertVariants, attachVariants } from "./variants";
+import { selectProduct, selectProducts, selectStorefront, selectPricingRows, insertVariants } from "./variants";
 import { BRANCH_KEYS, variantStock, variantStockAt } from "@/lib/stock";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { HttpError } from "@/lib/api/errors";
@@ -136,20 +136,27 @@ export interface PricingProduct {
   brand: string;
   hsn: string;
   price: number;
+  mrp: number;
   /** `null` ⇒ exempt (non-GST). */
   gstRate: number | null;
   isGstApplicable: boolean;
   variants: ProductRow["variants"];
 }
 
-export async function getPricingCatalog(): Promise<PricingProduct[]> {
-  const rows = await selectProducts();
+/**
+ * Pricing rows for the products a cart/order names (all of them when `ids` is left out).
+ * Reads no photos: a quote used to pull the whole catalogue, base64 images and all, which is
+ * what made the cart's total take twenty seconds to appear.
+ */
+export async function getPricingCatalog(ids?: string[]): Promise<PricingProduct[]> {
+  const rows = await selectPricingRows(ids);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     brand: r.brand,
     hsn: r.hsn,
     price: r.price,
+    mrp: r.mrp,
     gstRate: r.gstRate ?? null,
     isGstApplicable: r.isGstApplicable,
     variants: r.variants ?? [],
@@ -158,7 +165,7 @@ export async function getPricingCatalog(): Promise<PricingProduct[]> {
 
 /** Only products the storefront should show (the `active` kill switch). */
 export async function getStorefrontProducts(): Promise<Product[]> {
-  return (await selectProducts(eq(products.active, true))).map(toProduct);
+  return (await selectStorefront(eq(products.active, true))).map(toProduct);
 }
 
 /* ─────────────────────────  One page of the shop  ───────────────────────── */
@@ -205,31 +212,39 @@ export async function getStorefrontPage(q: ShopPageQuery = {}): Promise<ShopPage
   }
   const where = and(...conds);
 
-  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(where);
-  const total = Number(n);
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.min(Math.max(1, Math.floor(Number(q.page)) || 1), pages);
-
   const order =
     q.sort === "price-asc" ? [asc(products.price)]
     : q.sort === "price-desc" ? [desc(products.price)]
     : q.sort === "name" ? [asc(products.name)]
     : q.sort === "rating" ? [desc(products.rating), asc(products.name)]
     : [desc(products.featured), asc(products.name)];
+  const at = (p: number) =>
+    selectStorefront(where, { order: [...order, asc(products.id)], limit: pageSize, offset: (p - 1) * pageSize });
 
-  const rows = await db.select().from(products).where(where).orderBy(...order, asc(products.id)).limit(pageSize).offset((page - 1) * pageSize);
-  return { items: (await attachVariants(rows)).map(toProduct), total, page, pageSize, pages };
+  // The count and the page the visitor asked for don't depend on each other — read them together,
+  // so the shop is one round trip to the database rather than two in a row.
+  const wanted = Math.max(1, Math.floor(Number(q.page)) || 1);
+  const [[{ n }], firstRows] = await Promise.all([
+    db.select({ n: sql<number>`count(*)::int` }).from(products).where(where),
+    at(wanted),
+  ]);
+  const total = Number(n);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(wanted, pages);
+  // Only when the page asked for ran past the end (a filter just changed) is a second read needed.
+  const rows = page === wanted ? firstRows : await at(page);
+  return { items: rows.map(toProduct), total, page, pageSize, pages };
 }
 
 /** The active products with these ids (a cart, a wishlist). Unknown or hidden ids are simply absent. */
 export async function getStorefrontProductsByIds(ids: string[]): Promise<Product[]> {
   const list = [...new Set(ids.filter((i) => typeof i === "string" && i))].slice(0, MAX_SHOP_PAGE_SIZE * 2);
   if (list.length === 0) return [];
-  return (await selectProducts(and(inArray(products.id, list), eq(products.active, true)))).map(toProduct);
+  return (await selectStorefront(and(inArray(products.id, list), eq(products.active, true)))).map(toProduct);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | undefined> {
-  const [row] = await selectProducts(eq(products.slug, slug));
+  const [row] = await selectStorefront(eq(products.slug, slug));
   return row ? toProduct(row) : undefined;
 }
 
@@ -239,15 +254,15 @@ export async function getProductById(id: string): Promise<Product | undefined> {
 }
 
 export async function getProductsByCategory(category: string): Promise<Product[]> {
-  return (await selectProducts(and(eq(products.category, category), eq(products.active, true)))).map(toProduct);
+  return (await selectStorefront(and(eq(products.category, category), eq(products.active, true)))).map(toProduct);
 }
 
 export async function getFeaturedProducts(): Promise<Product[]> {
-  return (await selectProducts(and(eq(products.featured, true), eq(products.active, true)))).map(toProduct);
+  return (await selectStorefront(and(eq(products.featured, true), eq(products.active, true)))).map(toProduct);
 }
 
 export async function getBestSellers(): Promise<Product[]> {
-  return (await selectProducts(and(eq(products.bestSeller, true), eq(products.active, true)))).map(toProduct);
+  return (await selectStorefront(and(eq(products.bestSeller, true), eq(products.active, true)))).map(toProduct);
 }
 
 /* ─────────────────────────────  Writes  ────────────────────────────── */

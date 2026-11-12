@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { products, productVariants, variantStock, type ProductRow, type VariantData } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { DEFAULT_BRANCH, type Variant } from "@/lib/stock";
-import { galleryRef, variantRef, keptPhoto, isPhotoRef } from "./photoRefs";
+import { galleryRef, variantRef, publicGalleryRef, publicVariantRef, keptPhoto, isPhotoRef } from "./photoRefs";
 
 type ProductColumns = typeof products.$inferSelect;
 
@@ -138,6 +138,49 @@ export async function selectProductForEditor(id: string): Promise<ProductRow | u
   } as ProductRow;
 }
 
+/**
+ * Products for the STOREFRONT: every column except the photos themselves, which come back as URLs to the
+ * public image routes (`/api/catalog/…`). A shop page of twelve instruments used to carry a megabyte of
+ * base64 inside its JSON — one photo per product plus one per variant — which is what made the shop,
+ * a product page and the cart slow to appear.
+ *
+ * `order`, `limit` and `offset` are applied in the database so a page reads only its own rows.
+ */
+export async function selectStorefront(
+  where?: SQL,
+  opts: { order?: SQL[]; limit?: number; offset?: number } = {},
+): Promise<ProductRow[]> {
+  const { photos: _gallery, photo: _photo, ...cols } = getTableColumns(products);
+  void _gallery;
+  void _photo;
+  let q = db
+    .select({
+      ...cols,
+      ownKey: sql<string | null>`md5(nullif("products"."photo", ''))`,
+      galleryKeys: sql<string[]>`coalesce((select jsonb_agg(md5(e)) from jsonb_array_elements_text(
+        case when jsonb_typeof("products"."photos") = 'array' then "products"."photos" else '[]'::jsonb end) e), '[]'::jsonb)`,
+    })
+    .from(products)
+    .$dynamic();
+  if (where) q = q.where(where);
+  if (opts.order && opts.order.length > 0) q = q.orderBy(...opts.order);
+  if (opts.limit !== undefined) q = q.limit(opts.limit);
+  if (opts.offset) q = q.offset(opts.offset);
+
+  const rows = await q;
+  const variants = await loadVariants(rows.map((r) => r.id), { photoKeys: true });
+  return rows.map(({ ownKey, galleryKeys, ...rest }) => {
+    const gallery = (galleryKeys ?? []).map((k, i) => publicGalleryRef(rest.id, i, k ?? ""));
+    const photos = gallery.length > 0 ? gallery : ownKey ? [publicGalleryRef(rest.id, 0, ownKey)] : [];
+    return {
+      ...rest,
+      photo: photos[0] ?? null,
+      photos: photos.length > 0 ? photos : null,
+      variants: (variants.get(rest.id) ?? []).map((v) => ({ ...v, photo: v.photo ? publicVariantRef(v.id, v.photo) : null })),
+    } as ProductRow;
+  });
+}
+
 /** One gallery slot's photo (slot 0 falls back to the product's own photo), for the image route. */
 export async function galleryPhoto(id: string, index: number): Promise<string | null> {
   const [r] = await db.select({ photo: products.photo, photos: products.photos }).from(products).where(eq(products.id, id)).limit(1);
@@ -155,6 +198,12 @@ export async function productListPhoto(id: string): Promise<string | null> {
         order by pv.disabled, pv.position limit 1)) as photo
       from products p where p.id = ${id}`);
   return ((res.rows as { photo: string | null }[])[0]?.photo) ?? null;
+}
+
+/** One variant's stored photo (a data URL or plain URL), for the image routes. */
+export async function variantPhotoById(variantId: string): Promise<string | null> {
+  const [r] = await db.select({ photo: productVariants.photo }).from(productVariants).where(eq(productVariants.id, variantId)).limit(1);
+  return r?.photo || null;
 }
 
 /** Products (with variants and stock) matching `where`, or all of them. */
@@ -325,4 +374,47 @@ export async function stockAt(productId: string, variantIndex: number, branch: s
     left join variant_stock vs on vs.variant_id = pv.id and vs.branch = ${branch}
     where pv.product_id = ${productId} and pv.position = ${variantIndex}`);
   return Number((r.rows as { qty: number }[])[0]?.qty ?? 0);
+}
+
+/**
+ * Only what server-side pricing needs: money, tax columns and the variants with their per-branch
+ * stock. No photos at all — not the product's, not the gallery's, not the variants'. Pricing a
+ * two-line cart used to read the whole catalogue with every base64 photo in it, which is why a
+ * quote took twenty seconds; with `ids` it now reads just the rows the cart names.
+ */
+export interface PricingRow {
+  id: string;
+  name: string;
+  brand: string;
+  hsn: string;
+  price: number;
+  mrp: number;
+  gstRate: number | null;
+  isGstApplicable: boolean;
+  variants: VariantData[];
+}
+
+export async function selectPricingRows(ids?: string[]): Promise<PricingRow[]> {
+  if (ids && ids.length === 0) return [];
+  const q = db
+    .select({
+      id: products.id,
+      name: products.name,
+      brand: products.brand,
+      hsn: products.hsn,
+      price: products.price,
+      mrp: products.mrp,
+      gstRate: products.gstRate,
+      isGstApplicable: products.isGstApplicable,
+    })
+    .from(products)
+    .$dynamic();
+  // With the ids in hand the variants don't have to wait for the product rows — one round trip, not two.
+  const [rows, variants] = ids
+    ? await Promise.all([q.where(inArray(products.id, ids)), loadVariants(ids, { photos: false })])
+    : await (async () => {
+        const all = await q;
+        return [all, await loadVariants(all.map((r) => r.id), { photos: false })] as const;
+      })();
+  return rows.map((r) => ({ ...r, variants: variants.get(r.id) ?? [] }));
 }

@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { genDocId } from "@/lib/ids";
 import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
@@ -70,7 +71,11 @@ export const useInquiry = create<InquiryState>()((set, get) => ({
   addInquiry: (i) => {
     const prev = get().inquiries;
     set((s) => ({ inquiries: [i, ...s.inquiries] }));
-    void send("/api/inquiries", "POST", i, get().hydrate, () => set({ inquiries: prev }));
+    // Reload only when this screen already had the list (staff); a visitor posting the
+    // storefront form must not call the staff-only GET.
+    void send("/api/inquiries", "POST", i, () => (get().hydrated ? get().hydrate() : Promise.resolve(true)), () =>
+      set({ inquiries: prev }),
+    );
   },
   updateInquiry: (id, patch) => {
     const prev = get().inquiries;
@@ -85,6 +90,26 @@ export const useInquiry = create<InquiryState>()((set, get) => ({
   resetDemo: () => void get().hydrate(),
 }));
 
-if (typeof window !== "undefined") {
-  void useInquiry.getState().hydrate();
+/**
+ * Load the inquiry list once, for the screens allowed to see it. The list is staff-only, so this
+ * is NOT done on import: the storefront's own inquiry form imports this store too, and every
+ * visitor was firing a GET that came back 401.
+ */
+let hydrating: Promise<boolean> | null = null;
+export function ensureInquiriesLoaded(): Promise<boolean> {
+  if (useInquiry.getState().hydrated) return Promise.resolve(true);
+  hydrating ??= useInquiry
+    .getState()
+    .hydrate()
+    .finally(() => {
+      hydrating = null;
+    });
+  return hydrating;
+}
+
+/** Call from a staff-only screen to load the list on mount. */
+export function useInquiriesLoaded(): void {
+  useEffect(() => {
+    void ensureInquiriesLoaded();
+  }, []);
 }

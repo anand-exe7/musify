@@ -12,7 +12,6 @@ import {
 import { ArrowRight } from "lucide-react";
 import { useRef } from "react";
 import { useFeatured } from "@/lib/client/catalog";
-import { formatINR } from "@/lib/utils";
 
 export function Hero() {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -184,67 +183,69 @@ export function Hero() {
 
       {/* ── Content ──────────────────────────────────────────── */}
       <div className="container-page relative z-10 min-h-[100svh] pb-12 pt-24 lg:pb-0 lg:pt-0">
-        {/* Top-right note — desktop only */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.4 }}
-          className="hidden lg:absolute lg:right-0 lg:top-28 lg:block lg:text-right"
-        >
-          <p className="max-w-[16rem] text-[11px] font-semibold uppercase leading-relaxed tracking-[0.18em] text-ink-400">
-            Where old-world craft
-            <br /> meets the modern stage.
-          </p>
-          <span className="ml-auto mt-3 block h-px w-16 bg-ink-300" />
-        </motion.div>
+        {/* Heading row — the strapline sits in the same flow as the heading, so it can never
+          slide past the right edge of the page the way an absolutely positioned note did. */}
+        <div className="relative z-20 flex items-start justify-between gap-10 lg:pt-28">
+          <div className="max-w-sm lg:max-w-xl">
+            <motion.h1
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.9, ease: "easeOut" }}
+              className="font-sans font-black uppercase text-ink-900"
+              style={{
+                fontSize: "clamp(1.6rem, 3.4vw, 3.25rem)",
+                lineHeight: 1,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Grand tone,
+              <br />
+              fine craft <span className="text-gold-500">—</span>
+              <br />
+              made for
+              <br />
+              every stage
+            </motion.h1>
 
-        {/* Heading block */}
-        <div className="relative z-20 max-w-lg lg:max-w-2xl lg:pt-28">
-          <motion.h1
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, ease: "easeOut" }}
-            className="font-sans font-black uppercase text-ink-900"
-            style={{
-              fontSize: "clamp(1.9rem, 4.6vw, 4.5rem)",
-              lineHeight: 0.96,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Grand tone,
-            <br />
-            fine craft <span className="text-gold-500">—</span>
-            <br />
-            made for
-            <br />
-            every stage
-          </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.25 }}
+              className="mt-5 max-w-sm text-[10px] font-semibold uppercase leading-relaxed tracking-[0.16em] text-ink-400 md:text-[11px]"
+            >
+              Handpicked instruments — Carnatic to Western.
+              <br className="hidden sm:block" /> Set up by luthiers, built to last.
+            </motion.p>
 
-          <motion.p
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.25 }}
-            className="mt-6 max-w-md text-[11px] font-semibold uppercase leading-relaxed tracking-[0.16em] text-ink-400 md:text-xs"
-          >
-            Handpicked instruments — Carnatic to Western.
-            <br className="hidden sm:block" /> Set up by luthiers, built to last.
-          </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.4 }}
+              className="mt-7"
+            >
+              <Link
+                href="/shop"
+                className="group inline-flex items-center gap-3 rounded-full bg-ink-900 px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-all hover:bg-gold-500 hover:text-ink-900 hover:shadow-gold"
+              >
+                Explore collection
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-ivory-50/15 transition-transform group-hover:translate-x-0.5 group-hover:bg-ink-900/15">
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </span>
+              </Link>
+            </motion.div>
+          </div>
 
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.4 }}
-            className="mt-8"
+            className="hidden shrink-0 text-right lg:block"
           >
-            <Link
-              href="/shop"
-              className="group inline-flex items-center gap-3 rounded-full bg-ink-900 px-7 py-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-all hover:bg-gold-500 hover:text-ink-900 hover:shadow-gold"
-            >
-              Explore collection
-              <span className="grid h-6 w-6 place-items-center rounded-full bg-ivory-50/15 transition-transform group-hover:translate-x-0.5 group-hover:bg-ink-900/15">
-                <ArrowRight className="h-3.5 w-3.5" />
-              </span>
-            </Link>
+            <p className="max-w-[14rem] text-[10px] font-semibold uppercase leading-relaxed tracking-[0.16em] text-ink-400">
+              Where old-world craft
+              <br /> meets the modern stage.
+            </p>
+            <span className="ml-auto mt-3 block h-px w-14 bg-ink-300" />
           </motion.div>
         </div>
 
@@ -297,59 +298,56 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Featured product card — mouse tilt + hover lift */}
-        <div className="relative z-30 mx-auto mt-6 w-full max-w-[19rem] lg:absolute lg:right-0 lg:top-[46%] lg:mt-0 lg:-translate-y-1/2">
-          <motion.div
-            style={{
-              x: cardX,
-              y: cardMY,
-              rotateX: cardRX,
-              rotateY: cardRY,
-              transformPerspective: 900,
-            }}
-            className="will-change-transform"
-          >
+        {/* The one featured piece — set in Admin → Inventory, where only one product can hold the flag.
+            Desktop only: on a phone the frosted card sat over the artwork and read as a smudge. */}
+        {featured && (
+          <div className="pointer-events-none absolute right-0 top-[46%] z-30 hidden w-[17rem] -translate-y-1/2 lg:block">
             <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: 0.5 }}
+              style={{
+                x: cardX,
+                y: cardMY,
+                rotateX: cardRX,
+                rotateY: cardRY,
+                transformPerspective: 900,
+              }}
+              className="will-change-transform"
             >
-              <div className="group rounded-[1.6rem] border border-ivory-200/70 bg-ivory-50/80 p-3 shadow-[0_24px_60px_-24px_rgba(10,9,8,0.4)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_34px_70px_-24px_rgba(10,9,8,0.5)]">
-                <div className="flex items-center gap-3">
-                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-ink-100">
-                    {featured?.photo && (
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.5 }}
+              >
+                <Link
+                  href={`/product/${featured.slug}`}
+                  className="group pointer-events-auto block overflow-hidden rounded-[1.6rem] border border-ivory-200/70 bg-ivory-50/85 p-3 shadow-[0_24px_60px_-24px_rgba(10,9,8,0.4)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_34px_70px_-24px_rgba(10,9,8,0.5)]"
+                >
+                  <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.1rem] bg-white">
+                    {featured.photo && (
                       <Image
                         src={featured.photo}
                         alt={featured.name}
                         fill
-                        sizes="56px"
-                        className="object-cover transition-transform duration-500 group-hover:scale-110"
+                        unoptimized={featured.photo.startsWith("/api/")}
+                        sizes="272px"
+                        className="object-contain p-3 transition-transform duration-500 group-hover:scale-105"
                       />
                     )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-ink-400">
+                    <span className="absolute left-3 top-3 rounded-full bg-ink-900/85 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-gold-300">
                       Featured
-                    </p>
-                    <p className="truncate text-sm font-semibold text-ink-900">
-                      {featured?.name}
-                    </p>
-                    <p className="mt-0.5 text-sm font-bold text-ink-900">
-                      {featured ? formatINR(featured.price) : ""}
-                    </p>
+                    </span>
                   </div>
-                </div>
-                <Link
-                  href={featured ? `/product/${featured.slug}` : "/shop"}
-                  className="mt-3 flex items-center justify-center gap-2 rounded-full bg-ink-900 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900"
-                >
-                  Shop the piece
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  <p className="mt-3 line-clamp-2 px-1 text-sm font-semibold leading-snug text-ink-900">
+                    {featured.name}
+                  </p>
+                  <span className="mt-3 flex items-center justify-center gap-2 rounded-full bg-ink-900 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-colors group-hover:bg-gold-500 group-hover:text-ink-900">
+                    Shop the piece
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </span>
                 </Link>
-              </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        </div>
+          </div>
+        )}
 
         {/* Scroll cue — desktop only */}
         <div className="pointer-events-none absolute bottom-16 right-1 z-40 hidden items-center gap-3 lg:flex lg:flex-col">

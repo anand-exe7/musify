@@ -62,12 +62,11 @@ export function Inquiry() {
     }
   };
 
-  const field =
-    "w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500/30";
-  const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-gold-700";
+  const field = "field";
+  const label = "field-label text-gold-700";
 
   return (
-    <section id="inquiry" className="scroll-mt-24 border-t border-ink-100 bg-ivory-100 py-20 md:py-28">
+    <section id="inquiry" className="scroll-mt-24 border-t border-ink-100 bg-ivory-100 py-16 md:py-24">
       <div className="container-page">
         {/* Heading */}
         <div className="mx-auto max-w-2xl text-center">
@@ -80,10 +79,11 @@ export function Inquiry() {
           </p>
         </div>
 
-        <div className="mx-auto mt-12 grid max-w-5xl gap-8 lg:grid-cols-[1fr_1.2fr] lg:gap-12">
+        {/* Both columns the same width — the contact rail used to be squeezed next to the form. */}
+        <div className="mx-auto mt-12 grid max-w-6xl items-start gap-6 lg:grid-cols-2 lg:gap-8">
           {/* Left — contact rail */}
-          <div className="space-y-4">
-            <div className="border border-ink-100 bg-ink-900 p-6 text-ivory-100">
+          <div className="flex h-full flex-col gap-4">
+            <div className="rounded-2xl border border-ink-100 bg-ink-900 p-6 text-ivory-100 md:p-7">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-400">Prefer to chat?</p>
               <p className="heading-serif mt-3 text-2xl text-ivory-50">We&apos;re on WhatsApp.</p>
               <p className="mt-2 text-sm text-ivory-100/70">Message us directly and we&apos;ll help you pick, price or repair the right instrument.</p>
@@ -91,13 +91,13 @@ export function Inquiry() {
                 href={waLink(whatsappFor(contacts, form.branch), `Hi ${BUSINESS.name}! I have an enquiry.`)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-5 inline-flex items-center gap-2 bg-[#128C4B] px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
+                className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#128C4B] px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
               >
                 <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
               </a>
             </div>
 
-            <div className="space-y-4 border border-ink-100 bg-ivory-50 p-6">
+            <div className="flex-1 space-y-4 rounded-2xl border border-ink-100 bg-ivory-50 p-6 md:p-7">
               {BUSINESS.branches.map((b) => (
                 <div key={b.key} className="border-b border-ink-100 pb-4 last:border-0 last:pb-0">
                   <p className="font-semibold text-gold-700">{b.city} · {b.area}</p>
@@ -110,12 +110,12 @@ export function Inquiry() {
           </div>
 
           {/* Right — form / success */}
-          <div>
+          <div className="h-full">
             {done ? (
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="border border-gold-300 bg-ivory-50 p-8 text-center"
+                className="rounded-2xl border border-gold-300 bg-ivory-50 p-8 text-center"
               >
                 <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-success/15 text-success">
                   <CheckCircle2 className="h-7 w-7" />
@@ -129,7 +129,7 @@ export function Inquiry() {
                     href={waLink(whatsappFor(contacts, done.branch), customerMessage(done))}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-[#128C4B] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
+                    className="inline-flex items-center gap-2 rounded-full bg-[#128C4B] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
                   >
                     <MessageCircle className="h-4 w-4" /> Continue on WhatsApp
                   </a>
@@ -145,7 +145,7 @@ export function Inquiry() {
                 </button>
               </motion.div>
             ) : (
-              <div className="border border-ink-100 bg-ivory-50 p-6 md:p-8">
+              <div className="h-full rounded-2xl border border-ink-100 bg-ivory-50 p-6 md:p-7">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div>
                     <label className={label}>Your Name *</label>
@@ -184,13 +184,13 @@ export function Inquiry() {
                   </div>
                 </div>
 
-                {err && <p className="mt-4 border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-medium text-danger">{err}</p>}
+                {err && <p className="mt-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-medium text-danger">{err}</p>}
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <button onClick={() => submit(true)} className="flex flex-1 items-center justify-center gap-2 bg-[#128C4B] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]">
+                  <button onClick={() => submit(true)} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-[#128C4B] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]">
                     <MessageCircle className="h-4 w-4" /> Submit &amp; WhatsApp
                   </button>
-                  <button onClick={() => submit(false)} className="flex flex-1 items-center justify-center gap-2 border border-ink-300/60 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-ink-900 transition-colors hover:border-gold-500 hover:text-gold-600">
+                  <button onClick={() => submit(false)} className="flex flex-1 items-center justify-center gap-2 rounded-full border border-ink-300/60 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-ink-900 transition-colors hover:border-gold-500 hover:text-gold-600">
                     <Send className="h-4 w-4" /> Submit Enquiry
                   </button>
                 </div>

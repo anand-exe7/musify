@@ -1,5 +1,5 @@
 import { cleanPayments, paymentLabel, statusFor } from "@/lib/paymentSplit";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posBills, products, coupons, posCategories, posDepartments, invoices, type ProductRow } from "@/lib/db/schema";
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
@@ -237,9 +237,19 @@ export async function getInventoryProduct(id: string): Promise<InvProduct | unde
   return row ? toInvProduct(row) : undefined;
 }
 
+/**
+ * "Featured" is the home page's single hero slot, so at most one product can hold it: whenever a product is
+ * marked featured, the flag is cleared on every other one. Enforced here rather than in the form, so it holds
+ * however the product was saved.
+ */
+async function keepSingleFeatured(id: string): Promise<void> {
+  await db.update(products).set({ featured: false }).where(and(eq(products.featured, true), ne(products.id, id)));
+}
+
 export async function createInventoryProduct(p: InvProduct): Promise<InvProduct> {
   await db.insert(products).values(toInsertRow(p));
   await insertVariants(p.id, p.variants ?? []);
+  if (p.featured) await keepSingleFeatured(p.id);
   return toInvProduct((await selectProductForEditor(p.id)) as ProductRow);
 }
 
@@ -287,6 +297,7 @@ export async function updateInventoryProduct(
   if (deltas.length > 0) await adjustProductStock(id, deltas, { allowShort: true });
   if (patch.variants !== undefined) await syncVariants(id, patch.variants);
   if (Object.keys(set).length > 0) await db.update(products).set(set).where(eq(products.id, id));
+  if (patch.featured) await keepSingleFeatured(id);
 
   const fresh = await selectProductForEditor(id);
   return fresh ? toInvProduct(fresh) : undefined;

@@ -94,7 +94,11 @@ async function clean(input: QuotationInput, partial: boolean) {
     const items = input.items ?? [];
     if (items.length === 0) throw bad("Add at least one line.");
     // Every line sells a catalogue product, so the quotation can become a real order (and take stock) later.
-    const catalog = new Map((await getPricingCatalog()).map((p) => [p.id, p]));
+    const catalog = new Map(
+      (await getPricingCatalog([...new Set(items.map((l) => l?.productId).filter((id): id is string => !!id))])).map(
+        (p) => [p.id, p],
+      ),
+    );
     const lines = items.map((l) => {
       if (!l || typeof l.name !== "string" || !l.name.trim()) throw bad("Every line needs an item name.");
       if (!Number.isInteger(l.qty) || (l.qty as number) < 1) throw bad("Line quantity must be a whole number ≥ 1.");

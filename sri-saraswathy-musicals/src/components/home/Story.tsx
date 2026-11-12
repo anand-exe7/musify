@@ -1,74 +1,93 @@
 "use client";
 import { motion } from "framer-motion";
+import { Quote } from "lucide-react";
 
 const stats = [
   { n: "47", u: "years", label: "On the bench", note: "Since we opened in Mylapore, 1978." },
   { n: "4", u: "hours", label: "Per set-up", note: "Every new instrument passes through our workshop." },
-  { n: "312", u: "", label: "Concert placements", note: "Into orchestras, halls, private hands." },
-  { n: "1", u: "year", label: "Trial period", note: "Return any instrument within twelve months." },
+  { n: "312", u: "placed", label: "Concert placements", note: "Into orchestras, halls and private hands." },
+  { n: "12", u: "months", label: "Trial period", note: "Return any instrument within a year." },
 ];
 
 export function Story() {
   return (
-    <section className="py-20 md:py-28 paper-texture">
+    <section className="paper-texture py-16 md:py-24">
       <div className="container-page">
-        {/* Full-width heading */}
-        <motion.div
+        <p className="eyebrow">On the atelier</p>
+
+        {/* The line IS a quote, so it is set as one: a card, a quote mark, and the luthier's name
+            underneath — not a heading that happens to sound like someone speaking. */}
+        <motion.figure
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.8 }}
-          className="border-b border-ink-100 pb-10"
+          transition={{ duration: 0.7 }}
+          className="relative mt-6 overflow-hidden rounded-3xl border border-ink-100 bg-ivory-50 p-7 shadow-[0_24px_60px_-40px_rgba(10,9,8,0.45)] md:p-12"
         >
-          <p className="eyebrow">On the atelier</p>
-          <h2 className="heading-serif mt-4 max-w-4xl text-display-lg text-ink-900">
+          <span aria-hidden className="absolute inset-y-0 left-0 w-1.5 bg-gold-400" />
+          <Quote aria-hidden className="h-8 w-8 text-gold-400/70 md:h-10 md:w-10" fill="currentColor" strokeWidth={0} />
+          <blockquote className="heading-serif mt-5 max-w-4xl text-balance text-2xl leading-[1.2] text-ink-900 sm:text-3xl md:text-[2.6rem]">
             Every instrument is <em>set up</em> in our workshop before it leaves.
-          </h2>
-          <div className="mt-6">
-            <p className="font-serif italic text-lg text-ink-900">R. Krishnan Naidu</p>
-            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-ink-500">Head luthier · Est. 1978</p>
-          </div>
-        </motion.div>
+          </blockquote>
+          <figcaption className="mt-7 flex items-center gap-4 border-t border-ink-100 pt-6">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink-900 text-sm font-bold text-gold-300">
+              RK
+            </span>
+            <span>
+              <span className="block text-base font-semibold text-ink-900">R. Krishnan Naidu</span>
+              <span className="mt-0.5 block text-[11px] uppercase tracking-[0.2em] text-ink-400">
+                Head luthier · Est. 1978
+              </span>
+            </span>
+          </figcaption>
+        </motion.figure>
 
-        {/* Atelier note — full width, no video */}
+        {/* Atelier note */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.8, delay: 0.1 }}
-          className="mt-12 grid gap-6 md:grid-cols-2 md:gap-12"
+          transition={{ duration: 0.7, delay: 0.1 }}
+          className="mt-12 grid gap-8 md:grid-cols-2 md:gap-14"
         >
-          <p className="text-base leading-relaxed text-ink-700 md:text-lg">
-            <span className="float-left mr-3 font-display text-6xl font-bold leading-[0.8] text-gold-500">A</span>n instrument you order from us is set up — not shipped. When a veena arrives from Tanjore or a piano crates in from Hamburg, our luthiers spend, on average, four hours with it. Bridges are fit. Sound posts are placed. Pegs are re-cut when the humidity has moved them. String heights are shaved down a fraction of a millimeter at a time.
+          <p className="text-pretty text-base leading-relaxed text-ink-700 md:text-[17px]">
+            <span className="float-left mr-3 mt-1 font-display text-[3.4rem] font-bold leading-[0.78] text-gold-500">A</span>
+            n instrument you order from us is set up — not shipped. When a veena arrives from Tanjore or a piano
+            crates in from Hamburg, our luthiers spend, on average, four hours with it. Bridges are fit. Sound
+            posts are placed. Pegs are re-cut when the humidity has moved them. String heights are shaved down a
+            fraction of a millimetre at a time.
           </p>
-          <div className="space-y-6">
-            <p className="text-base leading-relaxed text-ink-700 md:text-lg">
-              None of this appears on an invoice. It is the difference between a good instrument and a good instrument that plays. We do not know how to sell one without doing the other.
+          <div className="space-y-5">
+            <p className="text-pretty text-base leading-relaxed text-ink-700 md:text-[17px]">
+              None of this appears on an invoice. It is the difference between a good instrument and a good
+              instrument that plays. We do not know how to sell one without doing the other.
             </p>
-            <p className="text-base leading-relaxed text-ink-700 md:text-lg">
-              You may also bring an instrument you already own into the shop for the same service. We call it set-up because it is what the instrument has been waiting for.
+            <p className="text-pretty text-base leading-relaxed text-ink-700 md:text-[17px]">
+              You may also bring an instrument you already own into the shop for the same service. We call it
+              set-up because it is what the instrument has been waiting for.
             </p>
           </div>
         </motion.div>
 
-        {/* Stats strip */}
-        <div className="mt-16 grid grid-cols-2 gap-x-4 gap-y-10 border-t border-ink-100 pt-12 md:grid-cols-4 md:gap-x-8">
+        {/* Stats — each a card, so the number, its unit and the line under it read as one thing. */}
+        <div className="mt-12 grid grid-cols-2 gap-3 md:mt-16 md:grid-cols-4 md:gap-4">
           {stats.map((s, i) => (
             <motion.div
               key={s.label}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.6, delay: i * 0.1 }}
+              viewport={{ once: true, margin: "-60px" }}
+              transition={{ duration: 0.5, delay: i * 0.08 }}
+              className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6"
             >
-              <div className="flex items-baseline gap-1">
-                <span className="tabular font-display text-4xl font-light text-ink-900 md:text-5xl">
+              <p className="flex items-baseline gap-1.5">
+                <span className="tabular font-display text-4xl font-bold leading-none text-ink-900 md:text-5xl">
                   {s.n}
                 </span>
-                {s.u && <span className="font-serif italic text-sm text-gold-600 md:text-base">{s.u}</span>}
-              </div>
-              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink-500">{s.label}</p>
-              <p className="mt-2 text-sm leading-relaxed text-ink-400">{s.note}</p>
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-600">{s.u}</span>
+              </p>
+              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.18em] text-ink-900">{s.label}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{s.note}</p>
             </motion.div>
           ))}
         </div>
