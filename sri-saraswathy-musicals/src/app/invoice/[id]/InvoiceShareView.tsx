@@ -42,12 +42,15 @@ export function InvoiceShareView({ invoice, payment, receipt }: { invoice: Invoi
             {copied ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
             {copied ? "Link copied" : "Copy share link"}
           </button>
+          {/* The customer gets their copy and the link. Printing to a thermal roll and
+              WhatsApp-ing the invoice are counter actions, so they stay in the admin view. */}
           <OutputActions
             doc={receipt ?? invoiceToDoc(invoice, payment)}
             a4TargetId="invoice-sheet"
-            phone={invoice.customerPhone}
             shareLink={typeof window !== "undefined" ? window.location.href.split("?")[0] : undefined}
             pdfName={`Invoice-${invoice.number}`}
+            showPrint={false}
+            showWhatsApp={false}
           />
         </div>
       </div>

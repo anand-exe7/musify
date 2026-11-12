@@ -349,14 +349,17 @@ export default function ProfilePage() {
   return (
     <div className="container-page py-6 md:py-10">
       {/* Header card */}
+      {/* Ivory and gold, like the rest of the storefront. The near-black slab this used to be sat
+          right under the ivory header and read as a hole in the page. */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative mb-5 overflow-hidden rounded-3xl border border-ink-100 bg-gradient-to-br from-ink-900 via-ink-900 to-ink-800 text-ivory-100"
+        className="relative mb-5 overflow-hidden rounded-3xl border border-ink-100 bg-ivory-50"
       >
+        <div className="h-1 w-full bg-gradient-to-r from-gold-500 via-gold-300 to-gold-500" />
         {/* faint staff-line motif */}
-        <svg aria-hidden viewBox="0 0 1400 120" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 top-1/2 h-24 w-full -translate-y-1/2 text-gold-400/10">
+        <svg aria-hidden viewBox="0 0 1400 120" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 top-1/2 h-24 w-full -translate-y-1/2 text-gold-500/[0.14]">
           {[16, 40, 64, 88, 112].map((y) => (
             <line key={y} x1="0" y1={y} x2="1400" y2={y} stroke="currentColor" strokeWidth="1.5" />
           ))}
@@ -364,7 +367,7 @@ export default function ProfilePage() {
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
-          style={{ background: "radial-gradient(60% 120% at 85% 0%, rgba(201,162,75,0.16) 0%, transparent 60%)" }}
+          style={{ background: "radial-gradient(60% 120% at 85% 0%, rgba(201,162,75,0.10) 0%, transparent 60%)" }}
         />
 
         <div className="relative flex flex-col items-start justify-between gap-5 p-5 md:flex-row md:items-center md:p-6">
@@ -375,19 +378,19 @@ export default function ProfilePage() {
                 alt={displayName}
                 loading="lazy"
                 decoding="async"
-                className="h-14 w-14 rounded-full object-cover ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-16 md:w-16"
+                className="h-14 w-14 rounded-full object-cover ring-2 ring-gold-400/50 ring-offset-2 ring-offset-ivory-50 md:h-16 md:w-16"
               />
             ) : (
-              <div className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 text-xl font-bold text-ink-900 ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-16 md:w-16 md:text-2xl">
+              <div className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 text-xl font-bold text-ink-900 ring-2 ring-gold-400/50 ring-offset-2 ring-offset-ivory-50 md:h-16 md:w-16 md:text-2xl">
                 {displayName.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase()}
               </div>
             )}
             <div>
-              <p className="text-[10px] uppercase tracking-[0.24em] text-gold-400">Welcome back</p>
-              <p className="heading-serif mt-0.5 text-xl text-ivory-50 md:text-2xl">{displayName}</p>
-              <p className="mt-1 text-xs text-ivory-100/60">{displayEmail}</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-gold-700">Welcome back</p>
+              <p className="heading-serif mt-0.5 text-xl text-ink-900 md:text-2xl">{displayName}</p>
+              <p className="mt-1 text-xs text-ink-500">{displayEmail}</p>
               {firstOrderDate && (
-                <span className="mt-2 inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300">
+                <span className="mt-2 inline-flex items-center gap-2 rounded-full border border-gold-400/50 bg-gold-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-700">
                   Patron · since {new Date(firstOrderDate).getFullYear()}
                 </span>
               )}
@@ -400,18 +403,18 @@ export default function ProfilePage() {
                 Admin panel
               </Link>
             )}
-            <button onClick={signOut} className="rounded-full border border-ivory-100/20 px-4 py-2.5 text-xs uppercase tracking-[0.18em] text-ivory-100/70 transition-colors hover:border-gold-400/50 hover:text-gold-400">
+            <button onClick={signOut} className="rounded-full border border-ink-200 px-4 py-2.5 text-xs uppercase tracking-[0.18em] text-ink-500 transition-colors hover:border-danger/40 hover:text-danger">
               <LogOut className="mr-1 inline h-3 w-3" /> Sign out
             </button>
           </div>
         </div>
 
         {/* stats strip */}
-        <div className="relative grid grid-cols-2 border-t border-ivory-100/10">
+        <div className="relative grid grid-cols-2 border-t border-ink-100 bg-ivory-100/50">
           {stats.map((s) => (
-            <div key={s.label} className="border-r border-ivory-100/10 px-5 py-3 last:border-r-0">
-              <p className="tabular text-2xl font-bold text-gold-300">{s.value}</p>
-              <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-ivory-100/50">{s.label}</p>
+            <div key={s.label} className="border-r border-ink-100 px-5 py-3 last:border-r-0">
+              <p className="tabular text-2xl font-bold text-ink-900">{s.value}</p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-ink-500">{s.label}</p>
             </div>
           ))}
         </div>
@@ -479,21 +482,29 @@ export default function ProfilePage() {
                     </p>
                   )}
                   <div className="mt-4 space-y-3">
-                    {o.items.map((item) => {
+                    {/* One order can hold the same product twice under different options, so the
+                        key is the line, not the product — and the option is spelled out. */}
+                    {o.items.map((item, line) => {
                       const p = byId.get(item.productId);
                       if (!p) return null;
                       return (
-                        <Link href={`/product/${p.slug}`} key={item.productId} className="flex items-center gap-4 py-2">
+                        <Link
+                          href={`/product/${p.slug}`}
+                          key={`${item.productId}::${item.variantKey ?? ""}::${line}`}
+                          className="flex items-center gap-4 rounded-xl px-2 py-2 transition-colors hover:bg-ivory-100"
+                        >
                           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-ink-100">
                             <ProductImage product={p} fit="contain" className="relative h-full w-full overflow-hidden bg-white p-1.5" sizes="56px" />
                           </div>
-                          <div className="flex-1">
+                          <div className="min-w-0 flex-1">
                             <p className="text-[10px] uppercase tracking-widest text-gold-600">{p.brand}</p>
-                            <p className="heading-serif text-base text-ink-900">{p.name}</p>
-                            <p className="text-xs text-ink-400">Qty {item.quantity}</p>
+                            <p className="heading-serif truncate text-base text-ink-900">{p.name}</p>
+                            <p className="text-xs text-ink-400">
+                              {item.variantLabel ? `${item.variantLabel} · ` : ""}Qty {item.quantity}
+                            </p>
                           </div>
-                          <p className="tabular text-sm text-ink-900">{formatINR(item.price)}</p>
-                          <ChevronRight className="h-4 w-4 text-ink-300" />
+                          <p className="tabular shrink-0 text-sm font-semibold text-ink-900">{formatINR(item.price * item.quantity)}</p>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-ink-300" />
                         </Link>
                       );
                     })}

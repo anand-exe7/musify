@@ -69,13 +69,56 @@ export function printThermal(width: ThermalWidth, rootId = THERMAL_ROOT) {
   printIsolated(rootId, `size: ${width}mm ${heightMm}mm; margin: 0;`, "thermal");
 }
 
-/** Render `targetId` (the A4 sheet) to a multi-page A4 PDF and download it. */
+/** A4's printable width in CSS pixels (210 mm at 96 dpi). */
+const A4_WIDTH_PX = 794;
+
+/**
+ * Render `targetId` (the A4 sheet) to a multi-page A4 PDF and download it.
+ *
+ * The sheet is laid out at A4 width for the capture and put back afterwards. Without that the PDF
+ * came out as a photograph of whatever the window happened to be: a narrow window made the sheet
+ * narrow, its columns overflowed the rounded `overflow-hidden` box and were cut off, and the
+ * cropped result was then blown up to fill the page. A download must not depend on the viewer's
+ * window size, so the width is fixed here instead.
+ */
 export async function downloadSheetPdf(targetId: string, fileName: string): Promise<void> {
   const node = document.getElementById(targetId);
   if (!node) throw new Error("Nothing to download");
   const [{ toJpeg }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
-  // JPEG keeps a one-page invoice to a few hundred KB (PNG at print resolution runs to ~15 MB).
-  const dataUrl = await toJpeg(node, { pixelRatio: 2, quality: 0.85, backgroundColor: "#ffffff", cacheBust: true });
+
+  // Lay the sheet out at A4 width, capture, then put it back exactly as it was.
+  const saved = node.getAttribute("style");
+  node.style.width = `${A4_WIDTH_PX}px`;
+  node.style.maxWidth = `${A4_WIDTH_PX}px`;
+  node.style.margin = "0 auto";
+
+  let dataUrl: string;
+  try {
+    // Two frames: one for the style to apply, one for the re-layout to settle.
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    const height = Math.ceil(Math.max(node.scrollHeight, node.getBoundingClientRect().height));
+    // JPEG keeps a one-page invoice to a few hundred KB (PNG at print resolution runs to ~15 MB).
+    dataUrl = await toJpeg(node, {
+      pixelRatio: 2,
+      quality: 0.92,
+      backgroundColor: "#ffffff",
+      cacheBust: true,
+      width: A4_WIDTH_PX,
+      height,
+      style: {
+        width: `${A4_WIDTH_PX}px`,
+        maxWidth: `${A4_WIDTH_PX}px`,
+        margin: "0",
+        // The page is the border; a rounded, shadowed card reads as a screenshot.
+        borderRadius: "0",
+        boxShadow: "none",
+      },
+    });
+  } finally {
+    if (saved === null) node.removeAttribute("style");
+    else node.setAttribute("style", saved);
+  }
+
   const img = new Image();
   img.src = dataUrl;
   await img.decode();
@@ -99,7 +142,7 @@ export async function downloadSheetPdf(targetId: string, fileName: string): Prom
       ctx.fillRect(0, 0, canvas.width, h);
       ctx.drawImage(img, 0, y, img.width, h, 0, 0, img.width, h);
       if (page > 0) pdf.addPage();
-      pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", margin, margin, pageW, (h * pageW) / img.width);
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", margin, margin, pageW, (h * pageW) / img.width);
     }
   }
   // Invoice numbers carry "/" (SSM/2026-27/0004) — not allowed in a file name.
@@ -125,6 +168,8 @@ export function OutputActions({
   autoFormat,
   className,
   onWhatsApp,
+  showPrint = true,
+  showWhatsApp = true,
 }: {
   doc: PrintDoc;
   /** id of the A4 sheet element on the page. */
@@ -137,6 +182,10 @@ export function OutputActions({
   autoFormat?: OutputFormat | null;
   className?: string;
   onWhatsApp?: () => void;
+  /** Hide the print menu — a customer looking at their own invoice only needs the PDF. */
+  showPrint?: boolean;
+  /** Hide the WhatsApp button, which sends the invoice TO the customer (a shop action). */
+  showWhatsApp?: boolean;
 }) {
   const [menu, setMenu] = useState(false);
   const [thermal, setThermal] = useState<ThermalWidth | null>(null);
@@ -217,6 +266,7 @@ export function OutputActions({
   return (
     <>
       <div className={cn("flex flex-wrap items-center gap-2 print:hidden", className)}>
+        {showPrint && (
         <div className="relative">
           <button onClick={() => setMenu((m) => !m)} className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-gold-500 hover:text-ink-900" aria-haspopup="menu" aria-expanded={menu}>
             <Printer className="h-4 w-4" /> Print <ChevronDown className="h-3.5 w-3.5" />
@@ -242,12 +292,15 @@ export function OutputActions({
             </>
           )}
         </div>
-        <button onClick={() => void pdf()} disabled={busy} className={cn(btn, "disabled:opacity-60")}>
+        )}
+        <button onClick={() => void pdf()} disabled={busy} className={cn(btn, showPrint ? "disabled:opacity-60" : "border-ink-900 bg-ink-900 text-ivory-50 hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60")}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download PDF
         </button>
-        <button onClick={whatsapp} className="flex items-center gap-2 rounded-xl bg-[#128C4B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0f7a41]">
-          <MessageCircle className="h-4 w-4" /> WhatsApp
-        </button>
+        {showWhatsApp && (
+          <button onClick={whatsapp} className="flex items-center gap-2 rounded-xl bg-[#128C4B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0f7a41]">
+            <MessageCircle className="h-4 w-4" /> WhatsApp
+          </button>
+        )}
         {error && <p className="w-full text-xs text-danger">{error}</p>}
       </div>
       {/* Off-screen thermal receipt, printed on demand. */}

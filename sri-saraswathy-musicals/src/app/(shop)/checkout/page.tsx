@@ -86,6 +86,50 @@ export default function CheckoutPage() {
     setAddr((a) => ({ ...a, [k]: e.target.value }));
 
   const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
+  /** Which saved address is in use; `null` means the shopper is typing a new one. */
+  const [pickedAddr, setPickedAddr] = useState<string | null>(null);
+  const [saveAddr, setSaveAddr] = useState(true);
+
+  /** Save the typed address to the profile, so the next order starts from it. Best-effort. */
+  const rememberAddress = async () => {
+    try {
+      const res = await fetch("/api/addresses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addr.name.trim(),
+          phone: addr.phone.trim(),
+          type: "home",
+          line1: addr.line1.trim(),
+          line2: addr.line2.trim(),
+          city: addr.city.trim(),
+          state: shipState,
+          pincode: addr.pincode.trim(),
+          isDefault: savedAddresses.length === 0,
+        }),
+      });
+      if (!res.ok) return;
+      const saved = (await res.json()) as UserAddress;
+      setSavedAddresses((list) => [...list, saved]);
+      setPickedAddr(saved.id);
+    } catch {
+      /* the order matters more than the address book */
+    }
+  };
+
+  const useSavedAddress = (sa: UserAddress) => {
+    setPickedAddr(sa.id);
+    setAddr((a) => ({
+      ...a,
+      name: sa.name,
+      phone: sa.phone,
+      pincode: sa.pincode,
+      line1: sa.line1,
+      line2: sa.line2 ?? "",
+      city: sa.city,
+    }));
+    if (sa.state) setShipState(sa.state);
+  };
 
   // Prefill name/email from the signed-in account once it hydrates, and load
   // saved addresses. The fetch is cancelled if `user` changes again before it
@@ -100,7 +144,12 @@ export default function CheckoutPage() {
     const ctl = new AbortController();
     fetch("/api/addresses", { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("addresses"))))
-      .then((list: UserAddress[]) => setSavedAddresses(list))
+      .then((list: UserAddress[]) => {
+        setSavedAddresses(list);
+        // Start on the default (or the only) address rather than an empty form.
+        const pick = list.find((a) => a.isDefault) ?? (list.length === 1 ? list[0] : undefined);
+        if (pick) useSavedAddress(pick);
+      })
       .catch(() => {
         /* aborted, or the list is unavailable — the shopper can still type an address */
       });
@@ -378,40 +427,63 @@ export default function CheckoutPage() {
           {step === 0 && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Delivery address</h2>
+              {/* Saved addresses are picked, not just "clicked to fill": the chosen one stays marked,
+                  and the form below is what it filled in. */}
               {savedAddresses.length > 0 && (
                 <div className="mt-5">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Saved addresses</p>
-                  <div className="space-y-2">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Deliver to</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {savedAddresses.map((sa) => (
                       <button
                         key={sa.id}
                         type="button"
-                        onClick={() => {
-                          setAddr({
-                            name: sa.name,
-                            phone: sa.phone,
-                            email: addr.email,
-                            pincode: sa.pincode,
-                            line1: sa.line1,
-                            line2: sa.line2 ?? "",
-                            city: sa.city,
-                          });
-                          if (sa.state) setShipState(sa.state);
-                        }}
-                        className="flex w-full items-start gap-3 rounded-xl border border-ink-200 bg-ivory-50 p-3 text-left text-sm transition-colors hover:border-gold-400 hover:bg-gold-50/30"
-                      >
-                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
-                        <div>
-                          <p className="font-medium text-ink-900">{sa.name}</p>
-                          <p className="text-xs text-ink-500">{sa.line1}, {sa.city} {sa.pincode}</p>
-                        </div>
-                        {sa.isDefault && (
-                          <span className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-widest text-gold-600">Default</span>
+                        onClick={() => useSavedAddress(sa)}
+                        aria-pressed={pickedAddr === sa.id}
+                        className={cn(
+                          "flex w-full items-start gap-3 rounded-xl border p-3 text-left text-sm transition-colors",
+                          pickedAddr === sa.id
+                            ? "border-gold-500 bg-gold-50/50"
+                            : "border-ink-200 bg-ivory-50 hover:border-gold-400 hover:bg-gold-50/30",
                         )}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2",
+                            pickedAddr === sa.id ? "border-gold-500" : "border-ink-300",
+                          )}
+                        >
+                          {pickedAddr === sa.id && <span className="h-2 w-2 rounded-full bg-gold-500" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="truncate font-medium text-ink-900">{sa.name}</span>
+                            {sa.isDefault && (
+                              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-widest text-gold-600">Default</span>
+                            )}
+                          </span>
+                          <span className="block truncate text-xs text-ink-500">
+                            {sa.line1}, {sa.city} {sa.pincode}
+                          </span>
+                          <span className="block truncate text-xs text-ink-400">{sa.state}</span>
+                        </span>
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPickedAddr(null);
+                        setAddr((a) => ({ ...a, name: user?.name ?? "", phone: "", pincode: "", line1: "", line2: "", city: "" }));
+                      }}
+                      aria-pressed={pickedAddr === null}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl border border-dashed p-3 text-left text-sm transition-colors",
+                        pickedAddr === null ? "border-gold-500 bg-gold-50/50" : "border-ink-300 hover:border-gold-400",
+                      )}
+                    >
+                      <MapPin className="h-4 w-4 shrink-0 text-gold-600" />
+                      <span className="font-medium text-ink-900">Somewhere else</span>
+                    </button>
                   </div>
-                  <p className="mt-3 text-[11px] text-ink-400">Or fill in a new address below:</p>
                 </div>
               )}
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -436,6 +508,18 @@ export default function CheckoutPage() {
                 <div className="md:col-span-2"><Field label="Address line 1" value={addr.line1} onChange={setAddrField("line1")} /></div>
                 <div className="md:col-span-2"><Field label="Address line 2 (optional)" value={addr.line2} onChange={setAddrField("line2")} /></div>
                 <Field label="City" value={addr.city} onChange={setAddrField("city")} />
+                {/* Only worth offering for an address that isn't already saved. */}
+                {user && pickedAddr === null && (
+                  <label className="flex cursor-pointer items-center gap-2.5 self-end pb-1 text-sm text-ink-700 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={saveAddr}
+                      onChange={(e) => setSaveAddr(e.target.checked)}
+                      className="h-4 w-4 accent-gold-500"
+                    />
+                    Save this address to my profile for next time
+                  </label>
+                )}
                 {/* An order ships from ONE store, so a store that can't supply the whole cart is
                     named with what it is missing and simply can't be chosen. */}
                 <div className="md:col-span-2">
@@ -637,6 +721,8 @@ export default function CheckoutPage() {
                       alert("That email doesn't look right — please double-check it.");
                       return;
                     }
+                    // Keep it for next time, if asked. Never blocks the order.
+                    if (user && pickedAddr === null && saveAddr) void rememberAddress();
                   }
                   setStep(step + 1);
                 }}

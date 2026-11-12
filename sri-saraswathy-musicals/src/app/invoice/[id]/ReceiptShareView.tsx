@@ -15,7 +15,7 @@ export function ReceiptShareView({ doc }: { doc: PrintDoc }) {
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">
           <ArrowLeft className="h-4 w-4" /> Back to shop
         </Link>
-        <OutputActions doc={doc} a4TargetId="invoice-sheet" shareLink={typeof window !== "undefined" ? window.location.href.split("?")[0] : undefined} pdfName={`Receipt-${doc.number}`} />
+        <OutputActions doc={doc} a4TargetId="invoice-sheet" shareLink={typeof window !== "undefined" ? window.location.href.split("?")[0] : undefined} pdfName={`Receipt-${doc.number}`} showPrint={false} showWhatsApp={false} />
       </div>
       <ReceiptSheet doc={doc} />
     </div>

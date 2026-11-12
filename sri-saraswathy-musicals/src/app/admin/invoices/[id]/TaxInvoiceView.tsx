@@ -49,20 +49,25 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
     <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
       <style>{TAX_INVOICE_PRINT_CSS}</style>
 
-      {/* Toolbar (hidden on print) */}
-      <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
-        <Link href="/admin/invoices" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">
-          <ArrowLeft className="h-4 w-4" /> Back to ledger
-        </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-600">
+      {/* Toolbar. Two tiers rather than one wrapping row: where you are, then what you can do —
+          otherwise "Back to ledger" and six buttons wrapped into a ragged block. */}
+      <div className="mx-auto mb-5 max-w-3xl print:hidden">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <Link href="/admin/invoices" className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-medium text-ink-500 hover:text-gold-600">
+            <ArrowLeft className="h-4 w-4" /> Back to ledger
+          </Link>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-600">
             <Lock className="h-3 w-3" /> Admin view
           </span>
-          {!editing && (
-            <>
+        </div>
+
+        {!editing && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+            {/* Left: what this invoice can become. Right: how it goes out. */}
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setEditing(true)}
-                className="flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm font-semibold text-ink-900 hover:bg-ivory-100"
+                className="flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-900 hover:border-gold-400 hover:text-gold-700"
               >
                 <Pencil className="h-4 w-4" /> Edit
               </button>
@@ -72,20 +77,22 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
                   disabled={cancelling}
                   className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-2.5 text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"
                 >
-                  <Ban className="h-4 w-4" /> {cancelling ? "Cancelling…" : "Cancel invoice"}
+                  <Ban className="h-4 w-4" /> {cancelling ? "Cancelling…" : "Cancel"}
                 </button>
               )}
-              {/* LED-01: WhatsApp, print (thermal / A4) and download, per the customer's need. */}
-              <OutputActions
-                doc={invoiceToDoc(current)}
-                a4TargetId="invoice-sheet"
-                phone={current.customerPhone}
-                shareLink={current.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(current.refId)}` : undefined}
-                pdfName={`Invoice-${current.number}`}
-              />
-            </>
-          )}
-        </div>
+            </div>
+            <span className="hidden h-8 w-px shrink-0 bg-ink-100 sm:block" />
+            {/* LED-01: WhatsApp, print (thermal / A4) and download, per the customer's need. */}
+            <OutputActions
+              doc={invoiceToDoc(current)}
+              a4TargetId="invoice-sheet"
+              phone={current.customerPhone}
+              shareLink={current.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(current.refId)}` : undefined}
+              pdfName={`Invoice-${current.number}`}
+              className="sm:justify-end"
+            />
+          </div>
+        )}
       </div>
 
       {cancelled && !editing && (
