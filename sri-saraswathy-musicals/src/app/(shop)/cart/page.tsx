@@ -8,7 +8,8 @@ import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { formatINR, cn } from "@/lib/utils";
-import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin } from "lucide-react";
+import { formatWeight } from "@/lib/delivery/types";
+import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag, Check, MapPin, AlertCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -17,8 +18,8 @@ const BURST_NOTES = ["♪", "♫", "♩", "♬", "𝅘𝅥𝅮"];
 /** A single shimmering placeholder cart line, shown while product details load. */
 function CartLineSkeleton() {
   return (
-    <div className="flex animate-pulse gap-4 border border-ink-100 bg-ivory-50 p-4 md:p-5">
-      <div className="h-24 w-24 shrink-0 rounded bg-ink-100 md:h-32 md:w-32" />
+    <div className="flex animate-pulse gap-4 rounded-2xl border border-ink-100 bg-ivory-50 p-4 md:p-5">
+      <div className="h-24 w-24 shrink-0 rounded-xl bg-ink-100 md:h-32 md:w-32" />
       <div className="flex-1 space-y-3 py-1">
         <div className="h-2.5 w-20 rounded bg-ink-100" />
         <div className="h-4 w-40 rounded bg-ink-100" />
@@ -40,7 +41,7 @@ function CartSkeleton() {
         <CartLineSkeleton />
         <CartLineSkeleton />
       </div>
-      <div className="h-72 animate-pulse rounded border border-ink-100 bg-ivory-50" />
+      <div className="h-72 animate-pulse rounded-2xl border border-ink-100 bg-ivory-50" />
     </div>
   );
 }
@@ -123,11 +124,17 @@ export default function CartPage() {
         .map((i) => {
           const product = byId.get(i.productId);
           if (!product) return null;
-          return { ...i, product, variant: findVariant(product.variants ?? [], i.variantKey) };
+          const variant = findVariant(product.variants ?? [], i.variantKey);
+          // The catalogue price is already in hand, so a line can show its money straight away; the
+          // server quote (tax, shipping, coupon) replaces it the moment it lands.
+          return { ...i, product, variant, unit: variant?.price ?? product.price };
         })
         .filter((i): i is NonNullable<typeof i> => i !== null),
     [items, byId],
   );
+
+  // Shown while the server quote is in flight, so the cart is never a column of em-dashes.
+  const estSubtotal = cartItems.reduce((n, i) => n + i.unit * i.quantity, 0);
 
   // Every number below comes from the server — there is no price, tax, shipping
   // or coupon maths on this page. Priced straight from the cart items so the
@@ -149,6 +156,9 @@ export default function CartPage() {
   const couponIssue = quote?.issues.find((i) => i.kind === "coupon");
   const blockingIssues = (quote?.issues ?? []).filter((i) => i.kind !== "coupon");
   const appliedCode = quote?.couponCode ?? null;
+  // Only a real problem with the cart stops checkout. A quote still in flight does not:
+  // the checkout page prices the cart again before anything is charged.
+  const blocked = blockingIssues.length > 0;
   const discount = quote?.discount ?? 0;
   const total = quote?.total ?? 0;
 
@@ -224,10 +234,10 @@ export default function CartPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, x: -30 }}
                 transition={{ duration: 0.3 }}
-                className="flex gap-4 border border-ink-100 bg-ivory-50 p-4 md:p-5"
+                className="flex gap-4 rounded-2xl border border-ink-100 bg-ivory-50 p-4 md:p-5"
               >
-                <Link href={`/product/${i.product.slug}`} className="relative h-24 w-24 shrink-0 overflow-hidden bg-ink-100 md:h-32 md:w-32">
-                  <ProductImage product={withVariantPhoto(i.product, i.variant)} sizes="128px" />
+                <Link href={`/product/${i.product.slug}`} className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-ink-100 md:h-28 md:w-28">
+                  <ProductImage product={withVariantPhoto(i.product, i.variant)} fit="contain" className="relative h-full w-full overflow-hidden bg-white p-2" sizes="128px" />
                 </Link>
                 <div className="flex min-w-0 flex-1 flex-col justify-between">
                   <div className="flex justify-between gap-3">
@@ -241,19 +251,21 @@ export default function CartPage() {
                       )}
                       {ql && <p className="mt-0.5 text-xs text-ink-400">{ql.gstRate > 0 ? `Incl. ${ql.gstRate}% GST` : "No GST"}</p>}
                     </div>
-                    <button onClick={() => removeItem(i.productId, i.variantKey)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center text-ink-400 hover:text-danger">
+                    <button onClick={() => removeItem(i.productId, i.variantKey)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-400 transition-colors hover:bg-danger/10 hover:text-danger">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
                   <div className="mt-3 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-                    <div className="flex shrink-0 items-center border border-ink-200">
-                      <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity - 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Minus className="h-3 w-3" /></button>
-                      <span className="tabular w-8 text-center text-sm">{i.quantity}</span>
-                      <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity + 1)} className="grid h-9 w-9 place-items-center hover:bg-ink-50"><Plus className="h-3 w-3" /></button>
+                    <div className="flex shrink-0 items-center rounded-full border border-ink-200">
+                      <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity - 1)} className="grid h-9 w-9 place-items-center rounded-l-full transition-colors hover:bg-ink-900/[0.04]"><Minus className="h-3 w-3" /></button>
+                      <span className="tabular w-8 text-center text-sm font-semibold">{i.quantity}</span>
+                      <button onClick={() => updateQuantity(i.productId, i.variantKey, i.quantity + 1)} className="grid h-9 w-9 place-items-center rounded-r-full transition-colors hover:bg-ink-900/[0.04]"><Plus className="h-3 w-3" /></button>
                     </div>
                     <div className="ml-auto text-right">
-                      <p className="tabular font-display text-lg text-ink-900">{ql ? formatINR(ql.lineTotal) : "—"}</p>
-                      {ql && ql.quantity > 1 && <p className="tabular text-xs text-ink-400">{formatINR(ql.price)} each</p>}
+                      <p className={cn("tabular text-lg font-bold text-ink-900 transition-opacity", !ql && "opacity-60")}>
+                        {formatINR(ql ? ql.lineTotal : i.unit * i.quantity)}
+                      </p>
+                      {i.quantity > 1 && <p className="tabular text-xs text-ink-400">{formatINR(ql ? ql.price : i.unit)} each</p>}
                     </div>
                   </div>
                 </div>
@@ -265,41 +277,41 @@ export default function CartPage() {
 
         {/* Summary */}
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="border border-ink-100 bg-ivory-50 p-6 md:p-8">
+          <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-6 md:p-7">
             <h2 className="heading-serif text-xl text-ink-900">Order summary</h2>
-            <div className="mt-6 space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-ink-500">Subtotal</span>
-                <span className="tabular text-ink-900">{quote ? formatINR(quote.subtotal) : "—"}</span>
-              </div>
 
-              {/* Place of supply */}
-              {posEnabled && (
-                <div className="rounded-md border border-ink-100 bg-ivory-100/60 p-3">
-                  <label className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-700">
-                    <MapPin className="h-3 w-3" /> Delivery state · place of supply
-                  </label>
-                  <select
-                    value={shipState}
-                    onChange={(e) => setShipState(e.target.value)}
-                    className="w-full border border-ink-200 bg-ivory-50 px-3 py-2 text-sm text-ink-900 focus:border-gold-500 focus:outline-none"
-                  >
-                    {IN_STATES.map((s) => (
-                      <option key={s} value={s}>{s}{s === homeState ? " (in-state)" : ""}</option>
-                    ))}
-                  </select>
+            {/* Where it goes — a setting, so it sits above the money rather than inside them. */}
+            {posEnabled && (
+              <div className="mt-5 rounded-xl border border-ink-100 bg-ivory-100/60 p-3">
+                <label className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-700">
+                  <MapPin className="h-3 w-3" /> Delivery state
+                </label>
+                <select
+                  value={shipState}
+                  onChange={(e) => setShipState(e.target.value)}
+                  className="w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm text-ink-900 focus:border-gold-500 focus:outline-none"
+                >
+                  {IN_STATES.map((st) => (
+                    <option key={st} value={st}>{st}{st === homeState ? " (in-state)" : ""}</option>
+                  ))}
+                </select>
+                {quote && quote.weightG > 0 && (
                   <p className="mt-1.5 text-[11px] text-ink-400">
-                    {!quote || quote.intra
-                      ? `Within ${homeState} → ${gstLabels.cgst} + ${gstLabels.sgst}`
-                      : `Outside ${homeState} → ${gstLabels.igst}`}
+                    {formatWeight(quote.weightG)} parcel · delivery can be changed at checkout
                   </p>
-                </div>
-              )}
-
-              <div className="flex justify-between">
-                <span className="text-ink-500">Shipping <span className="text-ink-400">({delivery})</span></span>
-                <span className="tabular text-ink-900">{quote ? (quote.shipping === 0 ? "Free" : formatINR(quote.shipping)) : "—"}</span>
+                )}
               </div>
+            )}
+
+            {/* The bill, read top to bottom: goods, what comes off, what goes on, then the total. */}
+            <dl className="mt-5 space-y-2.5 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-ink-500">Subtotal</dt>
+                <dd className={cn("tabular text-ink-900 transition-opacity", !quote && "opacity-60")}>
+                  {formatINR(quote ? quote.subtotal : estSubtotal)}
+                </dd>
+              </div>
+
               <AnimatePresence>
                 {discount > 0 && (
                   <motion.div
@@ -307,28 +319,45 @@ export default function CartPage() {
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    className="flex justify-between text-success"
+                    className="flex justify-between gap-4 text-success"
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                    <dt className="flex min-w-0 items-center gap-1.5">
                       <Tag className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">Discount ({appliedCode})</span>
-                    </span>
-                    <span className="tabular shrink-0">−{formatINR(discount)}</span>
+                    </dt>
+                    <dd className="tabular shrink-0">−{formatINR(discount)}</dd>
                   </motion.div>
                 )}
               </AnimatePresence>
-              <div className="mt-4 flex items-end justify-between border-t border-ink-100 pt-4">
-                <span className="text-sm uppercase tracking-[0.18em] text-ink-500">Total</span>
-                <span className={cn("tabular font-display text-3xl text-ink-900 transition-opacity", quoting && "opacity-50")}>{quote ? formatINR(total) : "—"}</span>
+
+              <div className="flex justify-between gap-4">
+                <dt className="min-w-0 text-ink-500">
+                  Delivery
+                  {/* The method's own name, as the shop set it up — the cart invents nothing. */}
+                  {quote?.deliveryName && <span className="text-ink-400"> · {quote.deliveryName}</span>}
+                </dt>
+                <dd className="tabular shrink-0 text-ink-900">
+                  {quote ? (quote.shipping === 0 ? "Free" : formatINR(quote.shipping)) : "—"}
+                </dd>
               </div>
+
               {quote && quote.gst > 0 && (
-                <p className="text-right text-[11px] text-ink-400">
-                  Includes GST of {formatINR(quote.gst)}
-                  {quote.intra
-                    ? ` (${gstLabels.cgst} ${formatINR(quote.cgst)} + ${gstLabels.sgst} ${formatINR(quote.sgst)})`
-                    : ` (${gstLabels.igst})`}
-                </p>
+                <div className="flex justify-between gap-4">
+                  <dt className="min-w-0 text-ink-500">
+                    GST <span className="text-ink-400">({quote.intra ? `${gstLabels.cgst} + ${gstLabels.sgst}` : gstLabels.igst})</span>
+                    <span className="block text-[11px] text-ink-400">already included in the prices above</span>
+                  </dt>
+                  <dd className="tabular shrink-0 text-ink-500">{formatINR(quote.gst)}</dd>
+                </div>
               )}
+
+              <div className="flex items-end justify-between gap-4 border-t border-ink-100 pt-4">
+                <dt className="text-sm uppercase tracking-[0.18em] text-ink-500">Total</dt>
+                <dd className={cn("tabular text-3xl font-bold text-ink-900 transition-opacity", (quoting || !quote) && "opacity-50")}>
+                  {quote ? formatINR(total) : formatINR(estSubtotal)}
+                </dd>
+              </div>
+
               {quoteError && (
                 <p className="text-xs text-danger">
                   {quoteError}{" "}
@@ -338,7 +367,7 @@ export default function CartPage() {
               {blockingIssues.map((i, n) => (
                 <p key={n} className="text-xs text-danger">{i.message}</p>
               ))}
-            </div>
+            </dl>
 
             {/* Coupon */}
             <div className="relative mt-5">
@@ -349,7 +378,7 @@ export default function CartPage() {
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    className="flex items-center justify-between gap-3 border border-gold-300 bg-gold-50/50 px-3 py-2.5"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-gold-300 bg-gold-50/50 px-3 py-2.5"
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold-400 text-ink-900">
@@ -378,12 +407,12 @@ export default function CartPage() {
                       onChange={(e) => { setCode(e.target.value); if (error) setError(""); }}
                       placeholder="Coupon code"
                       aria-label="Coupon code"
-                      className="min-w-0 flex-1 border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm uppercase tracking-[0.12em] text-ink-900 placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-400 focus:border-gold-400 focus:outline-none"
+                      className="min-w-0 flex-1 rounded-full border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm uppercase tracking-[0.12em] text-ink-900 placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-400 focus:border-gold-400 focus:outline-none"
                     />
                     <button
                       type="submit"
                       disabled={applying}
-                      className="shrink-0 bg-ink-900 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.18em] text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60"
+                      className="shrink-0 rounded-full bg-ink-900 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.18em] text-ivory-50 transition-colors hover:bg-gold-500 hover:text-ink-900 disabled:opacity-60"
                     >
                       {applying ? "Checking…" : "Apply"}
                     </button>
@@ -407,15 +436,25 @@ export default function CartPage() {
 
               <AnimatePresence>{celebrate && <CouponBurst />}</AnimatePresence>
             </div>
-            <Link href="/checkout" aria-disabled={!quote || blockingIssues.length > 0} className={cn("btn-gold-solid mt-6 w-full", (!quote || blockingIssues.length > 0) && "pointer-events-none opacity-60")}>
+            <Link
+              href="/checkout"
+              aria-disabled={blocked}
+              className={cn("btn-gold-solid mt-6 w-full", blocked && "pointer-events-none opacity-60")}
+            >
               Proceed to checkout
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
+            {blocked && (
+              <p className="mt-3 flex items-start justify-center gap-1.5 text-center text-[11px] text-ink-500">
+                <AlertCircle className="mt-px h-3 w-3 shrink-0 text-danger" />
+                <span>Fix the note above to continue.</span>
+              </p>
+            )}
             <div className="mt-4 space-y-1 text-center text-xs text-ink-400">
-              <p>Secure payment · UPI · Card · Bank</p>
+              <p>Secure payment · UPI · Card · Pay on delivery</p>
             </div>
           </div>
-          <div className="mt-4 border border-dashed border-gold-300 bg-gold-50/40 p-4 text-xs text-ink-600">
+          <div className="mt-4 rounded-2xl border border-dashed border-gold-300 bg-gold-50/40 p-4 text-xs text-ink-600">
             <p className="mb-1 font-semibold uppercase tracking-widest text-gold-700">Included</p>
             <p>Every order includes atelier set-up and first-year tuning where applicable, delivered and installed by our own team.</p>
           </div>

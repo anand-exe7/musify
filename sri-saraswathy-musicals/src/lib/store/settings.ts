@@ -1,22 +1,9 @@
 "use client";
 import { create } from "zustand";
 import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
+import type { Zone, RateBand, DeliveryMethod } from "@/lib/delivery/types";
 
-export interface Zone {
-  id: string;
-  name: string;
-  /** Indian states this zone covers. Empty = fallback for anywhere unlisted. */
-  states: string[];
-  /** Legacy flat rate — ignored when the tier fields are set. */
-  charge: number;
-  eta: string;
-  /** Surface-transit slabs (₹, GST-inclusive) mirroring Professional Couriers. */
-  uptoGm250: number;
-  uptoGm500: number;
-  perAddl500: number;
-  above5kgPerKg: number;
-  above10kgPerKg: number;
-}
+export type { Zone, RateBand, DeliveryMethod };
 
 type Scalars = {
   freeThreshold: number;
@@ -35,6 +22,7 @@ type Scalars = {
 
 interface SettingsState extends Scalars {
   zones: Zone[];
+  methods: DeliveryMethod[];
   hydrated: boolean;
   loadError: string | null;
   hydrate: () => Promise<boolean>;
@@ -42,6 +30,12 @@ interface SettingsState extends Scalars {
   addZone: (z: Zone) => void;
   updateZone: (id: string, patch: Partial<Zone>) => void;
   removeZone: (id: string) => void;
+  addRate: (zoneId: string, r: RateBand) => void;
+  updateRate: (zoneId: string, id: string, patch: Partial<RateBand>) => void;
+  removeRate: (zoneId: string, id: string) => void;
+  addMethod: (m: DeliveryMethod) => void;
+  updateMethod: (id: string, patch: Partial<DeliveryMethod>) => void;
+  removeMethod: (id: string) => void;
 }
 
 const DEFAULTS: Scalars = {
@@ -61,11 +55,12 @@ const send = makeSender("delivery settings");
 export const useSettings = create<SettingsState>()((set, get) => ({
   ...DEFAULTS,
   zones: [],
+  methods: [],
   hydrated: false,
   loadError: null,
   hydrate: async () => {
     try {
-      const data = await fetchJson<Scalars & { zones: Zone[] }>("/api/settings/delivery");
+      const data = await fetchJson<Scalars & { zones: Zone[]; methods: DeliveryMethod[] }>("/api/settings/delivery");
       set({ ...data, hydrated: true, loadError: null });
       return true;
     } catch (e) {
@@ -92,6 +87,44 @@ export const useSettings = create<SettingsState>()((set, get) => ({
     const prev = get().zones;
     set((s) => ({ zones: s.zones.filter((z) => z.id !== id) }));
     void send(`/api/settings/delivery/zones/${id}`, "DELETE", null, get().hydrate, () => set({ zones: prev }));
+  },
+
+  /* Weight bands. A band belongs to a zone, so every change edits that zone's `rates`. */
+  addRate: (zoneId, r) => {
+    const prev = get().zones;
+    set((s) => ({ zones: s.zones.map((z) => (z.id === zoneId ? { ...z, rates: [...z.rates, r] } : z)) }));
+    void send(`/api/settings/delivery/zones/${zoneId}/rates`, "POST", r, get().hydrate, () => set({ zones: prev }));
+  },
+  updateRate: (zoneId, id, patch) => {
+    const prev = get().zones;
+    set((s) => ({
+      zones: s.zones.map((z) =>
+        z.id === zoneId ? { ...z, rates: z.rates.map((r) => (r.id === id ? { ...r, ...patch } : r)) } : z,
+      ),
+    }));
+    void send(`/api/settings/delivery/zones/${zoneId}/rates/${id}`, "PATCH", patch, get().hydrate, () => set({ zones: prev }));
+  },
+  removeRate: (zoneId, id) => {
+    const prev = get().zones;
+    set((s) => ({ zones: s.zones.map((z) => (z.id === zoneId ? { ...z, rates: z.rates.filter((r) => r.id !== id) } : z)) }));
+    void send(`/api/settings/delivery/zones/${zoneId}/rates/${id}`, "DELETE", null, get().hydrate, () => set({ zones: prev }));
+  },
+
+  /* Delivery methods — what checkout offers. */
+  addMethod: (m) => {
+    const prev = get().methods;
+    set((s) => ({ methods: [...s.methods, m] }));
+    void send("/api/settings/delivery/methods", "POST", m, get().hydrate, () => set({ methods: prev }));
+  },
+  updateMethod: (id, patch) => {
+    const prev = get().methods;
+    set((s) => ({ methods: s.methods.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+    void send(`/api/settings/delivery/methods/${id}`, "PATCH", patch, get().hydrate, () => set({ methods: prev }));
+  },
+  removeMethod: (id) => {
+    const prev = get().methods;
+    set((s) => ({ methods: s.methods.filter((m) => m.id !== id) }));
+    void send(`/api/settings/delivery/methods/${id}`, "DELETE", null, get().hydrate, () => set({ methods: prev }));
   },
 }));
 

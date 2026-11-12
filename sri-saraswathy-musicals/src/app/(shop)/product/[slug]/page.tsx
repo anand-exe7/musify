@@ -10,7 +10,20 @@ import { useCart } from "@/lib/store/cart";
 import { formatINR, cn } from "@/lib/utils";
 import { variantKey as keyOf, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { BUSINESS } from "@/lib/data/business";
-import { Minus, Plus, ChevronRight, Truck, Award, Store, ShoppingBag, Check, X, ArrowRight } from "lucide-react";
+import {
+  Minus,
+  Plus,
+  ChevronRight,
+  Truck,
+  Award,
+  Store,
+  ShoppingBag,
+  Check,
+  X,
+  ArrowRight,
+  ChevronDown,
+  Sparkles,
+} from "lucide-react";
 
 export default function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
@@ -19,6 +32,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const [qty, setQty] = useState(1);
   const [activePhoto, setActivePhoto] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [toast, setToast] = useState(false);
   const [selectedVariantKey, setSelectedVariantKey] = useState<string | null>(null);
   const addItem = useCart((s) => s.addItem);
@@ -26,10 +40,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   // Selectable variants (skip disabled). First enabled variant is the default;
   // the user's pick wins once they interact.
   const allVariants = useMemo(() => product?.variants ?? [], [product]);
-  const selectableVariants = useMemo(
-    () => allVariants.filter((v) => !v.disabled),
-    [allVariants],
-  );
+  const selectableVariants = useMemo(() => allVariants.filter((v) => !v.disabled), [allVariants]);
   const activeVariant = useMemo(() => {
     if (!product) return undefined;
     if (selectedVariantKey) {
@@ -43,22 +54,25 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const hasMultipleVariants = selectableVariants.length > 1;
   // The chosen variant's own photo, when it has one, is the only photo shown.
   const shown = useMemo(() => (product ? withVariantPhoto(product, activeVariant) : product), [product, activeVariant]);
-  const gallery = (shown?.photos && shown.photos.length > 0 ? shown.photos : [shown?.photo].filter(Boolean) as string[]).slice(0, 4);
+  const gallery = (shown?.photos && shown.photos.length > 0 ? shown.photos : [shown?.photo].filter(Boolean) as string[]).slice(0, 5);
 
   // A few more from the same category (one extra in case this product is among them).
-  const { data: relatedPage } = useProductPage({ category: product?.category ?? "", origin: "all", maxPrice: 0, sort: "featured", page: 1, pageSize: 5 }, { skip: !product });
+  const { data: relatedPage } = useProductPage(
+    { category: product?.category ?? "", origin: "all", maxPrice: 0, sort: "featured", page: 1, pageSize: 5 },
+    { skip: !product },
+  );
   const related = product && relatedPage ? relatedPage.items.filter((p) => p.id !== product.id).slice(0, 4) : [];
   const specRows = product ? product.specs.filter((s) => s.label !== "Warranty") : [];
+  const off = product && product.mrp > unitPrice ? Math.round(((product.mrp - unitPrice) / product.mrp) * 100) : 0;
 
   // Auto-advance the gallery. Re-scheduling on activePhoto means a manual
   // thumbnail click also resets the timer, so it never jumps immediately.
   useEffect(() => {
     if (gallery.length <= 1) return;
-    const id = setTimeout(() => setActivePhoto((p) => (p + 1) % gallery.length), 4000);
+    const id = setTimeout(() => setActivePhoto((p) => (p + 1) % gallery.length), 5000);
     return () => clearTimeout(id);
   }, [activePhoto, gallery.length]);
 
-  // Auto-dismiss the little toast.
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(false), 2600);
@@ -66,7 +80,20 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   }, [toast]);
 
   if (loading) {
-    return <div className="container-page py-32 text-center text-ink-400">Loading…</div>;
+    return (
+      <div className="container-page py-6 md:py-10">
+        <div className="grid gap-8 md:grid-cols-2 md:gap-14">
+          <div className="aspect-square animate-pulse rounded-3xl bg-ink-100/70" />
+          <div className="space-y-4 py-2">
+            <div className="h-3 w-24 animate-pulse rounded bg-ink-100" />
+            <div className="h-8 w-3/4 animate-pulse rounded bg-ink-100" />
+            <div className="h-4 w-1/2 animate-pulse rounded bg-ink-100" />
+            <div className="h-14 w-56 animate-pulse rounded bg-ink-100" />
+            <div className="h-12 w-full animate-pulse rounded-full bg-ink-100" />
+          </div>
+        </div>
+      </div>
+    );
   }
   // A failed catalogue fetch is not a missing product — offer a retry instead of a 404.
   if (!product && error) {
@@ -88,43 +115,48 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   };
 
   return (
-    <div className="container-page py-6 md:py-12">
+    <div className="container-page py-4 md:py-8">
       {/* Breadcrumbs */}
-      <nav className="mb-6 flex flex-wrap items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-ink-400">
+      <nav className="mb-4 flex flex-wrap items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-ink-400">
         <Link href="/" className="hover:text-gold-600">Home</Link>
         <ChevronRight className="h-3 w-3" />
         <Link href="/shop" className="hover:text-gold-600">Shop</Link>
         <ChevronRight className="h-3 w-3" />
         <Link href={`/shop?category=${product.category}`} className="hover:text-gold-600">{product.category}</Link>
-        <ChevronRight className="h-3 w-3" />
-        <span className="text-ink-600">{product.name}</span>
       </nav>
 
-      <div className="grid gap-10 md:grid-cols-2 md:gap-16">
-        {/* Gallery */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-          <div className="relative aspect-square overflow-hidden bg-ink-100">
+      <div className="grid gap-8 md:grid-cols-2 md:gap-12 lg:gap-16">
+        {/* ── Gallery ───────────────────────────────────────────── */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="md:sticky md:top-24 md:self-start">
+          <div className="relative aspect-square overflow-hidden rounded-3xl border border-ink-100 bg-white">
             <AnimatePresence initial={false}>
               <motion.div
                 key={activePhoto}
-                initial={{ opacity: 0, scale: 1.03 }}
+                initial={{ opacity: 0, scale: 1.02 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.6, ease: "easeInOut" }}
+                transition={{ duration: 0.5, ease: "easeInOut" }}
                 className="absolute inset-0"
               >
                 <ProductImage
                   product={shown ?? product}
                   photoIndex={activePhoto}
                   priority
-                  sizes="(max-width: 768px) 100vw, 50vw"
+                  fit="contain"
+                  className="relative h-full w-full overflow-hidden bg-white p-6 md:p-10"
+                  sizes="(max-width: 768px) 100vw, 46vw"
                 />
               </motion.div>
             </AnimatePresence>
 
-            {/* Slide dots */}
+            {off > 0 && (
+              <span className="absolute left-4 top-4 rounded-full bg-success px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white">
+                {off}% off
+              </span>
+            )}
+
             {gallery.length > 1 && (
-              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2">
+              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink-900/70 px-3 py-2 backdrop-blur-sm">
                 {gallery.map((_, i) => (
                   <button
                     key={i}
@@ -138,17 +170,19 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
           </div>
 
           {gallery.length > 1 && (
-            <div className="mt-3 grid grid-cols-4 gap-2">
+            <div className="mt-3 grid grid-cols-5 gap-2">
               {gallery.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => setActivePhoto(i)}
-                  className={`relative aspect-square overflow-hidden border transition-colors ${activePhoto === i ? "border-gold-500" : "border-ink-100 hover:border-gold-300"}`}
+                  className={`relative aspect-square overflow-hidden rounded-xl border bg-white transition-colors ${activePhoto === i ? "border-gold-500 ring-2 ring-gold-500/25" : "border-ink-100 hover:border-gold-300"}`}
                   aria-label={`View photo ${i + 1}`}
                 >
                   <ProductImage
                     product={shown ?? product}
                     photoIndex={i}
+                    fit="contain"
+                    className="relative h-full w-full overflow-hidden bg-white p-1.5"
                     sizes="120px"
                     imageClassName={activePhoto === i ? "" : "opacity-70"}
                   />
@@ -158,156 +192,163 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
           )}
         </motion.div>
 
-        {/* Info */}
+        {/* ── Buy box ───────────────────────────────────────────── */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-          <div className="mb-3 flex items-center gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-600">{product.brand}</p>
-            {product.bestSeller && <span className="bg-ink-900 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gold-400">Bestseller</span>}
-            {product.new && <span className="border border-gold-400 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gold-600">New</span>}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-600">{product.brand || product.category}</span>
+            {product.bestSeller && <span className="rounded-full bg-ink-900 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-gold-400">Bestseller</span>}
+            {product.new && <span className="rounded-full border border-gold-400 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-gold-700">New</span>}
           </div>
-          <h1 className="heading-serif text-display-md text-ink-900">{product.name}</h1>
-          <p className="mt-3 text-lg text-ink-500">{product.tagline}</p>
+
+          <h1 className="heading-serif mt-2 text-[1.75rem] leading-[1.1] text-ink-900 sm:text-[2.1rem] md:text-[2.5rem]">
+            {product.name}
+          </h1>
+          {product.tagline && <p className="mt-2 text-base text-ink-500">{product.tagline}</p>}
 
           {/* Price */}
-          <div className="mt-6 flex items-end gap-3 border-y border-ink-100 py-6">
-            <span className="tabular font-display text-4xl text-ink-900 md:text-5xl">{formatINR(unitPrice)}</span>
-            {product.mrp > unitPrice && (
+          <div className="mt-5 flex flex-wrap items-end gap-x-3 gap-y-1">
+            <span className="tabular text-4xl font-bold leading-none text-ink-900 md:text-[2.75rem]">
+              {formatINR(unitPrice)}
+            </span>
+            {off > 0 && (
               <>
-                <span className="tabular pb-1 text-lg text-ink-400 line-through">{formatINR(product.mrp)}</span>
-                <span className="tabular pb-1 text-sm font-semibold text-success">
-                  {Math.round(((product.mrp - unitPrice) / product.mrp) * 100)}% off
-                </span>
+                <span className="tabular text-lg text-ink-400 line-through">{formatINR(product.mrp)}</span>
+                <span className="tabular rounded-full bg-success/12 px-2.5 py-1 text-xs font-bold text-success">{off}% off</span>
               </>
             )}
           </div>
-          <p className="mt-2 text-xs uppercase tracking-widest text-ink-500">
-            Incl. {product.gstRate}% GST
+          <p className="mt-1.5 text-xs text-ink-400">
+            {product.gstRate > 0 ? `Inclusive of ${product.gstRate}% GST` : "No GST on this item"}
           </p>
 
-          {/* Variant picker — only when the product has more than one option. */}
+          {/* Option — opens a proper picker rather than a native dropdown. */}
           {hasMultipleVariants && (
             <div className="mt-6">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink-500">
-                Option{activeVariant ? ` · ${variantLabel(activeVariant)}` : ""}
-              </p>
-              <select
-                value={activeVariant ? keyOf(activeVariant) : ""}
-                onChange={(e) => {
-                  setSelectedVariantKey(e.target.value);
-                  setActivePhoto(0);
-                  setQty(1);
-                }}
-                className="w-full max-w-md border border-ink-200 bg-white px-3 py-3 text-sm text-ink-900 focus:border-gold-500 focus:outline-none"
-                aria-label="Choose an option"
+              <p className="field-label">Option</p>
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="flex w-full items-center justify-between gap-4 rounded-2xl border border-ink-200 bg-ivory-50 px-4 py-3.5 text-left transition-colors hover:border-gold-400"
               >
-                {selectableVariants.map((v) => {
-                  const left = v.stock ?? 0;
-                  return (
-                    <option key={keyOf(v)} value={keyOf(v)} disabled={left <= 0}>
-                      {variantLabel(v)}
-                      {v.price !== product.price ? ` — ${formatINR(v.price)}` : ""}
-                      {left <= 0 ? " — Sold out" : ""}
-                    </option>
-                  );
-                })}
-              </select>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-ink-900">
+                    {activeVariant ? variantLabel(activeVariant) : "Choose an option"}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-ink-400">
+                    {selectableVariants.length} options · tap to change
+                  </span>
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-ink-400" />
+              </button>
             </div>
           )}
 
-          {/* Stock — of the selected variant. */}
-          <div className="mt-4 flex items-center gap-2 text-sm">
-            <span className={`inline-block h-2 w-2 rounded-full ${variantStock > 0 ? "bg-success" : "bg-danger"}`} />
-            {variantStock > 0 ? (
-              <span className="text-ink-700">In stock · Ships in 2-3 days</span>
-            ) : (
-              <span className="text-danger">Currently unavailable</span>
+          {/* Availability */}
+          <div className="mt-5 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
+            <div className="flex items-center gap-2 text-sm">
+              <span className={`inline-block h-2 w-2 rounded-full ${variantStock > 0 ? "bg-success" : "bg-danger"}`} />
+              {variantStock > 0 ? (
+                <span className="font-medium text-ink-800">In stock · ships in 2–3 days</span>
+              ) : (
+                <span className="font-medium text-danger">Currently unavailable</span>
+              )}
+            </div>
+            {activeVariant?.stockByBranch && (
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-ink-100 pt-3">
+                {BUSINESS.branches.map((b) => {
+                  const n = activeVariant.stockByBranch?.[b.key] ?? 0;
+                  return (
+                    <span
+                      key={b.key}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px]",
+                        n > 0 ? "bg-success/10 text-success" : "bg-ink-900/[0.05] text-ink-400",
+                      )}
+                    >
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${n > 0 ? "bg-success" : "bg-ink-300"}`} />
+                      {b.area}
+                    </span>
+                  );
+                })}
+              </div>
             )}
           </div>
 
-          {/* Stock by store — of the selected variant. */}
-          {activeVariant?.stockByBranch && (
-            <ul className="mt-3 space-y-1 text-xs">
-              {BUSINESS.branches.map((b) => {
-                const n = activeVariant.stockByBranch?.[b.key] ?? 0;
-                return (
-                  <li key={b.key} className="flex items-center gap-2">
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${n > 0 ? "bg-success" : "bg-ink-300"}`} />
-                    <span className="text-ink-700">{b.city} · {b.area}</span>
-                    <span className={n > 0 ? "text-ink-500" : "text-ink-400"}>
-                      {n > 0 ? "In stock" : "Out of stock"}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          {/* Quantity + Add to cart — matched 48px-tall boxes */}
-          <div className="mt-6 flex items-stretch gap-3">
-            <div className="flex h-12 shrink-0 items-center border border-ink-200">
-              <button onClick={() => setQty(Math.max(1, qty - 1))} className="grid h-full w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Decrease">
+          {/* Quantity + add */}
+          <div className="mt-5 flex items-stretch gap-3">
+            <div className="flex h-12 shrink-0 items-center rounded-full border border-ink-200">
+              <button onClick={() => setQty(Math.max(1, qty - 1))} className="grid h-full w-11 place-items-center rounded-l-full transition-colors hover:bg-ink-900/[0.04]" aria-label="Decrease">
                 <Minus className="h-3.5 w-3.5" />
               </button>
-              <span className="tabular w-10 text-center font-medium">{qty}</span>
-              <button onClick={() => setQty(Math.min(variantStock, qty + 1))} className="grid h-full w-12 place-items-center transition-colors hover:bg-ink-50" aria-label="Increase">
+              <span className="tabular w-9 text-center text-sm font-semibold">{qty}</span>
+              <button onClick={() => setQty(Math.min(Math.max(1, variantStock), qty + 1))} className="grid h-full w-11 place-items-center rounded-r-full transition-colors hover:bg-ink-900/[0.04]" aria-label="Increase">
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
-            <button onClick={handleAdd} disabled={variantStock === 0} className="btn-gold-solid h-12 flex-1 py-0 disabled:cursor-not-allowed disabled:opacity-50">
+            <button
+              onClick={handleAdd}
+              disabled={variantStock === 0}
+              className="btn-gold-solid h-12 flex-1 py-0 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <ShoppingBag className="h-4 w-4" />
               Add to cart
             </button>
           </div>
 
-          {/* Trust icons */}
-          <div className="mt-8 grid grid-cols-1 gap-3 border-t border-ink-100 pt-6 text-xs sm:grid-cols-3">
+          {/* What comes with it */}
+          <div className="mt-6 grid gap-2 sm:grid-cols-3">
             {[
               { Icon: Truck, label: "White-glove delivery" },
               { Icon: Award, label: "Atelier set-up & tuning" },
               { Icon: Store, label: "Try it at our stores" },
             ].map(({ Icon, label }) => (
-              <div key={label} className="flex flex-col items-center gap-2 text-center md:flex-row md:text-left">
+              <div key={label} className="flex items-center gap-2.5 rounded-xl border border-ink-100 bg-ivory-50 px-3 py-2.5">
                 <Icon className="h-4 w-4 shrink-0 text-gold-600" />
-                <span className="text-ink-600">{label}</span>
+                <span className="text-[11px] leading-tight text-ink-600">{label}</span>
               </div>
             ))}
           </div>
         </motion.div>
       </div>
 
-      {/* About this instrument — description + what's notable, no tabs */}
+      {/* ── About ─────────────────────────────────────────────── */}
       {(product.description || product.features.length > 0 || specRows.length > 0) && (
-        <div className="mt-16 grid gap-10 border-t border-ink-100 pt-12 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
-          <div>
-            <h2 className="heading-serif text-display-md text-ink-900">About this instrument</h2>
+        <div className="mt-14 grid gap-6 lg:grid-cols-[1.35fr_1fr] lg:gap-8">
+          <div className="rounded-3xl border border-ink-100 bg-ivory-50 p-6 md:p-8">
+            <h2 className="heading-serif text-2xl text-ink-900">About this instrument</h2>
             {product.description && (
-              <p className="mt-5 max-w-2xl text-base leading-relaxed text-ink-700 md:text-lg">
+              <p className="mt-4 text-pretty text-[15px] leading-relaxed text-ink-700 md:text-base">
                 {product.description}
               </p>
             )}
+
             {product.features.length > 0 && (
-              <ul className="mt-8 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                {product.features.map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-sm text-ink-700">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p className="mt-7 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-gold-700">
+                  <Sparkles className="h-3.5 w-3.5" /> What stands out
+                </p>
+                <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {product.features.map((f) => (
+                    <li
+                      key={f}
+                      className="flex items-start gap-2.5 rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-sm text-ink-700"
+                    >
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
+                      <span className="text-pretty">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
 
-          {/* Specifications — clean inline table */}
           {specRows.length > 0 && (
-            <div className="lg:border-l lg:border-ink-100 lg:pl-16">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-700">
-                Specifications
-              </p>
-              <dl className="mt-5">
+            <div className="rounded-3xl border border-ink-100 bg-ivory-50 p-6 md:p-8">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gold-700">Specifications</p>
+              <dl className="mt-4">
                 {specRows.map((s) => (
-                  <div key={s.label} className="flex items-baseline justify-between gap-4 border-b border-ink-100 py-3">
-                    <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">{s.label}</dt>
-                    <dd className="text-right text-sm text-ink-900">{s.value}</dd>
+                  <div key={s.label} className="flex items-baseline justify-between gap-4 border-b border-ink-100 py-3 last:border-0">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">{s.label}</dt>
+                    <dd className="text-right text-sm font-medium text-ink-900">{s.value}</dd>
                   </div>
                 ))}
               </dl>
@@ -316,20 +357,103 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
         </div>
       )}
 
-      {/* Related — strictly from the same category */}
+      {/* ── Related ───────────────────────────────────────────── */}
       {related.length > 0 && (
-        <div className="mt-20">
-          <div className="mb-8 flex items-baseline justify-between">
+        <div className="mt-16">
+          <div className="mb-6 flex items-baseline justify-between gap-4">
             <h2 className="heading-serif text-display-md text-ink-900">
               More in <em>{product.category}</em>
             </h2>
-            <Link href={`/shop?category=${product.category}`} className="text-xs uppercase tracking-[0.2em] text-gold-600 hover:underline">See all →</Link>
+            <Link href={`/shop?category=${product.category}`} className="shrink-0 text-xs uppercase tracking-[0.2em] text-gold-600 hover:underline">
+              See all →
+            </Link>
           </div>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
             {related.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
           </div>
         </div>
       )}
+
+      {/* ── Option picker ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {pickerOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[75] flex items-end justify-center bg-ink-950/60 backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={() => setPickerOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-t-3xl border border-ink-100 bg-ivory-50 shadow-2xl sm:rounded-3xl"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-5 py-4">
+                <div>
+                  <h3 className="heading-serif text-xl text-ink-900">Choose an option</h3>
+                  <p className="mt-0.5 text-xs text-ink-500">{product.name}</p>
+                </div>
+                <button onClick={() => setPickerOpen(false)} aria-label="Close" className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-400 hover:bg-ink-900/5 hover:text-ink-900">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <ul className="max-h-[56vh] overflow-y-auto p-3">
+                {selectableVariants.map((v) => {
+                  const left = v.stock ?? 0;
+                  const isActive = activeVariant ? keyOf(v) === keyOf(activeVariant) : false;
+                  return (
+                    <li key={keyOf(v)}>
+                      <button
+                        disabled={left <= 0}
+                        onClick={() => {
+                          setSelectedVariantKey(keyOf(v));
+                          setActivePhoto(0);
+                          setQty(1);
+                          setPickerOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-4 rounded-2xl border p-3 text-left transition-all",
+                          isActive ? "border-gold-500 bg-gold-50/60" : "border-ink-100 bg-white hover:border-gold-300",
+                          left <= 0 && "cursor-not-allowed opacity-50",
+                        )}
+                      >
+                        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-ink-100">
+                          <ProductImage
+                            product={withVariantPhoto(product, v)}
+                            fit="contain"
+                            className="relative h-full w-full overflow-hidden bg-white p-1.5"
+                            sizes="64px"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-ink-900">{variantLabel(v)}</p>
+                          <p className="mt-0.5 text-xs text-ink-500">
+                            {left > 0 ? `${left} in stock` : "Sold out"}
+                            {v.weight ? ` · ${(v.weight / 1000).toFixed(2)} kg` : ""}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="tabular text-base font-bold text-ink-900">{formatINR(v.price)}</p>
+                          {isActive && (
+                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gold-700">
+                              <Check className="h-3 w-3" strokeWidth={3} /> Chosen
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>
@@ -338,7 +462,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
-            className="fixed right-4 top-24 z-[80] flex items-center gap-2.5 border border-gold-300 bg-ink-900 px-4 py-3 text-sm text-ivory-50 shadow-lg"
+            className="fixed right-4 top-24 z-[80] flex items-center gap-2.5 rounded-full border border-gold-300 bg-ink-900 px-4 py-3 text-sm text-ivory-50 shadow-lg"
           >
             <span className="grid h-5 w-5 place-items-center rounded-full bg-gold-400 text-ink-900">
               <Check className="h-3.5 w-3.5" strokeWidth={3} />
@@ -364,12 +488,12 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ type: "spring", stiffness: 260, damping: 24 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-md border border-gold-200 bg-ivory-50 p-6 shadow-2xl md:p-8"
+              className="relative w-full max-w-md rounded-3xl border border-gold-200 bg-ivory-50 p-6 shadow-2xl md:p-8"
             >
               <button
                 onClick={() => setModalOpen(false)}
                 aria-label="Close"
-                className="absolute right-4 top-4 grid h-8 w-8 place-items-center text-ink-400 hover:text-ink-900"
+                className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full text-ink-400 hover:bg-ink-900/5 hover:text-ink-900"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -382,8 +506,14 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
               </div>
 
               <div className="mt-5 flex items-center gap-4 border-y border-ink-100 py-5">
-                <div className="relative h-20 w-20 shrink-0 overflow-hidden bg-ink-100">
-                  <ProductImage product={shown ?? product} photoIndex={activePhoto} sizes="80px" />
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white ring-1 ring-ink-100">
+                  <ProductImage
+                    product={shown ?? product}
+                    photoIndex={activePhoto}
+                    fit="contain"
+                    className="relative h-full w-full overflow-hidden bg-white p-2"
+                    sizes="80px"
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] uppercase tracking-widest text-gold-600">{product.brand}</p>
@@ -392,13 +522,11 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                     {activeVariant && hasMultipleVariants ? `${variantLabel(activeVariant)} · ` : ""}Qty {qty}
                   </p>
                 </div>
-                <p className="tabular font-display text-lg text-ink-900">{formatINR(unitPrice * qty)}</p>
+                <p className="tabular shrink-0 text-lg font-bold text-ink-900">{formatINR(unitPrice * qty)}</p>
               </div>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <button onClick={() => setModalOpen(false)} className="btn-ghost">
-                  Continue shopping
-                </button>
+                <button onClick={() => setModalOpen(false)} className="btn-ghost">Continue shopping</button>
                 <Link href="/cart" className="btn-gold-solid">
                   Go to cart
                   <ArrowRight className="h-3.5 w-3.5" />

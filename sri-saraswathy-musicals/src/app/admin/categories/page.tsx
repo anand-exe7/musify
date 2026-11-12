@@ -359,6 +359,7 @@ export default function CategoriesPage() {
         <ProductModal
           product={editProd}
           onClose={() => { setEditProd(null); setDetail(backTo); setBackTo(null); }}
+          onSaved={(p) => setNotice(`“${p.name}” was saved.`)}
         />
       )}
       {notice && (

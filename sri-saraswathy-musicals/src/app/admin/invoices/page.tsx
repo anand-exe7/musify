@@ -8,6 +8,7 @@ import { FileText, Search, Globe, Store, Wrench, ChevronRight, Receipt, Banknote
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
+import { daysUntil } from "@/lib/delivery/types";
 import { RowOutputMenu } from "@/components/print/RowOutputMenu";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
@@ -28,6 +29,30 @@ type StatusFilter = "all" | "paid" | "pending" | "cancelled";
 function fmtDate(d: string) {
   const date = new Date(d);
   return isNaN(+date) ? d : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/**
+ * How long the shop has left to hand this parcel over. The ledger is where an order gets buried
+ * once a few more arrive, so the deadline is shown on the row itself, not only on the order.
+ */
+function DispatchNote({ dispatchBy, eta, status }: { dispatchBy?: string | null; eta?: string; status: string }) {
+  const days = daysUntil(dispatchBy);
+  if (days === null || status === "cancelled") {
+    return eta ? <span className="text-[11px] text-ink-400">{eta}</span> : null;
+  }
+  const late = days < 0;
+  const soon = days <= 2;
+  return (
+    <span
+      className={cn(
+        "mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        late ? "bg-danger/15 text-danger" : soon ? "bg-warning/20 text-[#8a6a1f]" : "bg-ink-100 text-ink-500",
+      )}
+      title={`Dispatch by ${dispatchBy}`}
+    >
+      {late ? `${Math.abs(days)}d late` : days === 0 ? "Ship today" : days === 1 ? "Ship tomorrow" : `Ship in ${days}d`}
+    </span>
+  );
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -234,6 +259,7 @@ export default function InvoicesLedgerPage() {
               <th>Branch</th>
               <th>Source</th>
               <th>Payment</th>
+              <th>Delivery</th>
               <th className="!text-right">Total</th>
               <th>Status</th>
               <th />
@@ -241,16 +267,16 @@ export default function InvoicesLedgerPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400"><LoadingInline label="Loading invoices…" /></td></tr>
+              <tr><td colSpan={10} className="px-4 py-16 text-center text-ink-400"><LoadingInline label="Loading invoices…" /></td></tr>
             ) : error ? (
               <tr>
-                <td colSpan={9} className="px-4 py-16 text-center">
+                <td colSpan={10} className="px-4 py-16 text-center">
                   <span className="block text-sm font-bold text-ink-900">You appear to be offline</span>
                   <span className="mt-1 block text-xs text-ink-500">We couldn&apos;t reach the server. Check your connection and try again.</span>
                 </td>
               </tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-16 text-center text-ink-400">{invoices.length === 0 ? "No invoices yet." : "No invoices match these filters."}</td></tr>
+              <tr><td colSpan={10} className="px-4 py-16 text-center text-ink-400">{invoices.length === 0 ? "No invoices yet." : "No invoices match these filters."}</td></tr>
             ) : (
               pg.items.map((v) => (
                 <tr
@@ -281,6 +307,16 @@ export default function InvoicesLedgerPage() {
                     </span>
                   </td>
                   <td className="max-w-[10rem] truncate uppercase text-ink-600">{v.paymentMode}</td>
+                  <td className="max-w-[12rem]">
+                    {v.deliveryMethod ? (
+                      <>
+                        <p className="truncate text-ink-700">{v.deliveryMethod}</p>
+                        <DispatchNote dispatchBy={v.dispatchBy} eta={v.deliveryEta} status={v.status} />
+                      </>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
+                  </td>
                   <td className="amt text-right font-semibold tabular-nums text-ink-900">{formatINR(v.total)}</td>
                   <td>
                     <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[v.status] ?? "bg-ink-100 text-ink-600")}>{v.status}</span>

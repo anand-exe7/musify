@@ -7,7 +7,7 @@ import {
   X,
 } from "lucide-react";
 import {
-  useInquiry, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus, INQUIRY_TOPICS, genInquiryId
+  useInquiry, useInquiriesLoaded, INQUIRY_STATUS_META, type Inquiry, type InquiryStatus, INQUIRY_TOPICS, genInquiryId
 } from "@/lib/store/inquiry";
 import { LoadErrorBanner } from "@/components/admin/LoadState";
 import { useBranchScope, effectiveBranch, type BranchScope } from "@/lib/store/branch";
@@ -44,6 +44,7 @@ function replyMessage(i: Inquiry) {
 const Stat = AdminStat;
 
 export default function InquiriesPage() {
+  useInquiriesLoaded();
   const inquiries = useInquiry((s) => s.inquiries);
   const loadError = useInquiry((s) => s.loadError);
   const addInquiry = useInquiry((s) => s.addInquiry);

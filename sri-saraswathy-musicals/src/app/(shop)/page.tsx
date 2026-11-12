@@ -1,4 +1,5 @@
 import { Hero } from "@/components/home/Hero";
+import { BestSellers } from "@/components/home/BestSellers";
 import { Categories } from "@/components/home/Categories";
 import { LazyPlayable } from "@/components/home/LazyPlayable";
 import { Story } from "@/components/home/Story";
@@ -10,6 +11,7 @@ export default function HomePage() {
   return (
     <>
       <Hero />
+      <BestSellers />
       <Categories />
       <LazyPlayable />
       <Story />

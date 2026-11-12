@@ -5,7 +5,7 @@ import {
   ShoppingBag, Wrench, MessageSquare, PackageMinus, AlertTriangle, Clock, Activity, RefreshCw, Check,
 } from "lucide-react";
 import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repair";
-import { useInquiry } from "@/lib/store/inquiry";
+import { useInquiry, useInquiriesLoaded } from "@/lib/store/inquiry";
 import { useOrderAlerts } from "@/lib/store/orderAlerts";
 import { useSettings } from "@/lib/store/settings";
 import { fetchJson } from "@/lib/client/api";
@@ -69,6 +69,7 @@ export default function ActivityPage() {
   const router = useRouter();
   const tickets = useRepair((s) => s.tickets);
   const hydrateRepair = useRepair((s) => s.hydrate);
+  useInquiriesLoaded();
   const inquiries = useInquiry((s) => s.inquiries);
   const hydrateInquiries = useInquiry((s) => s.hydrate);
   const orderLatest = useOrderAlerts((s) => s.latest);

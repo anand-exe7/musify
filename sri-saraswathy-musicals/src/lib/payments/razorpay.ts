@@ -38,6 +38,25 @@ export async function createRazorpayOrder(amountPaise: number, receipt: string) 
   return { id: order.id, amount: Number(order.amount), currency: order.currency };
 }
 
+/** The payment instruments Razorpay reports. Anything unrecognised is kept as-is. */
+export type PaymentInstrument = "upi" | "card" | "netbanking" | "wallet" | "emi" | "paylater" | string;
+
+/**
+ * How a captured payment was actually made ("upi", "card", "netbanking", …). The browser's
+ * `verify` call only carries ids, so the instrument is read back from Razorpay — the invoice
+ * should say UPI or Card, not just "razorpay". Best-effort: `undefined` when it can't be read.
+ */
+export async function fetchPaymentInstrument(paymentId: string): Promise<PaymentInstrument | undefined> {
+  if (!paymentId || !razorpayConfigured()) return undefined;
+  try {
+    const payment = (await razorpay().payments.fetch(paymentId)) as { method?: string };
+    return payment?.method || undefined;
+  } catch (err) {
+    console.error(`[razorpay] couldn't read payment ${paymentId}:`, err);
+    return undefined;
+  }
+}
+
 /** Verify the `order_id|payment_id` HMAC signature Razorpay returns on success. */
 export function verifyRazorpaySignature(input: {
   orderId: string;

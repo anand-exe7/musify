@@ -13,7 +13,8 @@ import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
-import { ChevronRight, Check, Lock, MapPin } from "lucide-react";
+import { formatWeight } from "@/lib/delivery/types";
+import { ChevronRight, Check, Lock, MapPin, Truck, AlertCircle, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
 import type { UserAddress } from "@/types";
@@ -63,7 +64,9 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
   const [branchPick, setBranch] = useState<string | null>(null);
-  const payment = "card" as const;
+  // Razorpay by default; pay-on-delivery is always available so an order can be placed
+  // even when the online window can't open.
+  const [payment, setPayment] = useState<"card" | "cod">("card");
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [placing, setPlacing] = useState(false);
@@ -174,6 +177,12 @@ export default function CheckoutPage() {
   const issues = quote?.issues ?? [];
   const couponIssue = issues.find((i) => i.kind === "coupon");
   const canPlace = Boolean(quote) && !quoting && issues.length === 0;
+  // Spelled out under the button, so a disabled "Place order" is never a dead end.
+  const blockedBecause = !quote
+    ? quoteError ?? "We're still pricing your order."
+    : quoting
+      ? "Updating your total…"
+      : (issues[0]?.message ?? "");
   const intra = quote?.intra ?? true;
 
   if (cartItems.length === 0 && !placed) {
@@ -232,6 +241,15 @@ export default function CheckoutPage() {
           window.location.href = "/auth/login?redirect=%2Fcheckout";
           return;
         }
+        // Online payments unavailable → offer the route that still works.
+        if (res.status === 503 && payment !== "cod") {
+          setPayment("cod");
+          setStep(2);
+          throw new Error(
+            (data?.error as string) ||
+              "Online payments aren't available right now — switched you to Pay on delivery.",
+          );
+        }
         throw new Error(data?.error || "Checkout failed");
       }
     } catch (err) {
@@ -252,7 +270,11 @@ export default function CheckoutPage() {
     const RZP = (window as unknown as { Razorpay?: any }).Razorpay;
     if (!alive.current) return;
     if (!ready || !RZP) {
-      alert("Couldn't load the payment window. Please check your connection and try again.");
+      alert(
+        "Couldn't open the payment window. Check your connection, or choose Pay on delivery and place the order now.",
+      );
+      setPayment("cod");
+      setStep(2);
       setPlacing(false);
       return;
     }
@@ -340,7 +362,7 @@ export default function CheckoutPage() {
         {steps.map((s, i) => (
           <div key={s} className="flex shrink-0 items-center gap-2 md:gap-3">
             <div className={cn(
-              "grid h-8 w-8 place-items-center border text-xs font-semibold transition-all",
+              "grid h-8 w-8 place-items-center rounded-full border text-xs font-semibold transition-all",
               i < step ? "border-gold-500 bg-gold-500 text-ink-900" : i === step ? "border-ink-900 bg-ink-900 text-ivory-50" : "border-ink-200 bg-ivory-50 text-ink-400",
             )}>
               {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
@@ -376,7 +398,7 @@ export default function CheckoutPage() {
                           });
                           if (sa.state) setShipState(sa.state);
                         }}
-                        className="flex w-full items-start gap-3 border border-ink-200 bg-ivory-50 p-3 text-left text-sm transition-colors hover:border-gold-400 hover:bg-gold-50/30"
+                        className="flex w-full items-start gap-3 rounded-xl border border-ink-200 bg-ivory-50 p-3 text-left text-sm transition-colors hover:border-gold-400 hover:bg-gold-50/30"
                       >
                         <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
                         <div>
@@ -414,58 +436,118 @@ export default function CheckoutPage() {
                 <div className="md:col-span-2"><Field label="Address line 1" value={addr.line1} onChange={setAddrField("line1")} /></div>
                 <div className="md:col-span-2"><Field label="Address line 2 (optional)" value={addr.line2} onChange={setAddrField("line2")} /></div>
                 <Field label="City" value={addr.city} onChange={setAddrField("city")} />
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">State · place of supply</span>
-                  <select
-                    value={shipState}
-                    onChange={(e) => setShipState(e.target.value)}
-                    className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
-                  >
-                    {IN_STATES.map((s) => (
-                      <option key={s} value={s}>{s}{s === homeState ? " (in-state)" : ""}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block md:col-span-2">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">Fulfilling branch</span>
-                  <select
-                    value={branch}
-                    onChange={(e) => setBranch(e.target.value)}
-                    className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
-                  >
-                    {BUSINESS.branches.map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.area} — {b.city}
-                        {branchShort[b.key].length > 0 ? " (can't supply your whole cart)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                {/* An order ships from ONE store, so a store that can't supply the whole cart is
+                    named with what it is missing and simply can't be chosen. */}
+                <div className="md:col-span-2">
+                  <span className="field-label">Fulfilling branch</span>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {BUSINESS.branches.map((b) => {
+                      const missing = branchShort[b.key] ?? [];
+                      const canSupply = missing.length === 0;
+                      return (
+                        <button
+                          key={b.key}
+                          type="button"
+                          disabled={!canSupply}
+                          onClick={() => setBranch(b.key)}
+                          className={cn(
+                            "rounded-xl border p-3 text-left transition-colors",
+                            !canSupply
+                              ? "cursor-not-allowed border-ink-100 bg-ink-900/[0.02] opacity-70"
+                              : branch === b.key
+                                ? "border-gold-500 bg-gold-50/40"
+                                : "border-ink-200 hover:border-ink-300",
+                          )}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border-2",
+                                !canSupply ? "border-ink-200" : branch === b.key ? "border-gold-500" : "border-ink-300",
+                              )}
+                            >
+                              {canSupply && branch === b.key && <span className="h-1.5 w-1.5 rounded-full bg-gold-500" />}
+                            </span>
+                            <span className="truncate text-sm font-semibold text-ink-900">{b.area}</span>
+                          </span>
+                          <span className="mt-1 block text-[11px] text-ink-500">{b.city}</span>
+                          {!canSupply && (
+                            <span className="mt-1.5 block text-[11px] text-ink-500">
+                              No {missing.join(", ")} here
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <span className="mt-1.5 block text-[11px] text-ink-500">Your order is billed and dispatched from this store.</span>
-                  {branchShort[branch].length > 0 && (
+                  {altBranches.length === 0 && branchShort[branch]?.length > 0 && (
                     <span className="mt-1.5 block text-[11px] font-medium text-danger">
-                      {branchLabel(branch)} is short on {branchShort[branch].join(", ")}.
-                      {altBranches.length > 0
-                        ? ` ${altBranches.map(branchLabel).join(" or ")} ${altBranches.length > 1 ? "have" : "has"} everything — switch to ${altBranches.length > 1 ? "one of them" : "it"}, or ask us about moving stock.`
-                        : " No store has the whole cart; reduce a quantity or contact us."}
+                      No single store has your whole cart. Reduce a quantity, or contact us and we&rsquo;ll move stock
+                      between stores for you.
                     </span>
                   )}
-                </label>
+                </div>
               </div>
               <p className="mt-3 text-xs text-ink-500">
-                {intra
-                  ? `Supply within ${homeState} — taxed as ${gstLabels.cgst} + ${gstLabels.sgst}.`
-                  : `Supply outside ${homeState} — taxed as ${gstLabels.igst}.`}
+                You pick the delivery state on the next step — it sets both the courier charge and the tax.
               </p>
             </motion.div>
           )}
 
           {step === 1 && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-              <h2 className="heading-serif text-xl text-ink-900">Delivery method</h2>
-              <div className="mt-6 space-y-3">
-                <DeliveryOption id="white-glove" active={delivery === "white-glove"} onClick={() => setDelivery("white-glove")} title="White-glove" desc="Instrument delivered, unpacked and set up in your home. 2 to 4 working days." price={quote ? (quote.shippingOptions["white-glove"] === 0 ? "Free" : formatINR(quote.shippingOptions["white-glove"])) : "—"} recommended />
-                <DeliveryOption id="standard" active={delivery === "standard"} onClick={() => setDelivery("standard")} title="Standard" desc="Insured courier. 3 to 5 working days." price={quote ? (quote.shippingOptions.standard === 0 ? "Free" : formatINR(quote.shippingOptions.standard)) : "—"} />
-                <DeliveryOption id="express" active={delivery === "express"} onClick={() => setDelivery("express")} title="Express" desc="Next-business-day, tier-1 cities only." price={quote ? formatINR(quote.shippingOptions.express) : "—"} />
+              <h2 className="heading-serif text-xl text-ink-900">Where it goes</h2>
+              <p className="mt-2 text-sm text-ink-500">
+                The courier charges by destination and parcel weight, so the state is picked here, with the price.
+              </p>
+
+              {/* Destination — its own box, because it is what sets the rate. */}
+              <div className="mt-5 rounded-2xl border border-ink-100 bg-ivory-50 p-5">
+                <label className="block">
+                  <span className="field-label flex items-center gap-1.5 text-gold-700">
+                    <MapPin className="h-3 w-3" /> Delivery state
+                  </span>
+                  <select value={shipState} onChange={(e) => setShipState(e.target.value)} className="field">
+                    {IN_STATES.map((st) => (
+                      <option key={st} value={st}>{st}{st === homeState ? " (in-state)" : ""}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-ink-500">
+                  {quote && quote.weightG > 0 && (
+                    <span className="flex items-center gap-1.5">
+                      <Scale className="h-3.5 w-3.5 text-ink-400" /> Parcel weight{" "}
+                      <b className="tabular text-ink-900">{formatWeight(quote.weightG)}</b>
+                    </span>
+                  )}
+                  <span>
+                    {intra
+                      ? `Taxed as ${gstLabels.cgst} + ${gstLabels.sgst}`
+                      : `Taxed as ${gstLabels.igst}`}
+                  </span>
+                </div>
+              </div>
+
+              <h3 className="heading-serif mt-8 text-xl text-ink-900">How it travels</h3>
+              <div className="mt-4 space-y-3">
+                {!quote && <p className="text-sm text-ink-400">Working out the delivery charge…</p>}
+                {quote?.shippingOptions.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-danger/40 bg-danger/[0.04] px-4 py-5 text-sm text-danger">
+                    No delivery option is available right now. Please contact the shop and we will arrange it.
+                  </p>
+                )}
+                {(quote?.shippingOptions ?? []).map((o) => (
+                  <DeliveryOption
+                    key={o.id}
+                    active={(delivery || quote?.deliveryId) === o.id}
+                    onClick={() => setDelivery(o.id)}
+                    title={o.name}
+                    desc={[o.description, o.eta].filter(Boolean).join(" · ")}
+                    price={o.priced ? (o.price === 0 ? "Free" : formatINR(o.price)) : "Ask us"}
+                    note={o.priced ? undefined : "We'll confirm the charge for a parcel this size."}
+                  />
+                ))}
               </div>
             </motion.div>
           )}
@@ -473,18 +555,21 @@ export default function CheckoutPage() {
           {step === 2 && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Payment method</h2>
-              <div className="mt-6 border border-gold-500 bg-gold-50/40 p-5">
-                <div className="flex items-start gap-4">
-                  <div className="grid h-10 w-10 place-items-center border border-gold-500 bg-ivory-50">
-                    <Lock className="h-4 w-4 text-gold-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-ink-900">Razorpay secure checkout</p>
-                    <p className="mt-1 text-xs text-ink-500">
-                      Pay with UPI, cards, net banking, or wallets in the Razorpay window on the next step.
-                    </p>
-                  </div>
-                </div>
+              <div className="mt-6 space-y-3">
+                <PaymentOption
+                  active={payment === "card"}
+                  onClick={() => setPayment("card")}
+                  icon={<Lock className="h-4 w-4" />}
+                  title="Pay online"
+                  desc="UPI, cards, net banking or wallets, in the Razorpay window on the last step."
+                />
+                <PaymentOption
+                  active={payment === "cod"}
+                  onClick={() => setPayment("cod")}
+                  icon={<Truck className="h-4 w-4" />}
+                  title="Pay on delivery"
+                  desc="Place the order now and pay our team when the instrument arrives."
+                />
               </div>
             </motion.div>
           )}
@@ -492,13 +577,13 @@ export default function CheckoutPage() {
           {step === 3 && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <h2 className="heading-serif text-xl text-ink-900">Review your order</h2>
-              <div className="mt-6 divide-y divide-ink-100 border border-ink-100 bg-ivory-50">
+              <div className="mt-6 divide-y divide-ink-100 overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50">
                 {cartItems.map((i) => {
                   const ql = quoteLines.get(`${i.productId}::${i.variantKey}`);
                   return (
                   <div key={`${i.productId}::${i.variantKey}`} className="flex items-center gap-4 p-4">
-                    <div className="relative h-16 w-16 shrink-0 overflow-hidden bg-ink-100">
-                      <ProductImage product={withVariantPhoto(i.product, i.variant)} sizes="64px" />
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-ink-100">
+                      <ProductImage product={withVariantPhoto(i.product, i.variant)} fit="contain" className="h-full w-full bg-white p-1.5" sizes="64px" />
                     </div>
                     <div className="flex-1">
                       <p className="text-[10px] uppercase tracking-widest text-gold-600">{i.product.brand}</p>
@@ -515,9 +600,9 @@ export default function CheckoutPage() {
               </div>
               <div className="mt-6 space-y-2 text-sm">
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
-                <p className="text-ink-500">Delivery <span className="text-ink-900">{delivery}</span></p>
+                <p className="text-ink-500">Delivery <span className="text-ink-900">{quote?.deliveryName || "—"}{quote?.deliveryEta ? ` · ${quote.deliveryEta}` : ""}</span></p>
                 <p className="text-ink-500">Branch <span className="text-ink-900">{branchLabel(branch)}</span></p>
-                <p className="text-ink-500">Payment <span className="text-ink-900">Razorpay</span></p>
+                <p className="text-ink-500">Payment <span className="text-ink-900">{payment === "cod" ? "Pay on delivery" : "Razorpay (online)"}</span></p>
               </div>
             </motion.div>
           )}
@@ -561,20 +646,32 @@ export default function CheckoutPage() {
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             ) : (
-              <button
-                onClick={placeOrder}
-                disabled={placing || !canPlace}
-                className="btn-gold-solid disabled:opacity-60"
-              >
-                {placing ? "Placing…" : quote ? `Place order · ${formatINR(quote.total)}` : "Pricing your order…"}
-              </button>
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  onClick={placeOrder}
+                  disabled={placing || !canPlace}
+                  className="btn-gold-solid disabled:opacity-60"
+                >
+                  {placing
+                    ? "Placing…"
+                    : quote
+                      ? `${payment === "cod" ? "Place order" : "Pay"} · ${formatINR(quote.total)}`
+                      : "Pricing your order…"}
+                </button>
+                {!canPlace && blockedBecause && (
+                  <p className="flex max-w-xs items-start gap-1.5 text-right text-[11px] text-ink-500">
+                    <AlertCircle className="mt-px h-3 w-3 shrink-0 text-danger" />
+                    <span>{blockedBecause}</span>
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
 
         {/* Summary */}
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <div className="border border-ink-100 bg-ivory-50 p-6">
+          <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-6">
             <h3 className="heading-serif text-lg text-ink-900">Summary</h3>
             <div className="mt-4 space-y-2 text-sm">
               <Row label="Subtotal" value={quote ? formatINR(quote.subtotal) : "—"} />
@@ -629,30 +726,69 @@ export default function CheckoutPage() {
 function Field({ label, ...rest }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-ink-500">{label}</span>
-      <input {...rest} className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none" />
+      <span className="field-label">{label}</span>
+      <input {...rest} className="field" />
     </label>
   );
 }
 
-function DeliveryOption({ title, desc, price, active, onClick, recommended }: { id: string; title: string; desc: string; price: string; active: boolean; onClick: () => void; recommended?: boolean }) {
+function DeliveryOption({ title, desc, price, note, active, onClick }: { title: string; desc: string; price: string; note?: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={cn("relative w-full border p-5 text-left transition-all", active ? "border-gold-500 bg-gold-50/40" : "border-ink-200 hover:border-ink-300")}>
+    <button type="button" onClick={onClick} className={cn("relative w-full rounded-2xl border p-5 text-left transition-all", active ? "border-gold-500 bg-gold-50/40" : "border-ink-200 hover:border-ink-300")}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <span className={cn("mt-1 grid h-4 w-4 place-items-center rounded-full border-2", active ? "border-gold-500" : "border-ink-300")}>
+          <span className={cn("mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2", active ? "border-gold-500" : "border-ink-300")}>
             {active && <span className="h-2 w-2 rounded-full bg-gold-500" />}
           </span>
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="heading-serif text-base text-ink-900">{title}</p>
-              {recommended && <span className="border border-gold-400 bg-ivory-50 px-1.5 py-0.5 text-[9px] uppercase tracking-widest text-gold-600">Recommended</span>}
-            </div>
-            <p className="mt-1 text-xs text-ink-500">{desc}</p>
+          <div className="min-w-0">
+            <p className="heading-serif text-base text-ink-900">{title}</p>
+            {desc && <p className="mt-1 text-xs text-ink-500">{desc}</p>}
+            {note && <p className="mt-1 text-xs text-danger">{note}</p>}
           </div>
         </div>
-        <p className="tabular font-display text-sm text-ink-900">{price}</p>
+        <p className="tabular shrink-0 text-sm font-bold text-ink-900">{price}</p>
       </div>
+    </button>
+  );
+}
+
+function PaymentOption({
+  title,
+  desc,
+  icon,
+  active,
+  onClick,
+}: {
+  title: string;
+  desc: string;
+  icon: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-start gap-4 rounded-2xl border p-5 text-left transition-all",
+        active ? "border-gold-500 bg-gold-50/40" : "border-ink-200 hover:border-ink-300",
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-10 w-10 shrink-0 place-items-center rounded-full border",
+          active ? "border-gold-500 bg-ivory-50 text-gold-600" : "border-ink-200 text-ink-400",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="flex-1">
+        <span className="block text-sm font-semibold text-ink-900">{title}</span>
+        <span className="mt-1 block text-xs text-ink-500">{desc}</span>
+      </span>
+      <span className={cn("mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2", active ? "border-gold-500" : "border-ink-300")}>
+        {active && <span className="h-2 w-2 rounded-full bg-gold-500" />}
+      </span>
     </button>
   );
 }

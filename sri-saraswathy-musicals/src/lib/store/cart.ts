@@ -18,9 +18,10 @@ interface CartStore {
   /** Buyer's state — drives place-of-supply GST (CGST+SGST vs IGST). */
   shipState: string;
   setShipState: (state: string) => void;
-  /** Delivery method — shared so the cart and checkout quote the same shipping. */
-  delivery: "standard" | "white-glove" | "express";
-  setDelivery: (d: "standard" | "white-glove" | "express") => void;
+  /** The chosen delivery method's id — shared so the cart and checkout quote the same shipping.
+   *  Empty means "whatever the shop offers first"; the server resolves it. */
+  delivery: string;
+  setDelivery: (d: string) => void;
   /** Coupon code the shopper applied. The server validates and prices it. */
   couponCode: string;
   setCouponCode: (code: string) => void;
@@ -40,7 +41,7 @@ export const useCart = create<CartStore>()(
       items: [],
       shipState: "Tamil Nadu",
       setShipState: (state) => set({ shipState: state }),
-      delivery: "white-glove",
+      delivery: "",
       setDelivery: (delivery) => set({ delivery }),
       couponCode: "",
       setCouponCode: (couponCode) => set({ couponCode }),
@@ -72,11 +73,16 @@ export const useCart = create<CartStore>()(
     }),
     {
       name: "ssm-cart",
-      version: 2,
+      version: 3,
       // v1 items lacked variantKey — drop any stale lines rather than guess.
+      // v2 held a built-in delivery name ("standard" / "white-glove" / "express"); methods are
+      // admin-defined now, so clear it and let the server pick the first one offered.
       migrate: (persisted, from) => {
         if (from < 2 && persisted && typeof persisted === "object") {
           return { ...(persisted as object), items: [] } as unknown as CartStore;
+        }
+        if (from < 3 && persisted && typeof persisted === "object") {
+          return { ...(persisted as object), delivery: "" } as unknown as CartStore;
         }
         return persisted as CartStore;
       },

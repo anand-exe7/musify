@@ -16,6 +16,8 @@ import type { HistoryJob } from "./HistoryExport";
 import { StockLogModal } from "@/components/admin/StockLogModal";
 
 // The product editor and the CSV history builder are big and only needed on demand, so they load when first used.
+import { Toast } from "@/components/admin/Toast";
+
 const ProductModal = dynamic(() => import("@/components/admin/ProductModal").then((m) => m.ProductModal), { ssr: false });
 const HistoryExport = dynamic(() => import("./HistoryExport").then((m) => m.HistoryExport), { ssr: false });
 
@@ -266,7 +268,13 @@ export default function InventoryPage() {
       </audio>
       <LoadErrorBanner message={error ?? loadError} onRetry={() => { productsChanged(); void usePOS.getState().hydrate(); }} />
       {openingName && !editing && <ProductSkeleton name={openingName} />}
-      {(editing || adding) && <ProductModal product={editing} onClose={() => { setEditing(null); setAdding(false); }} />}
+      {(editing || adding) && (
+        <ProductModal
+          product={editing}
+          onClose={() => { setEditing(null); setAdding(false); }}
+          onSaved={(p, created) => setNotice(created ? `“${p.name}” was added to the catalogue.` : `“${p.name}” was saved.`)}
+        />
+      )}
       {job && (
         <HistoryExport
           job={job}
@@ -276,12 +284,7 @@ export default function InventoryPage() {
         />
       )}
 
-      {notice && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-gold-500/30 bg-gold-50 px-4 py-2.5 text-sm text-ink-700">
-          <span>{notice}</span>
-          <button onClick={() => setNotice(null)} className="text-ink-400 hover:text-ink-700"><X className="h-4 w-4" /></button>
-        </div>
-      )}
+      {notice && <Toast message={notice} onClose={() => setNotice(null)} />}
 
       {logOpen && <StockLogModal onClose={() => setLogOpen(false)} />}
 

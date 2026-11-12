@@ -95,6 +95,14 @@ export interface Order {
   /** subtotal − discount + shipping. */
   total: number;
   address: string;
+  /** The delivery option chosen at checkout, snapshotted by name. */
+  deliveryMethod?: string;
+  /** The delivery time quoted with it, e.g. "3 to 5 working days". */
+  deliveryEta?: string;
+  /** yyyy-mm-dd the parcel must reach the courier by — what the dispatch alerts count down to. */
+  dispatchBy?: string | null;
+  /** Billable weight of the whole order, grams (what chose the courier band). */
+  weightG?: number;
   /** Filled in by the shop when the order is dispatched; shown to the customer. */
   courier?: string;
   trackingNo?: string;
@@ -135,6 +143,11 @@ export interface Invoice {
   delivery?: number;
   /** Overall (bill-level) discount in paise, separate from per-line `items[].discount`. */
   discount?: number;
+  /** How the sale ships — copied from the order, so the ledger shows it without a join. */
+  deliveryMethod?: string;
+  deliveryEta?: string;
+  /** yyyy-mm-dd this must be dispatched by (web orders only). */
+  dispatchBy?: string | null;
 }
 
 export interface QuotationLine {

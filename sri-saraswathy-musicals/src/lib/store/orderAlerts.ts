@@ -10,6 +10,8 @@ interface OrderAlertState {
   /** Online orders still waiting to be shipped. */
   count: number;
   latest: OrderAlert[];
+  /** The same orders, soonest dispatch deadline first — what the dispatch alert reads. */
+  dispatch: OrderAlert[];
   loaded: boolean;
   /** Bumped whenever the set of waiting orders changes, so a screen showing orders knows to re-read them. */
   version: number;
@@ -56,6 +58,7 @@ let known: Set<string> | null = null; // ids seen on the previous poll (null unt
 export const useOrderAlerts = create<OrderAlertState>()((set, get) => ({
   count: 0,
   latest: [],
+  dispatch: [],
   loaded: false,
   version: 0,
   toasts: [],
@@ -63,7 +66,7 @@ export const useOrderAlerts = create<OrderAlertState>()((set, get) => ({
 
   refresh: async () => {
     try {
-      const data = await fetchJson<{ count: number; latest: OrderAlert[] }>("/api/orders/alerts");
+      const data = await fetchJson<{ count: number; latest: OrderAlert[]; dispatch: OrderAlert[] }>("/api/orders/alerts");
       const ids = new Set(data.latest.map((o) => o.id));
       const first = known === null;
       const arrived = first ? [] : data.latest.filter((o) => !known!.has(o.id));
@@ -72,6 +75,7 @@ export const useOrderAlerts = create<OrderAlertState>()((set, get) => ({
       set((s) => ({
         count: data.count,
         latest: data.latest,
+        dispatch: data.dispatch ?? [],
         loaded: true,
         version: changed && !first ? s.version + 1 : s.version,
         toasts: arrived.length ? [...arrived, ...s.toasts].slice(0, 4) : s.toasts,

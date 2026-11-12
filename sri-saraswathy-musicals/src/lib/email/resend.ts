@@ -6,7 +6,7 @@
  */
 import { Resend } from "resend";
 import type { Order } from "@/types";
-import { getAllProducts } from "@/lib/db/queries/products";
+import { getProductNames } from "@/lib/db/queries/products";
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 
@@ -32,10 +32,11 @@ function fromAddress(): string {
 }
 
 async function renderOrderEmail(order: Order): Promise<string> {
-  const names = new Map((await getAllProducts()).map((p) => [p.id, `${p.brand} ${p.name}`]));
+  // Names only, for the products on this order — not the whole catalogue with its photos.
+  const names = await getProductNames([...new Set(order.items.map((i) => i.productId))]);
   const rows = order.items
     .map((i) => {
-      const name = names.get(i.productId) ?? i.productId;
+      const name = names[i.productId] ?? i.productId;
       return `<tr>
         <td style="padding:8px 0;border-bottom:1px solid #eee;">${esc(name)} &times; ${esc(i.quantity)}</td>
         <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${formatINR(i.price * i.quantity)}</td>
