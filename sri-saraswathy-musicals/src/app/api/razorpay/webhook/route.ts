@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 interface WebhookEvent {
   event?: string;
-  payload?: { payment?: { entity?: { id?: string; order_id?: string } } };
+  payload?: { payment?: { entity?: { id?: string; order_id?: string; method?: string } } };
 }
 
 /**
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const draft = await getPendingCheckout(pay.order_id);
     // Already recorded by the browser, or not one of our checkouts.
     if (!draft) return NextResponse.json({ ok: true, ignored: "no pending checkout" });
-    const order = await finalizePaidOrder(draft, pay.id);
+    const order = await finalizePaidOrder(draft, pay.id, pay.method);
     return NextResponse.json({ ok: true, orderId: order.id });
   } catch (err) {
     console.error(`[razorpay-webhook] could not record payment ${pay.id} for ${pay.order_id}:`, err);

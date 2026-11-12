@@ -139,16 +139,31 @@ address,
     display: none;
   }
 
+  /* Every control on the storefront is a pill; every panel is a soft rectangle. */
   .btn-gold {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-none bg-ink-900 px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-all hover:bg-gold-600 hover:text-ink-900 active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 rounded-full bg-ink-900 px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-all hover:bg-gold-600 hover:text-ink-900 active:scale-[0.98];
   }
 
   .btn-gold-solid {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-none bg-gold-400 px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:bg-gold-300 active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 rounded-full bg-gold-400 px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:bg-gold-300 active:scale-[0.98];
   }
 
   .btn-ghost {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-none border border-ink-300/50 bg-transparent px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:border-gold-500 hover:text-gold-600 active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 rounded-full border border-ink-300/50 bg-transparent px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:border-gold-500 hover:text-gold-600 active:scale-[0.98];
+  }
+
+  /* A panel: the one surface the storefront is built from. */
+  .surface {
+    @apply rounded-2xl border border-ink-100 bg-ivory-50;
+  }
+
+  /* A form control. */
+  .field {
+    @apply w-full rounded-xl border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 placeholder:text-ink-400 transition-colors focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-ink-500;
   }
 
   .divider-gold {
@@ -163,7 +178,7 @@ address,
   }
 
   .card-elevate {
-    @apply relative overflow-hidden border border-ink-100 bg-ivory-50 transition-all;
+    @apply relative overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 transition-all;
   }
   .card-elevate:hover {
     @apply border-gold-300 shadow-card;

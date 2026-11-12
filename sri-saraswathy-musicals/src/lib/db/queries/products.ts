@@ -6,6 +6,7 @@ import { BRANCH_KEYS, variantStock, variantStockAt } from "@/lib/stock";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { HttpError } from "@/lib/api/errors";
 import { isForeignKeyViolation } from "./_util";
+import { BESTSELLER_SLOTS } from "@/lib/catalog/bestsellers";
 import type { BranchStock, Category, Origin, Product, ProductVariant } from "@/types";
 
 /** Turn a DB variant (per-branch buckets, possibly legacy `stock`) into the
@@ -262,7 +263,12 @@ export async function getFeaturedProducts(): Promise<Product[]> {
 }
 
 export async function getBestSellers(): Promise<Product[]> {
-  return (await selectStorefront(and(eq(products.bestSeller, true), eq(products.active, true)))).map(toProduct);
+  // The home page row has a fixed number of slots; never hand it more than it can show.
+  const rows = await selectStorefront(and(eq(products.bestSeller, true), eq(products.active, true)), {
+    order: [asc(products.name)],
+    limit: BESTSELLER_SLOTS,
+  });
+  return rows.map(toProduct);
 }
 
 /* ─────────────────────────────  Writes  ────────────────────────────── */

@@ -23,8 +23,8 @@ async function sanitizeForStaff(id: string, raw: Partial<InvProduct>): Promise<P
   void _m;
   const clean: Partial<InvProduct> = { ...rest };
   if (!variants) return clean;
-  const { getInventory } = await import("@/lib/db/queries/pos");
-  const existing = (await getInventory()).find((p) => p.id === id);
+  // One product, not the whole catalogue (which carries every photo).
+  const existing = await getInventoryProduct(id);
   if (!existing) return clean;
   if (variants.length !== existing.variants.length) {
     throw new Error("Only admins can add or remove variants");

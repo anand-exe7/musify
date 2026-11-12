@@ -19,6 +19,10 @@ export interface CheckoutDraft extends PricedOrder {
   address: string;
   shipState: string;
   branch: string;
+  /** How it ships, resolved when the payment started — so `verify` records the same thing. */
+  deliveryMethod: string;
+  dispatchBy: string;
+  weightG: number;
   razorpayOrderId: string;
 }
 

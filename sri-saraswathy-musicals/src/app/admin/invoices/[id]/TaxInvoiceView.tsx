@@ -5,6 +5,7 @@ import { ArrowLeft, Lock, Pencil, Ban } from "lucide-react";
 import type { Invoice } from "@/types";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 import { InvoiceEditor } from "./InvoiceEditor";
+import { FulfilmentPanel } from "@/components/admin/FulfilmentPanel";
 import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { usePOS } from "@/lib/store/pos";
@@ -104,7 +105,10 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
           }}
         />
       ) : (
-        <TaxInvoiceSheet invoice={current} />
+        <>
+          <FulfilmentPanel invoice={current} />
+          <TaxInvoiceSheet invoice={current} />
+        </>
       )}
     </div>
   );

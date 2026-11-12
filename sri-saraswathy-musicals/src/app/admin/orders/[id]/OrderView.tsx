@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Check, ExternalLink, Loader2, Mail, MapPin, Package, Phone, Truck, Undo2 } from "lucide-react";
+import { ArrowLeft, Ban, Check, Clock, ExternalLink, Loader2, Mail, MapPin, Package, Phone, Truck, Undo2 } from "lucide-react";
 import type { Order } from "@/types";
 import { cn, formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
+import { daysUntil, formatWeight } from "@/lib/delivery/types";
 
 type Stage = Order["status"];
 const STEPS: { key: Exclude<Stage, "cancelled">; label: string }[] = [
@@ -35,6 +36,7 @@ export function OrderView({ order: initial, names, invoice }: {
   const cancelled = order.status === "cancelled";
   const stepIndex = STEPS.findIndex((s) => s.key === order.status);
   const detailsChanged = courier.trim() !== (order.courier ?? "") || trackingNo.trim() !== (order.trackingNo ?? "");
+  const dispatchDays = daysUntil(order.dispatchBy);
 
   async function send(body: { status?: Stage; courier?: string; trackingNo?: string }, label: string, done: string) {
     setBusy(label);
@@ -78,6 +80,16 @@ export function OrderView({ order: initial, names, invoice }: {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-ink-900">Order {order.id}</h1>
           <p className="mt-1 text-sm text-ink-500">Placed {order.date} · {branchLabel(order.branch)} · online</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-500">
+            {order.deliveryMethod && (
+              <span className="font-semibold text-ink-800">
+                {order.deliveryMethod}
+                {order.deliveryEta ? <span className="font-normal text-ink-500"> · {order.deliveryEta}</span> : null}
+              </span>
+            )}
+            {order.weightG ? <span>{formatWeight(order.weightG)}</span> : null}
+            {order.shipState ? <span>to {order.shipState}</span> : null}
+          </p>
         </div>
         {invoice && (
           <Link href={`/admin/invoices/${invoice.id}`} className="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm font-semibold text-ink-800 hover:bg-ivory-100">
@@ -167,6 +179,33 @@ export function OrderView({ order: initial, names, invoice }: {
         {/* Actions */}
         <section className={cn(card, "h-fit space-y-4")}>
           <h2 className="flex items-center gap-2 text-sm font-bold text-ink-900"><Truck className="h-4 w-4 text-gold-600" /> Shipping</h2>
+
+          {/* The deadline the shop promised at checkout — the thing that gets lost in a list of orders. */}
+          {dispatchDays !== null && !cancelled && (
+            <p
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold",
+                order.shippedAt
+                  ? "bg-success/10 text-success"
+                  : dispatchDays < 0
+                    ? "bg-danger/10 text-danger"
+                    : dispatchDays <= 2
+                      ? "bg-warning/20 text-[#8a6a1f]"
+                      : "bg-ink-900/5 text-ink-600",
+              )}
+            >
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              {order.shippedAt
+                ? `Dispatched — the deadline was ${order.dispatchBy}`
+                : dispatchDays < 0
+                  ? `Overdue by ${Math.abs(dispatchDays)} day${Math.abs(dispatchDays) === 1 ? "" : "s"} — it had to leave by ${order.dispatchBy}`
+                  : dispatchDays === 0
+                    ? "Has to leave today"
+                    : dispatchDays === 1
+                      ? "Has to leave tomorrow"
+                      : `Has to leave within ${dispatchDays} days (by ${order.dispatchBy})`}
+            </p>
+          )}
 
           <div>
             <label className={lbl}>Courier</label>

@@ -258,6 +258,14 @@ export const orders = pgTable("orders", {
   /** subtotal − discount + shipping. */
   total: integer("total").notNull().default(0),
   address: text("address").notNull().default(""),
+  /** The delivery method chosen at checkout, snapshotted by name (methods can be renamed later). */
+  deliveryMethod: text("delivery_method").notNull().default(""),
+  /** The delivery time quoted with it, e.g. "3 to 5 working days". */
+  deliveryEta: text("delivery_eta").notNull().default(""),
+  /** yyyy-mm-dd the parcel must be handed to the courier by — what the dispatch alerts count down to. */
+  dispatchBy: text("dispatch_by"),
+  /** Total billable weight of the order in grams (what picked the courier band). */
+  weightG: integer("weight_g").notNull().default(0),
   /** Fulfilment details the shop fills in as the order moves on. */
   courier: text("courier").notNull().default(""),
   trackingNo: text("tracking_no").notNull().default(""),
@@ -326,6 +334,11 @@ export const invoices = pgTable("invoices", {
   /** Bill-level discount in paise (coupon + manual ₹/%), on top of the per-line discounts. */
   discount: integer("discount").notNull().default(0),
   delivery: integer("delivery").notNull().default(0),
+  /** How the sale ships — copied from the order so the ledger never has to join. */
+  deliveryMethod: text("delivery_method").notNull().default(""),
+  deliveryEta: text("delivery_eta").notNull().default(""),
+  /** yyyy-mm-dd this must be dispatched by (web orders only). */
+  dispatchBy: text("dispatch_by"),
 }, (t) => [
   check("invoices_status_check", oneOf(t.status, INVOICE_STATUSES)),
   check("invoices_source_check", oneOf(t.source, INVOICE_SOURCES)),
@@ -755,6 +768,51 @@ export const deliveryZones = pgTable("delivery_zones", {
   above10kgPerKg: integer("above_10kg_per_kg").notNull().default(0),
 });
 
+/**
+ * One courier weight band inside a zone: "0–500 g costs ₹60". The admin adds as many bands per zone
+ * as the courier's tariff has, so nothing about the slabs is hard-coded any more (the old fixed
+ * ≤250 g / ≤500 g / each-extra-500 g columns on `delivery_zones` are superseded by these rows).
+ * `maxG` null means "and heavier" — the open-ended top band.
+ */
+export const deliveryRates = pgTable("delivery_rates", {
+  id: text("id").primaryKey(),
+  zoneId: text("zone_id")
+    .notNull()
+    .references(() => deliveryZones.id, { onDelete: "cascade" }),
+  /** Inclusive lower bound of the band, in grams. */
+  minG: integer("min_g").notNull().default(0),
+  /** Inclusive upper bound in grams. Required: a band with no top swallows every heavier parcel,
+   *  and anything over the heaviest band is charged that band instead. */
+  maxG: integer("max_g").notNull(),
+  /** What the courier charges for a parcel in this band, in paise (GST-inclusive). */
+  price: integer("price").notNull().default(0),
+  position: integer("position").notNull().default(0),
+}, (t) => [index("delivery_rates_zone_idx").on(t.zoneId)]);
+
+/**
+ * The delivery methods checkout offers. Entirely admin-defined — there is no built-in Standard,
+ * Express or White-glove any more. A method priced "zone" takes the destination zone's weight band
+ * for the cart's total weight and adds `surcharge`; a "flat" method ignores weight and charges
+ * `flatPrice`. `dispatchDays` is how long the shop has to hand the parcel over, which is what the
+ * dispatch-due alerts count down to.
+ */
+export const deliveryMethods = pgTable("delivery_methods", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  /** Customer-facing delivery time, e.g. "3 to 5 working days". */
+  eta: text("eta").notNull().default(""),
+  /** "zone" = the zone's weight band (+ surcharge); "flat" = `flatPrice`. */
+  pricing: text("pricing").notNull().default("zone"),
+  flatPrice: integer("flat_price").notNull().default(0),
+  /** Added on top of the zone rate, in paise. Lets a faster service cost "the courier rate + ₹300". */
+  surcharge: integer("surcharge").notNull().default(0),
+  /** Working days the shop has to dispatch an order sent this way. */
+  dispatchDays: integer("dispatch_days").notNull().default(2),
+  active: boolean("active").notNull().default(true),
+  position: integer("position").notNull().default(0),
+}, (t) => [check("delivery_methods_pricing_check", oneOf(t.pricing, ["zone", "flat"]))]);
+
 /** Named integer counters for server-generated sequences (e.g. service-invoice serial). */
 export const counters = pgTable("counters", {
   key: text("key").primaryKey(),
@@ -790,6 +848,8 @@ export type InquiryRow = typeof inquiries.$inferSelect;
 export type GstSettingsRow = typeof gstSettings.$inferSelect;
 export type DeliverySettingsRow = typeof deliverySettings.$inferSelect;
 export type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
+export type DeliveryRateRow = typeof deliveryRates.$inferSelect;
+export type DeliveryMethodRow = typeof deliveryMethods.$inferSelect;
 export type UserAddressRow = typeof userAddresses.$inferSelect;
 
 /**

@@ -73,6 +73,7 @@ function makeResource<T>(url: string, what: string) {
 const productsRes = makeResource<Product[]>("/api/products", "products");
 const categoriesRes = makeResource<CategoryItem[]>("/api/categories", "categories");
 const featuredRes = makeResource<Product[]>("/api/products?featured=true", "featured products");
+const bestSellerRes = makeResource<Product[]>("/api/products?bestSeller=true", "bestsellers");
 
 export const fetchProducts = () => productsRes.load();
 export const fetchCategories = () => categoriesRes.load();
@@ -83,6 +84,7 @@ export function invalidateCatalog() {
   productsRes.invalidate();
   categoriesRes.invalidate();
   featuredRes.invalidate();
+  bestSellerRes.invalidate();
   pageListeners.forEach((l) => l());
 }
 
@@ -226,6 +228,12 @@ export function useProductPage(q: ShopQuery, opts: { skip?: boolean } = {}): { d
 /** The featured products (the home page's hero and "Featured pieces"), without downloading the whole catalogue. */
 export function useFeatured(): { products: Product[]; loading: boolean; error: string | null; refresh: () => void } {
   const { data, loading, error, refresh } = useResource(featuredRes);
+  return { products: data ?? [], loading, error, refresh };
+}
+
+/** The bestsellers the shop has picked — the row under the hero. The server caps the count. */
+export function useBestSellers(): { products: Product[]; loading: boolean; error: string | null; refresh: () => void } {
+  const { data, loading, error, refresh } = useResource(bestSellerRes);
   return { products: data ?? [], loading, error, refresh };
 }
 

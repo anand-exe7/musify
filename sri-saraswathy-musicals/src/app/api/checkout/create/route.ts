@@ -9,6 +9,7 @@ import { createRazorpayOrder, razorpayConfigured, razorpayKeyId } from "@/lib/pa
 import { sendOrderConfirmation } from "@/lib/email/resend";
 import { recordOrderInvoice } from "@/lib/billing/ledger";
 import { isBranch, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
+import { dispatchDeadline } from "@/lib/delivery/types";
 import type { Order } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,14 @@ export function POST(request: NextRequest) {
     const phone = (body.phone || "").trim();
     const address = (body.address || (body.shipState ? `Delivery to ${body.shipState}` : "")).trim();
 
+    // How it ships, and by when the shop has to hand it over.
+    const delivery = {
+      deliveryMethod: priced.deliveryName,
+      deliveryEta: priced.deliveryEta,
+      dispatchBy: dispatchDeadline(new Date(), priced.dispatchDays),
+      weightG: priced.weightG,
+    };
+
     if (body.payment === "cod") {
       const order: Order = {
         id: await nextOrderId(),
@@ -71,6 +80,7 @@ export function POST(request: NextRequest) {
         shipping: priced.shipping,
         total: priced.total,
         address,
+        ...delivery,
       };
       const saved = await fulfilOrder(order, priced, branch, { paid: false });
       await recordOrderInvoice(saved);
@@ -92,6 +102,7 @@ export function POST(request: NextRequest) {
       address,
       shipState: (body.shipState || "").trim(),
       branch,
+      ...delivery,
       razorpayOrderId: rp.id,
     };
     // Kept on the server too, so the Razorpay webhook can still record the order if the browser never reports back.

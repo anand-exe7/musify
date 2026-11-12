@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle, created, HttpError, readJson } from "@/lib/api/http";
 import { verifyDraft } from "@/lib/checkout/draft";
 import { finalizePaidOrder } from "@/lib/checkout/finalize";
-import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { verifyRazorpaySignature, fetchPaymentInstrument } from "@/lib/payments/razorpay";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +31,10 @@ export function POST(request: NextRequest) {
     });
     if (!valid) throw new HttpError(400, "Payment could not be verified.");
 
+    // Which instrument was used (UPI / card / netbanking) — the invoice should name it.
+    const instrument = await fetchPaymentInstrument(body.razorpay_payment_id);
     // Shared with the Razorpay webhook: whichever arrives first records the order, the other gets it back.
-    const saved = await finalizePaidOrder(draft, body.razorpay_payment_id);
+    const saved = await finalizePaidOrder(draft, body.razorpay_payment_id, instrument);
     return created({ orderId: saved.id });
   });
 }

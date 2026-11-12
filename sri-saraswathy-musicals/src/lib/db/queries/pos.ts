@@ -5,6 +5,7 @@ import { posBills, products, coupons, posCategories, posDepartments, invoices, t
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
 import { isBranch, type Branch, type StockDelta } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
+import { BESTSELLER_SLOTS } from "@/lib/catalog/bestsellers";
 import { adjustProductStock, takeStock, type StockLine } from "@/lib/db/queries/stockOps";
 import { slugify } from "@/lib/utils";
 import { selectProduct, selectProductForEditor, selectProducts, selectProductsLean, insertVariants, syncVariants } from "./variants";
@@ -246,7 +247,25 @@ async function keepSingleFeatured(id: string): Promise<void> {
   await db.update(products).set({ featured: false }).where(and(eq(products.featured, true), ne(products.id, id)));
 }
 
+/**
+ * The home page's bestseller row holds {@link BESTSELLER_SLOTS} products, so the catalogue may not
+ * carry more. Checked here, not just in the form, so two admins saving at once can't overfill it.
+ */
+async function assertBestSellerRoom(id: string): Promise<void> {
+  const others = await db
+    .select({ id: products.id, name: products.name })
+    .from(products)
+    .where(and(eq(products.bestSeller, true), ne(products.id, id)));
+  if (others.length >= BESTSELLER_SLOTS) {
+    throw new HttpError(
+      409,
+      `Only ${BESTSELLER_SLOTS} products can be bestsellers. Turn one off first: ${others.map((o) => o.name).join(", ")}.`,
+    );
+  }
+}
+
 export async function createInventoryProduct(p: InvProduct): Promise<InvProduct> {
+  if (p.bestSeller) await assertBestSellerRoom(p.id);
   await db.insert(products).values(toInsertRow(p));
   await insertVariants(p.id, p.variants ?? []);
   if (p.featured) await keepSingleFeatured(p.id);
@@ -291,6 +310,8 @@ export async function updateInventoryProduct(
 
   const [existing] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
   if (!existing) return undefined;
+
+  if (patch.bestSeller) await assertBestSellerRoom(id);
 
   // Stock deltas address variants by their current position, so apply them
   // before a variant edit can re-number anything.

@@ -10,18 +10,18 @@
  * untaxed add-on. Money is paise.
  */
 import { getPricingCatalog, type PricingProduct } from "@/lib/db/queries/products";
-import { getZones, getGstSettings } from "@/lib/db/queries/settings";
+import { getZones, getGstSettings, getDeliveryMethods } from "@/lib/db/queries/settings";
 import { getCoupon } from "@/lib/db/queries/pos";
 import { HttpError } from "@/lib/api/errors";
-import type { Zone } from "@/lib/store/settings";
+import { zoneForState, priceMethod, type QuotedMethod } from "@/lib/delivery/types";
 import { variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
 import { evaluateCoupon } from "@/lib/checkout/coupon";
 import { taxLines } from "@/lib/gst/inclusive";
 import { isIntraSupply } from "@/lib/gst/place-of-supply";
 import { variantStockAt, isBranch, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
 
-export type DeliveryMethod = "standard" | "white-glove" | "express";
-export const DELIVERY_METHODS: readonly DeliveryMethod[] = ["standard", "white-glove", "express"];
+/** A delivery method is whatever the admin has set up — its id, not a fixed enum. */
+export type DeliveryMethod = string;
 
 export interface CartLineInput {
   productId: string;
@@ -45,7 +45,7 @@ export interface PricedLine {
 /** Something that stops this cart from being ordered as-is. The cart shows it;
  *  `/api/checkout/create` refuses to proceed while any remain. */
 export interface PricingIssue {
-  kind: "coupon" | "stock" | "variant";
+  kind: "coupon" | "stock" | "variant" | "delivery";
   message: string;
 }
 
@@ -66,36 +66,21 @@ export interface PricedOrder {
   /** True for a same-state supply (CGST+SGST), false for IGST. */
   intra: boolean;
   shipping: number;
-  /** Shipping for each delivery method, so the UI never has to compute it. */
-  shippingOptions: Record<DeliveryMethod, number>;
+  /** Every delivery method the admin offers, priced for THIS cart, so the UI computes nothing. */
+  shippingOptions: QuotedMethod[];
+  /** The method actually charged (id), and how it reads on the order. */
+  deliveryId: string;
+  deliveryName: string;
+  deliveryEta: string;
+  /** Working days the shop has to dispatch, from the chosen method. */
+  dispatchDays: number;
+  /** Total billable weight of the cart, grams — what picked the courier band. */
+  weightG: number;
+  /** The destination zone's name, for "charged at the Rest of India rate". */
+  zoneName: string;
   /** subtotal − discount + shipping. */
   total: number;
   issues: PricingIssue[];
-}
-
-/** Pick the zone whose `states` includes the buyer's state; else the fallback
- *  zone (empty `states`); else the first zone; else undefined. */
-function pickZone(zones: Zone[], shipState: string): Zone | undefined {
-  const s = shipState.trim().toLowerCase();
-  if (s) {
-    const hit = zones.find((z) => z.states.some((x) => x.trim().toLowerCase() === s));
-    if (hit) return hit;
-  }
-  return zones.find((z) => z.states.length === 0) ?? zones[0];
-}
-
-/**
- * Standard shipping = zone's ≤ 500 g slab (the base courier rate). White-glove
- * and express are shop-level services, not on the courier tariff — priced flat.
- * There is no free-shipping threshold. Cart weight is not tracked yet, so a
- * heavier parcel is still billed at the base slab; when product weight lands,
- * walk the ladder (uptoGm250 → uptoGm500 → perAddl500 → above5kgPerKg → above10kgPerKg).
- */
-function shippingFor(method: DeliveryMethod, zone: Zone | undefined): number {
-  if (method === "express") return 50000; // ₹500 flat, in paise
-  if (method === "white-glove") return 0;
-  if (!zone) return 0;
-  return zone.uptoGm500 || zone.uptoGm250 || zone.charge;
 }
 
 function lineLabel(p: PricingProduct): string {
@@ -114,17 +99,17 @@ export async function priceOrder(
   shipState = "",
   opts: { couponCode?: string | null; branch?: Branch } = {},
 ): Promise<PricedOrder> {
-  if (!DELIVERY_METHODS.includes(delivery)) throw new HttpError(400, "Unknown delivery method");
   const branch: Branch = isBranch(opts.branch) ? opts.branch : DEFAULT_BRANCH;
 
   const wanted = (rawItems || []).filter((i) => i && i.productId && Number(i.quantity) > 0);
   if (wanted.length === 0) throw new HttpError(400, "Cart is empty");
 
-  const [catalog, zones, gstCfg] = await Promise.all([
+  const [catalog, zones, gstCfg, methods] = await Promise.all([
     // Only the products this cart names — never the whole catalogue.
     getPricingCatalog([...new Set(wanted.map((i) => i.productId))]),
     getZones(),
     getGstSettings(),
+    getDeliveryMethods(),
   ]);
   const byId = new Map(catalog.map((p) => [p.id, p]));
   const issues: PricingIssue[] = [];
@@ -139,6 +124,7 @@ export async function priceOrder(
   }
 
   const priced: PricedLine[] = [];
+  let weightG = 0;
   for (const i of merged.values()) {
     const product = byId.get(i.productId);
     if (!product) throw new HttpError(400, `Unknown product: ${i.productId}`);
@@ -174,6 +160,8 @@ export async function priceOrder(
 
     const unitPrice = variant?.price || product.price;
     const rate = product.isGstApplicable ? (product.gstRate ?? 0) : 0;
+    // The courier bills on weight, so the cart's weight is the sum of its lines'.
+    weightG += Math.max(0, variant?.weight ?? 0) * i.quantity;
     priced.push({
       productId: product.id,
       variantKey: variant ? keyOf(variant) : "",
@@ -207,13 +195,28 @@ export async function priceOrder(
     intra,
   );
 
-  const zone = pickZone(zones, shipState);
-  const shippingOptions = {
-    standard: shippingFor("standard", zone),
-    "white-glove": shippingFor("white-glove", zone),
-    express: shippingFor("express", zone),
-  };
-  const shipping = shippingOptions[delivery];
+  // Delivery: the destination's zone (a state nobody claimed lands in the fallback, "Rest of
+  // India"), the cart's weight, and whatever methods the admin offers — no built-in services.
+  const zone = zoneForState(zones, shipState);
+  const live = methods.filter((m) => m.active);
+  const shippingOptions: QuotedMethod[] = live.map((m) => {
+    const { price, priced: ok } = priceMethod(m, zone, weightG);
+    return { id: m.id, name: m.name, description: m.description, eta: m.eta || zone?.eta || "", price, dispatchDays: m.dispatchDays, priced: ok };
+  });
+  const chosen = live.find((m) => m.id === delivery) ?? live[0];
+  const quoted = shippingOptions.find((o) => o.id === chosen?.id);
+  if (delivery && live.length > 0 && !live.some((m) => m.id === delivery)) {
+    issues.push({ kind: "delivery", message: "That delivery option is no longer offered — pick another one." });
+  }
+  if (live.length === 0) {
+    issues.push({ kind: "delivery", message: "No delivery method is set up yet. Please contact the shop." });
+  } else if (quoted && !quoted.priced) {
+    issues.push({
+      kind: "delivery",
+      message: `${zone?.name ?? "This destination"} has no courier rate for a ${Math.round(weightG)} g parcel. Please contact the shop.`,
+    });
+  }
+  const shipping = quoted?.price ?? 0;
 
   return {
     items: priced,
@@ -228,6 +231,12 @@ export async function priceOrder(
     intra,
     shipping,
     shippingOptions,
+    deliveryId: chosen?.id ?? "",
+    deliveryName: chosen?.name ?? "",
+    deliveryEta: quoted?.eta ?? "",
+    dispatchDays: chosen?.dispatchDays ?? 2,
+    weightG,
+    zoneName: zone?.name ?? "",
     total: subtotal - discount + shipping,
     issues,
   };
