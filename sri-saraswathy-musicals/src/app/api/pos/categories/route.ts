@@ -1,11 +1,14 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, created, badRequest, readJson } from "@/lib/api/http";
-import { getPosCategories, addPosCategory } from "@/lib/db/queries/pos";
+import { getPosCategories, getPosCategoryRows, addPosCategory } from "@/lib/db/queries/pos";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return handle("staff", async () => ok(await getPosCategories()));
+/** `?view=full` lists each category with its enabled flag; the plain list stays a list of names. */
+export function GET(request: NextRequest) {
+  return handle("staff", async () =>
+    ok(request.nextUrl.searchParams.get("view") === "full" ? await getPosCategoryRows() : await getPosCategories()),
+  );
 }
 
 // POST { name: string }

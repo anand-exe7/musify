@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightLeft, Search, ArrowRight, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Search, ArrowRight, Trash2, X } from "lucide-react";
 import { usePOS, useInventory, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,33 @@ function fmt(d: string) {
   return isNaN(+x) ? d : x.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+type Period = "all" | "today" | "week" | "month" | "year" | "custom";
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "month", label: "This month" },
+  { key: "year", label: "This year" },
+  { key: "custom", label: "Custom" },
+];
+
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** The from/to dates a period button fills in. "This week" starts on Monday. */
+function periodRange(p: Period): { from: string; to: string } {
+  const now = new Date();
+  const today = iso(now);
+  if (p === "today") return { from: today, to: today };
+  if (p === "week") {
+    const d = new Date(now);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday
+    return { from: iso(d), to: today };
+  }
+  if (p === "month") return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
+  if (p === "year") return { from: iso(new Date(now.getFullYear(), 0, 1)), to: today };
+  return { from: "", to: "" }; // all / custom
+}
+
 /** Default destination for a source: the next branch in the list. */
 const otherBranch = (b: Branch): Branch => BRANCH_KEYS[(BRANCH_KEYS.indexOf(b) + 1) % BRANCH_KEYS.length];
 
@@ -74,7 +101,9 @@ export default function StockTransfersPage() {
   const [fTo, setFTo] = useState("");
   const [fSrc, setFSrc] = useState<string>("all");
   const [fDest, setFDest] = useState<string>("all");
+  const [fProduct, setFProduct] = useState<string>("all");
   const [fQuery, setFQuery] = useState("");
+  const [period, setPeriod] = useState<Period>("all");
   const shownTransfers = useMemo(() => {
     const q = fQuery.trim().toLowerCase();
     return transfers.filter((r) => {
@@ -84,11 +113,26 @@ export default function StockTransfersPage() {
         (!fTo || day <= fTo) &&
         (fSrc === "all" || r.fromBranch === fSrc) &&
         (fDest === "all" || r.toBranch === fDest) &&
+        (fProduct === "all" || r.productName === fProduct) &&
         (!q || r.productName.toLowerCase().includes(q) || r.variant.toLowerCase().includes(q) || (r.createdByName || "").toLowerCase().includes(q))
       );
     });
-  }, [transfers, fFrom, fTo, fSrc, fDest, fQuery]);
-  const hasTransferFilter = !!(fFrom || fTo || fSrc !== "all" || fDest !== "all" || fQuery);
+  }, [transfers, fFrom, fTo, fSrc, fDest, fProduct, fQuery]);
+  const hasTransferFilter = !!(fFrom || fTo || fSrc !== "all" || fDest !== "all" || fProduct !== "all" || fQuery || period !== "all");
+  /** Every product that has ever been transferred, for the product filter. */
+  const transferredProducts = useMemo(
+    () => [...new Set(transfers.map((r) => r.productName))].sort((a, b) => a.localeCompare(b)),
+    [transfers],
+  );
+  const movedUnits = useMemo(() => shownTransfers.reduce((n, r) => n + r.quantity, 0), [shownTransfers]);
+  /** A period button fills the two date boxes; typing in them switches to Custom. */
+  const applyPeriod = (p: Period) => {
+    setPeriod(p);
+    const range = periodRange(p);
+    setFFrom(range.from);
+    setFTo(range.to);
+  };
+  const clearFilters = () => { setPeriod("all"); setFFrom(""); setFTo(""); setFSrc("all"); setFDest("all"); setFProduct("all"); setFQuery(""); };
 
   useEffect(() => {
     setFromBranch(lockedSource ?? effectiveBranch(scopeSelected));
@@ -196,6 +240,9 @@ export default function StockTransfersPage() {
   const field =
     "w-full rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20";
   const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
+  // The transfer log's filter controls: one height, one shape.
+  const filterCls = "h-10 rounded-xl border border-ink-200 bg-white px-3 text-sm font-medium text-ink-700 focus:border-gold-500 focus:outline-none";
+  const chip = (active: boolean) => cn("h-8 rounded-lg px-3 text-xs font-semibold transition-colors", active ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900");
 
   return (
     <div className="p-5 md:p-8">
@@ -337,72 +384,98 @@ export default function StockTransfersPage() {
 
         {/* Recent transfers */}
         <section>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-bold uppercase tracking-wider text-ink-500">Recent transfers</h2>
-            <span className="text-[11px] text-ink-400">{shownTransfers.length} of {transfers.length}</span>
+            <span className="text-[11px] text-ink-400">
+              Showing <b className="text-ink-700">{shownTransfers.length}</b> of {transfers.length} · <b className="text-ink-700">{movedUnits}</b> unit{movedUnits === 1 ? "" : "s"} moved
+            </span>
           </div>
 
-          {/* INV-05: filters — date range, from/to branch, product/person search */}
-          <div className="mb-3 flex flex-wrap items-end gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
-              <input type="date" value={fFrom} max={fTo || undefined} onChange={(e) => setFFrom(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-            </label>
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
-              <input type="date" value={fTo} min={fFrom || undefined} onChange={(e) => setFTo(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
-            </label>
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From branch
-              <select value={fSrc} onChange={(e) => setFSrc(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
-                <option value="all">All</option>
-                {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
-              </select>
-            </label>
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To branch
-              <select value={fDest} onChange={(e) => setFDest(e.target.value)} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none">
-                <option value="all">All</option>
-                {BRANCH_KEYS.map((b) => <option key={b} value={b}>{branchLabel(b)}</option>)}
-              </select>
-            </label>
-            <label className="flex-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Search
-              <div className="mt-1 flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 focus-within:border-gold-500">
-                <Search className="h-4 w-4 shrink-0 text-ink-400" />
-                <input value={fQuery} onChange={(e) => setFQuery(e.target.value)} placeholder="Product, variant or who transferred…" className="w-full bg-transparent text-sm normal-case tracking-normal focus:outline-none" />
+          {/* INV-05: period, branches, product and a free search — everything a transfer can be tracked by. */}
+          <div className="mb-3 space-y-3 rounded-2xl border border-ink-100 bg-ivory-50 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1 rounded-xl bg-ink-900/[0.04] p-1">
+                {PERIODS.map((p) => (
+                  <button key={p.key} onClick={() => applyPeriod(p.key)} className={chip(period === p.key)}>{p.label}</button>
+                ))}
               </div>
-            </label>
-            {hasTransferFilter && (
-              <button onClick={() => { setFFrom(""); setFTo(""); setFSrc("all"); setFDest("all"); setFQuery(""); }} className="pb-2 text-xs font-semibold text-gold-600 hover:underline">Clear</button>
-            )}
+              {period === "custom" && (
+                <div className="flex items-center gap-2">
+                  <input type="date" value={fFrom} max={fTo || undefined} onChange={(e) => setFFrom(e.target.value)} aria-label="From date" className={filterCls} />
+                  <span className="text-xs text-ink-400">to</span>
+                  <input type="date" value={fTo} min={fFrom || undefined} onChange={(e) => setFTo(e.target.value)} aria-label="To date" className={filterCls} />
+                </div>
+              )}
+              {hasTransferFilter && (
+                <button onClick={clearFilters} className="ml-auto inline-flex h-10 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-600 hover:border-gold-500 hover:text-gold-600">
+                  <X className="h-3.5 w-3.5" /> Clear filters
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={fSrc} onChange={(e) => setFSrc(e.target.value)} aria-label="From branch" className={filterCls}>
+                <option value="all">From: all branches</option>
+                {BRANCH_KEYS.map((b) => <option key={b} value={b}>From: {branchLabel(b)}</option>)}
+              </select>
+              <select value={fDest} onChange={(e) => setFDest(e.target.value)} aria-label="To branch" className={filterCls}>
+                <option value="all">To: all branches</option>
+                {BRANCH_KEYS.map((b) => <option key={b} value={b}>To: {branchLabel(b)}</option>)}
+              </select>
+              <select value={fProduct} onChange={(e) => setFProduct(e.target.value)} aria-label="Product" className={cn(filterCls, "max-w-[220px]")}>
+                <option value="all">All products</option>
+                {transferredProducts.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <div className="ml-auto flex h-10 min-w-[220px] flex-1 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 focus-within:border-gold-500 lg:max-w-sm">
+                <Search className="h-4 w-4 shrink-0 text-ink-400" />
+                <input value={fQuery} onChange={(e) => setFQuery(e.target.value)} placeholder="Product, variant, note or who moved it…" className="w-full bg-transparent text-sm focus:outline-none" />
+                {fQuery && <button onClick={() => setFQuery("")} aria-label="Clear search" className="text-ink-400 hover:text-ink-700"><X className="h-3.5 w-3.5" /></button>}
+              </div>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[760px] text-sm">
+              <colgroup><col className="w-44" /><col /><col className="w-56" /><col className="w-40" /><col className="w-28" /><col className="w-24" /></colgroup>
               <thead>
-                <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+                <tr className="border-b border-ink-100 bg-white/50 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
                   <th className="px-4 py-3">When</th>
-                  <th>Product</th>
-                  <th>Direction</th>
-                  <th>By</th>
-                  <th className="pr-4 text-right">Qty</th>
+                  <th className="px-3 py-3">Product</th>
+                  <th className="px-3 py-3">Direction</th>
+                  <th className="px-3 py-3">By</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Qty</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-50">
                 {shownTransfers.map((r) => (
-                  <tr key={r.id} className="text-ink-700">
-                    <td className="px-4 py-3 text-xs text-ink-500">{fmt(r.transferredAt)}</td>
-                    <td>
-                      <p className="font-medium text-ink-900">{r.productName}</p>
-                      {r.variant && <p className="text-[11px] text-ink-400">{r.variant}</p>}
+                  <tr key={r.id} className="h-16 align-middle text-ink-700 transition-colors hover:bg-ink-900/[0.03]">
+                    <td className="whitespace-nowrap px-4 text-xs text-ink-600">{fmt(r.transferredAt)}</td>
+                    <td className="px-3">
+                      <p className="truncate font-semibold text-ink-900" title={r.productName}>{r.productName}</p>
+                      {r.variant && <p className="truncate text-[11px] text-ink-400">{r.variant}</p>}
                     </td>
-                    <td className="text-xs text-ink-600">
-                      {branchLabel(r.fromBranch)} → {branchLabel(r.toBranch)}
-                      {r.note && <div className="text-[10px] text-ink-400">{r.note}</div>}
+                    <td className="px-3">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink-900/[0.05] px-2.5 py-1 text-[11px] font-semibold text-ink-700">
+                        {branchLabel(r.fromBranch)} <ArrowRight className="h-3 w-3 text-gold-600" /> {branchLabel(r.toBranch)}
+                      </span>
+                      {r.note && <p className="mt-0.5 truncate text-[10px] text-ink-400" title={r.note}>{r.note}</p>}
                     </td>
-                    <td className="text-xs text-ink-600">{r.createdByName || r.createdBy || "—"}</td>
-                    <td className="pr-4 text-right font-semibold tabular-nums">{r.quantity}</td>
+                    <td className="px-3 text-xs text-ink-600">
+                      <span className="truncate" title={r.createdByName || r.createdBy || ""}>{r.createdByName || r.createdBy || "—"}</span>
+                    </td>
+                    <td className="px-3">
+                      <span className="whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-success/15 text-success">Completed</span>
+                    </td>
+                    <td className="px-4 text-right font-bold tabular-nums text-ink-900">{r.quantity}</td>
                   </tr>
                 ))}
                 {shownTransfers.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-sm text-ink-400">{transfers.length === 0 ? "No transfers yet." : "No transfers match these filters."}</td>
+                    <td colSpan={6} className="px-4 py-14 text-center text-sm text-ink-400">
+                      <ArrowRightLeft className="mx-auto mb-2 h-6 w-6 text-ink-300" />
+                      {transfers.length === 0 ? "No transfers yet." : "No transfers match these filters."}
+                    </td>
                   </tr>
                 )}
               </tbody>

@@ -33,6 +33,8 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 const sourceLabel = (s?: string) => SOURCE[s ?? ""] ?? s ?? "";
+/** First letter for the row's avatar circle; "?" when the bill carried no name. */
+const initial = (name: string) => (name.trim()[0] ?? "?").toUpperCase();
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
@@ -85,16 +87,16 @@ function CustomerDetail({ id, fullAdmin }: { id: string; fullAdmin: boolean }) {
   const th = "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400";
   return (
     <div className="space-y-5 border-t border-ink-100 bg-[#FAF7EF] px-4 py-5 md:px-6">
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid divide-ink-100 overflow-hidden rounded-xl border border-ink-100 bg-white sm:grid-cols-2 sm:divide-x lg:grid-cols-4">
         {[
           ["Name", c.name || "—"],
           ["Mobile", formatPhone(c.phone)],
           ["GST number", c.gstin || "—"],
           ["Customer since", fmtDate(c.createdAt)],
         ].map(([k, v]) => (
-          <div key={k}>
+          <div key={k} className="border-b border-ink-100 px-4 py-3 last:border-b-0 sm:border-b-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">{k}</p>
-            <p className={cn("mt-1 text-sm font-semibold text-ink-900", k === "GST number" && "font-mono")}>{v}</p>
+            <p className={cn("mt-1 truncate text-sm font-semibold text-ink-900", k === "GST number" && "font-mono")} title={v}>{v}</p>
           </div>
         ))}
       </section>
@@ -229,16 +231,54 @@ export default function CustomersPage() {
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or mobile number…" className="w-full bg-transparent text-sm focus:outline-none" />
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50">
-        <table className="w-full min-w-[720px] text-sm">
+      {/* Phones get cards instead of a sideways-scrolling table; the tap-to-expand history is the same. */}
+      <div className="space-y-3 md:hidden">
+        {items.map((c) => {
+          const isOpen = open === c.id;
+          return (
+            <div key={c.id} className={cn("overflow-hidden rounded-2xl border bg-ivory-50", isOpen ? "border-ink-200" : "border-ink-100")}>
+              <button onClick={() => setOpen(isOpen ? null : c.id)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink-900/[0.06] text-sm font-bold text-ink-600">{initial(c.name)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-ink-900">{c.name || "No name"}</span>
+                  <span className="block truncate text-xs tabular-nums text-ink-500">{formatPhone(c.phone)}</span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-sm font-semibold tabular-nums text-ink-900">{formatINR(c.total)}</span>
+                  <span className="block text-[11px] text-ink-400">{c.bills} bill{c.bills === 1 ? "" : "s"} · {fmtDate(c.lastPurchase)}</span>
+                </span>
+                {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-ink-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-ink-400" />}
+              </button>
+              {isOpen && <CustomerDetail id={c.id} fullAdmin={fullAdmin} />}
+            </div>
+          );
+        })}
+        {!loading && items.length === 0 && (
+          <div className="rounded-2xl border border-ink-100 bg-ivory-50 px-4 py-14 text-center text-sm text-ink-400">
+            <UsersRound className="mx-auto mb-2 h-6 w-6 text-ink-300" />
+            {q ? "No customer matches that search." : "No customers yet. They appear here as bills are made with a mobile number."}
+          </div>
+        )}
+        {loading && items.length === 0 && (
+          <div className="rounded-2xl border border-ink-100 bg-ivory-50 px-4 py-14 text-center"><LoadingInline label="Loading customers…" /></div>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl border border-ink-100 bg-ivory-50 md:block">
+        {/* `table-fixed` + a colgroup keeps every column the same width from page to page, so the
+            figures line up in one column however long a name or a GST number is. */}
+        <table className="w-full min-w-[760px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-10" /><col /><col className="w-40" /><col className="w-20" /><col className="w-36" /><col className="w-36" />
+          </colgroup>
           <thead>
-            <tr className="border-b border-ink-100 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+            <tr className="border-b border-ink-100 bg-white/50 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
               <th className={cn(th, "w-10")} />
               <th className={th}>Customer</th>
               <th className={th}>Mobile</th>
               <th className={cn(th, "text-right")}>Bills</th>
               <th className={cn(th, "text-right")}>Total spent</th>
-              <th className={cn(th, "pr-4")}>Last purchase</th>
+              <th className={cn(th, "pr-5 text-right")}>Last purchase</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-50">
@@ -246,16 +286,28 @@ export default function CustomersPage() {
               const isOpen = open === c.id;
               return (
                 <Fragment key={c.id}>
-                  <tr onClick={() => setOpen(isOpen ? null : c.id)} className={cn("cursor-pointer align-top text-ink-700 hover:bg-ink-900/[0.03]", isOpen && "bg-ink-900/[0.03]")}>
-                    <td className="py-3 pl-4 text-ink-400">{isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-ink-900">{c.name || <span className="font-normal text-ink-300">No name</span>}</p>
-                      {c.gstin && <p className="font-mono text-[11px] text-ink-400">{c.gstin}</p>}
+                  <tr
+                    onClick={() => setOpen(isOpen ? null : c.id)}
+                    className={cn(
+                      // One fixed height for every row, whether or not the customer has a GST number.
+                      "h-16 cursor-pointer align-middle text-ink-700 transition-colors hover:bg-ink-900/[0.03]",
+                      isOpen && "bg-ink-900/[0.04]",
+                    )}
+                  >
+                    <td className="pl-4 text-ink-400">{isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</td>
+                    <td className="px-4">
+                      <div className="flex items-center gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-900/[0.06] text-xs font-bold text-ink-600">{initial(c.name)}</span>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold leading-tight text-ink-900">{c.name || <span className="font-normal text-ink-300">No name</span>}</p>
+                          {c.gstin && <p className="truncate font-mono text-[11px] leading-tight text-ink-400">{c.gstin}</p>}
+                        </div>
+                      </div>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 tabular-nums">{formatPhone(c.phone)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{c.bills}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-ink-900">{formatINR(c.total)}</td>
-                    <td className="whitespace-nowrap px-4 py-3 pr-4 text-xs text-ink-600">{fmtDate(c.lastPurchase)}</td>
+                    <td className="whitespace-nowrap px-4 tabular-nums">{formatPhone(c.phone)}</td>
+                    <td className="px-4 text-right tabular-nums">{c.bills}</td>
+                    <td className="whitespace-nowrap px-4 text-right font-semibold tabular-nums text-ink-900">{formatINR(c.total)}</td>
+                    <td className="whitespace-nowrap px-4 pr-5 text-right tabular-nums text-ink-600">{fmtDate(c.lastPurchase)}</td>
                   </tr>
                   {isOpen && <tr><td colSpan={6} className="p-0"><CustomerDetail id={c.id} fullAdmin={fullAdmin} /></td></tr>}
                 </Fragment>

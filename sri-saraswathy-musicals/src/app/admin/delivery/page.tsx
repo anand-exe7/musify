@@ -41,6 +41,16 @@ export default function DeliveryPage() {
   };
 
   const fallbacks = s.zones.filter((z) => z.states.length === 0);
+  /**
+   * DEL-01: what the state boxes actually do. A state listed in a zone is charged that zone's rates; anything
+   * not listed falls to the zone with no states, and failing that to the first zone (that is what pricing does).
+   */
+  const coverage = useMemo(() => {
+    const covered = new Set(s.zones.flatMap((z) => z.states.map((x) => x.trim())));
+    const missing = IN_STATES.filter((st) => !covered.has(st));
+    return { covered: covered.size, missing, fallback: fallbacks[0] ?? null };
+  }, [s.zones, fallbacks]);
+  const [showMissing, setShowMissing] = useState(false);
 
   return (
     <div className="p-5 md:p-8">
@@ -62,11 +72,57 @@ export default function DeliveryPage() {
       </div>
 
       {/* How it works */}
-      <div className="mb-6 grid gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4 text-xs text-ink-600 md:grid-cols-3">
+      <div className="mb-4 grid gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4 text-xs text-ink-600 md:grid-cols-3">
         <p className="flex gap-2"><MapPin className="h-4 w-4 shrink-0 text-gold-600" /><span>An order uses the zone that lists the buyer&rsquo;s <b className="text-ink-900">shipping state</b>.</span></p>
         <p className="flex gap-2"><Globe2 className="h-4 w-4 shrink-0 text-gold-600" /><span>A zone with <b className="text-ink-900">no states</b> is the fallback for every state not listed.</span></p>
         <p className="flex gap-2"><Truck className="h-4 w-4 shrink-0 text-gold-600" /><span>Online checkout charges the <b className="text-ink-900">up to 500 g</b> rate of that zone.</span></p>
       </div>
+
+      {/* DEL-01: coverage — which states have a rate, and what happens to the rest. */}
+      {s.hydrated && (
+        <div className="mb-6 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <p className="text-sm text-ink-700">
+              <b className="text-ink-900 tabular-nums">{coverage.covered}</b> of {IN_STATES.length} states &amp; union territories are named in a zone
+              {coverage.missing.length > 0 && <> · <b className="text-ink-900 tabular-nums">{coverage.missing.length}</b> are not</>}
+            </p>
+            {coverage.missing.length > 0 && (
+              <button onClick={() => setShowMissing((o) => !o)} className="text-xs font-semibold text-gold-700 hover:underline">
+                {showMissing ? "Hide" : "Show"} the {coverage.missing.length} not named
+              </button>
+            )}
+          </div>
+
+          {s.zones.length === 0 ? (
+            <p className="mt-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-xs font-semibold text-danger">
+              No zones at all — online orders are being charged ₹0 delivery. Add at least one zone.
+            </p>
+          ) : coverage.fallback ? (
+            <p className="mt-2 text-xs text-ink-500">
+              Anywhere not named falls to <b className="text-ink-900">{coverage.fallback.name || "the zone with no states"}</b> ({formatINR(coverage.fallback.uptoGm500 || coverage.fallback.uptoGm250 || coverage.fallback.charge)}).
+            </p>
+          ) : coverage.missing.length > 0 ? (
+            <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              There is no fallback zone, so an order from one of those states is charged the first zone&rsquo;s rate
+              (<b>{s.zones[0].name}</b>). Either add the missing states to a zone, or clear one zone&rsquo;s state list to make it the fallback.
+            </p>
+          ) : null}
+
+          {showMissing && coverage.missing.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-ink-100 pt-3">
+              {coverage.missing.map((st) => (
+                <span key={st} className="rounded-full bg-white px-2.5 py-1 text-[11px] text-ink-600 ring-1 ring-ink-100">{st}</span>
+              ))}
+            </div>
+          )}
+
+          {/* DEL-02 is still an open question for the client — say so where the rates are set. */}
+          <p className="mt-3 border-t border-ink-100 pt-3 text-[11px] text-ink-400">
+            Checkout also offers two delivery methods beside Standard: <b className="text-ink-600">Express</b> (₹500 flat, not from this table) and
+            <b className="text-ink-600"> White-glove</b> (₹0). Tell me if those should stay, go, or be priced here too.
+          </p>
+        </div>
+      )}
 
       {!s.hydrated && !s.loadError ? (
         <LoadingPanel label="Loading delivery zones…" />

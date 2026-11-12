@@ -8,7 +8,7 @@ const STATUSES: readonly InvStatus[] = ["all", "low", "out"];
 const SORTS: readonly InvSort[] = ["name", "price", "stock"];
 
 /**
- * GET /api/inventory?page=&pageSize=&q=&category=&department=&status=&sort=   → one page of light rows
+ * GET /api/inventory?page=&pageSize=&q=&category=&department=&branch=&status=&sort= → one page of light rows
  * GET /api/inventory?view=ids&…filters                                         → ids of every match (for CSV export)
  * GET /api/inventory?view=alerts                                               → variants that are out / running low
  * The page never carries variants; a row's variants come from /api/inventory/{id}/variants when it is opened.
@@ -21,6 +21,7 @@ export function GET(request: NextRequest) {
       q: sp.get("q") || undefined,
       category: sp.get("category") || undefined,
       department: sp.get("department") || undefined,
+      branch: sp.get("branch") || undefined,
       status: STATUSES.find((s) => s === sp.get("status")),
       sort: SORTS.find((s) => s === sp.get("sort")),
       page: Number(sp.get("page")) || 1,
