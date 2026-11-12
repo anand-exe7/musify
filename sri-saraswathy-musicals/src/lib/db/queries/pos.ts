@@ -7,7 +7,8 @@ import { isBranch, type Branch, type StockDelta } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
 import { adjustProductStock, takeStock, type StockLine } from "@/lib/db/queries/stockOps";
 import { slugify } from "@/lib/utils";
-import { selectProduct, selectProducts, selectProductsLean, insertVariants, syncVariants } from "./variants";
+import { selectProduct, selectProductForEditor, selectProducts, selectProductsLean, insertVariants, syncVariants } from "./variants";
+import { keptGallery } from "./photoRefs";
 import { resolveGstColumns } from "@/lib/gst/applicability";
 import { clampPct, evaluateCoupon } from "@/lib/checkout/coupon";
 import { row, rows, definedOnly } from "./_util";
@@ -231,14 +232,15 @@ export async function getInventoryList(): Promise<InvProduct[]> {
 
 /** One product in full (variants and stock included) — what the editor opens. */
 export async function getInventoryProduct(id: string): Promise<InvProduct | undefined> {
-  const row = await selectProduct(id);
+  // The editor gets image URLs, not the photos themselves (see `photoRefs`), and sends them back unchanged.
+  const row = await selectProductForEditor(id);
   return row ? toInvProduct(row) : undefined;
 }
 
 export async function createInventoryProduct(p: InvProduct): Promise<InvProduct> {
   await db.insert(products).values(toInsertRow(p));
   await insertVariants(p.id, p.variants ?? []);
-  return toInvProduct((await selectProduct(p.id)) as ProductRow);
+  return toInvProduct((await selectProductForEditor(p.id)) as ProductRow);
 }
 
 /** A stock figure the editor changed: it saw `from` and wants `to`. */
@@ -265,12 +267,19 @@ export async function updateInventoryProduct(
   patch: Partial<InvProduct>,
   stockChanges: StockChange[] = [],
 ): Promise<InvProduct | undefined> {
+  // Photos the editor only displayed come back as image URLs; those mean "keep what is stored" (see `photoRefs`).
+  if (patch.photos !== undefined || patch.photo !== undefined) {
+    const [cur] = await db.select({ photo: products.photo, photos: products.photos }).from(products).where(eq(products.id, id)).limit(1);
+    if (!cur) return undefined;
+    const gallery = keptGallery(patch.photos ?? (patch.photo ? [patch.photo] : []), cur);
+    patch = { ...patch, photos: gallery, photo: gallery[0] ?? "" };
+  }
   const set = toColumnPatch(patch);
   const deltas: StockDelta[] = stockChanges
     .filter((c) => c.to !== c.from)
     .map((c) => ({ variantIndex: c.variantIndex, branch: c.branch, delta: c.to - c.from }));
 
-  const existing = await selectProduct(id);
+  const [existing] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
   if (!existing) return undefined;
 
   // Stock deltas address variants by their current position, so apply them
@@ -279,7 +288,7 @@ export async function updateInventoryProduct(
   if (patch.variants !== undefined) await syncVariants(id, patch.variants);
   if (Object.keys(set).length > 0) await db.update(products).set(set).where(eq(products.id, id));
 
-  const fresh = await selectProduct(id);
+  const fresh = await selectProductForEditor(id);
   return fresh ? toInvProduct(fresh) : undefined;
 }
 
@@ -377,6 +386,17 @@ export async function getPosCategories(): Promise<string[]> {
 
 export async function addPosCategory(name: string): Promise<void> {
   await db.insert(posCategories).values({ name }).onConflictDoNothing();
+}
+
+/** INV-01: every category with its enabled/disabled flag, for the Categories screen. */
+export async function getPosCategoryRows(): Promise<{ name: string; active: boolean }[]> {
+  return db.select({ name: posCategories.name, active: posCategories.active }).from(posCategories).orderBy(posCategories.name);
+}
+
+/** Enable or disable a category. Products already filed under it are left alone. */
+export async function setPosCategoryActive(name: string, active: boolean): Promise<boolean> {
+  const r = await db.update(posCategories).set({ active }).where(eq(posCategories.name, name)).returning({ name: posCategories.name });
+  return r.length > 0;
 }
 
 export async function deletePosCategory(name: string): Promise<boolean> {

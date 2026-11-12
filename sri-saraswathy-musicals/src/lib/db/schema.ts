@@ -598,6 +598,8 @@ export const coupons = pgTable("coupons", {
 /** Free-form POS category labels (see `store/pos.ts` — `categories`). */
 export const posCategories = pgTable("pos_categories", {
   name: text("name").primaryKey(),
+  /** INV-01: a disabled category is kept (its products are untouched) but is no longer offered for new products. */
+  active: boolean("active").notNull().default(true),
 });
 
 /* ─────────────────────────────  Service  ───────────────────────────── */
@@ -716,6 +718,8 @@ export const deliverySettings = pgTable("delivery_settings", {
   storePickup: boolean("store_pickup").notNull().default(true),
   /** ADM-04 / INV-07: master switch for low-stock alerts & highlighting across the admin. */
   lowStockAlerts: boolean("low_stock_alerts").notNull().default(true),
+  /** Whether the low-stock pop-up also rings. Off = the pop-up still shows, silently. */
+  lowStockSound: boolean("low_stock_sound").notNull().default(true),
   /** EXP-01: payment modes whose linked expenses / vendor payments are subtracted in analytics. */
   expenseDeductModes: jsonb("expense_deduct_modes").$type<string[]>().notNull().default(["CASH", "UPI", "CARD", "BANK", "OTHER"]),
   /** EXP-04: managed expense categories (rename / enable / disable). Expenses still store the name as text. */

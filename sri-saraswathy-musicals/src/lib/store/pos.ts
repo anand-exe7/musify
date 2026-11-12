@@ -151,6 +151,8 @@ interface POSState {
   loadInventory: () => Promise<boolean>;
   coupons: Coupon[];
   categories: string[];
+  /** INV-01: which categories are enabled. A missing entry means enabled. */
+  categoryActive: Record<string, boolean>;
   branch: BranchFilter;
   activeBranch: Branch; // branch a new POS bill is created for
   hydrated: boolean;
@@ -174,6 +176,7 @@ interface POSState {
   updateCoupon: (code: string, patch: Partial<Coupon>) => void;
   deleteCoupon: (code: string) => void;
   addCategory: (name: string) => void;
+  setCategoryActive: (name: string, active: boolean) => void;
   renameCategory: (from: string, to: string) => void;
   deleteCategory: (name: string) => void;
   resetDemo: () => void;
@@ -186,6 +189,7 @@ export const usePOS = create<POSState>()((set, get) => ({
   invVersion: 0,
   coupons: [],
   categories: [],
+  categoryActive: {},
   branch: "all",
   activeBranch: DEFAULT_BRANCH,
   hydrated: false,
@@ -197,12 +201,12 @@ export const usePOS = create<POSState>()((set, get) => ({
       fetchJson<Bill[]>("/api/pos/bills"),
       wantInventory ? fetchJson<InvProduct[]>("/api/pos/inventory") : Promise.resolve<InvProduct[] | null>(null),
       fetchJson<Coupon[]>("/api/pos/coupons"),
-      fetchJson<string[]>("/api/pos/categories"),
+      fetchJson<{ name: string; active: boolean }[]>("/api/pos/categories?view=full"),
     ]);
     // Apply whichever slices loaded; name the ones that didn't.
     const patch: Partial<POSState> = {};
     const failed: string[] = [];
-    const take = <K extends "bills" | "invProducts" | "coupons" | "categories">(
+    const take = <K extends "bills" | "invProducts" | "coupons">(
       key: K,
       label: string,
       r: PromiseSettledResult<POSState[K]>,
@@ -213,7 +217,12 @@ export const usePOS = create<POSState>()((set, get) => ({
     take("bills", "bills", bills);
     if (wantInventory) take("invProducts", "inventory", invProducts as PromiseSettledResult<InvProduct[]>);
     take("coupons", "coupons", coupons);
-    take("categories", "categories", categories);
+    if (categories.status === "fulfilled") {
+      patch.categories = categories.value.map((c) => c.name);
+      patch.categoryActive = Object.fromEntries(categories.value.map((c) => [c.name, c.active]));
+    } else {
+      failed.push(`categories (${errMsg(categories.reason)})`);
+    }
     set({ ...patch, hydrated: failed.length === 0, loadError: failed.length ? `Couldn't load ${failed.join(", ")}` : null });
     // Stock inward/transfers and every edit end in a re-hydrate, so this is also
     // where the storefront's cached catalogue is thrown away.
@@ -330,8 +339,13 @@ export const usePOS = create<POSState>()((set, get) => ({
   addCategory: (name) => {
     if (get().categories.includes(name)) return;
     const prev = get().categories;
-    set((s) => ({ categories: [...s.categories, name] }));
+    set((s) => ({ categories: [...s.categories, name], categoryActive: { ...s.categoryActive, [name]: true } }));
     void send("/api/pos/categories", "POST", { name }, get().hydrate, () => set({ categories: prev }));
+  },
+  setCategoryActive: (name, active) => {
+    const prev = get().categoryActive;
+    set((s) => ({ categoryActive: { ...s.categoryActive, [name]: active } }));
+    void send(`/api/pos/categories/${encodeURIComponent(name)}`, "PATCH", { active }, get().hydrate, () => set({ categoryActive: prev }));
   },
   renameCategory: (from, to) => {
     const prevCategories = get().categories;

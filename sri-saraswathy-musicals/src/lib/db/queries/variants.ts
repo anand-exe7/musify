@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { products, productVariants, variantStock, type ProductRow, type VariantData } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
 import { DEFAULT_BRANCH, type Variant } from "@/lib/stock";
+import { galleryRef, variantRef, keptPhoto, isPhotoRef } from "./photoRefs";
 
 type ProductColumns = typeof products.$inferSelect;
 
@@ -17,10 +18,13 @@ type ProductColumns = typeof products.$inferSelect;
  * Two reads, not one join: a variant carries a photo (tens of KB), and joining it to its stock rows would send
  * that photo once per branch, so a catalogue with photos grew past what one database response can carry.
  */
-async function loadVariants(productIds: string[], opts: { photos?: boolean } = {}): Promise<Map<string, VariantData[]>> {
+async function loadVariants(
+  productIds: string[],
+  opts: { photos?: boolean; photoKeys?: boolean } = {},
+): Promise<Map<string, VariantData[]>> {
   const out = new Map<string, VariantData[]>();
   if (productIds.length === 0) return out;
-  const withPhotos = opts.photos !== false;
+  const withPhotos = opts.photos !== false && !opts.photoKeys;
   const varsQ = db
     .select({
       id: productVariants.id,
@@ -30,7 +34,12 @@ async function loadVariants(productIds: string[], opts: { photos?: boolean } = {
       price: productVariants.price,
       weight: productVariants.weight,
       // Without photos the column is read as NULL — variant photos are most of the catalogue's bytes.
-      photo: withPhotos ? productVariants.photo : sql<string | null>`null`,
+      // `photoKeys` asks for a fingerprint instead, which the caller turns into an image URL.
+      photo: withPhotos
+        ? productVariants.photo
+        : opts.photoKeys
+          ? sql<string | null>`md5(nullif(${productVariants.photo}, ''))`
+          : sql<string | null>`null`,
       disabled: productVariants.disabled,
     })
     .from(productVariants)
@@ -95,6 +104,48 @@ export async function selectProductsLean(): Promise<ProductRow[]> {
   }) as ProductRow);
 }
 
+/**
+ * One product for the editor: every column except the photos themselves, which come back as URLs to the image
+ * routes. Opening a product with photographed variants used to send a quarter of a megabyte of base64.
+ */
+export async function selectProductForEditor(id: string): Promise<ProductRow | undefined> {
+  const { photos: _gallery, photo: _photo, ...cols } = getTableColumns(products);
+  void _gallery;
+  void _photo;
+  const [[row], map] = await Promise.all([
+    db
+      .select({
+        ...cols,
+        ownKey: sql<string | null>`md5(nullif("products"."photo", ''))`,
+        galleryKeys: sql<string[]>`coalesce((select jsonb_agg(md5(e)) from jsonb_array_elements_text(
+          case when jsonb_typeof("products"."photos") = 'array' then "products"."photos" else '[]'::jsonb end) e), '[]'::jsonb)`,
+      })
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1),
+    loadVariants([id], { photoKeys: true }),
+  ]);
+  if (!row) return undefined;
+  const { ownKey, galleryKeys, ...rest } = row;
+  const gallery = (galleryKeys ?? []).map((k, i) => galleryRef(id, i, k ?? ""));
+  // A product with no gallery but an own photo still has one slot to show.
+  const photos = gallery.length > 0 ? gallery : ownKey ? [galleryRef(id, 0, ownKey)] : [];
+  return {
+    ...rest,
+    photo: photos[0] ?? null,
+    photos: photos.length > 0 ? photos : null,
+    variants: (map.get(id) ?? []).map((v) => ({ ...v, photo: v.photo ? variantRef(v.id, v.photo) : null })),
+  } as ProductRow;
+}
+
+/** One gallery slot's photo (slot 0 falls back to the product's own photo), for the image route. */
+export async function galleryPhoto(id: string, index: number): Promise<string | null> {
+  const [r] = await db.select({ photo: products.photo, photos: products.photos }).from(products).where(eq(products.id, id)).limit(1);
+  if (!r) return null;
+  const slots = r.photos && r.photos.length > 0 ? r.photos : r.photo ? [r.photo] : [];
+  return slots[index] ?? null;
+}
+
 /** The photo a list shows for a product: its own, else its first variant's (a data URL or a plain URL). */
 export async function productListPhoto(id: string): Promise<string | null> {
   const res = await db.execute(sql`
@@ -113,8 +164,12 @@ export async function selectProducts(where?: SQL): Promise<ProductRow[]> {
 }
 
 export async function selectProduct(id: string): Promise<ProductRow | undefined> {
-  const [row] = await db.select().from(products).where(eq(products.id, id)).limit(1);
-  return row ? (await attachVariants([row]))[0] : undefined;
+  // The product row and its variants don't depend on each other — read them together, not one after the other.
+  const [[row], map] = await Promise.all([
+    db.select().from(products).where(eq(products.id, id)).limit(1),
+    loadVariants([id]),
+  ]);
+  return row ? { ...row, variants: map.get(id) ?? [] } : undefined;
 }
 
 /** Opening/edited stock for a variant as (branch, qty) pairs. A legacy flat `stock` sits in the default branch. */
@@ -138,7 +193,8 @@ async function insertVariant(productId: string, position: number, v: Variant): P
     finish: v.finish ?? "",
     price: Math.max(0, Math.round(v.price ?? 0)),
     weight: Math.max(0, Math.round(v.weight ?? 0)),
-    photo: v.photo ?? null,
+    // A brand-new variant can't be "keeping" a photo, so a reference here means no photo.
+    photo: isPhotoRef(v.photo) ? null : (v.photo ?? null),
     disabled: v.disabled ?? false,
   });
   const stock = stockEntries(v);
@@ -183,7 +239,7 @@ export async function syncVariants(productId: string, edited: Variant[]): Promis
           finish: v.finish ?? "",
           price: Math.max(0, Math.round(v.price ?? 0)),
           weight: Math.max(0, Math.round(v.weight ?? 0)),
-          ...(v.photo !== undefined ? { photo: v.photo } : {}),
+          ...(v.photo !== undefined ? { photo: keptPhoto(v.photo, current.find((c) => c.id === v.id)?.photo) } : {}),
           disabled: v.disabled ?? false,
         })
         .where(eq(productVariants.id, v.id));

@@ -25,6 +25,8 @@ type Scalars = {
   storePickup: boolean;
   /** ADM-04 / INV-07: show low-stock alerts & highlights when true. */
   lowStockAlerts: boolean;
+  /** Whether the low-stock pop-up also rings. Off = it still opens, silently. */
+  lowStockSound: boolean;
   /** EXP-01: payment modes whose linked expenses / vendor payments are subtracted in analytics. */
   expenseDeductModes: string[];
   /** EXP-04: managed expense categories. */
@@ -49,6 +51,7 @@ const DEFAULTS: Scalars = {
   expressCharge: 60000,
   storePickup: true,
   lowStockAlerts: true,
+  lowStockSound: true,
   expenseDeductModes: ["CASH", "UPI", "CARD", "BANK", "OTHER"],
   expenseCategories: [],
 };
