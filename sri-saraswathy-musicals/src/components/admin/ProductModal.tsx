@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { X, Plus, Trash2, ImagePlus } from "lucide-react";
 import { usePOS, variantStockAt, setVariantStockAt, type InvProduct, type Variant, type Branch } from "@/lib/store/pos";
 import { BRANCH_KEYS, emptyStockByBranch, branchLabel } from "@/lib/stock";
@@ -12,6 +12,13 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { VariantPhoto } from "./VariantPhoto";
 
 const DEPTS = ["Indian", "Western", "Unisex"];
+
+type TabKey = "details" | "storefront" | "variants";
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "details", label: "Details" },
+  { key: "storefront", label: "Photos & storefront" },
+  { key: "variants", label: "Variants & stock" },
+];
 
 function blankProduct(name = ""): InvProduct {
   return {
@@ -69,7 +76,8 @@ export function ProductModal({
 }) {
   const addProduct = usePOS((s) => s.addProduct);
   const updateProduct = usePOS((s) => s.updateProduct);
-  const CATEGORIES = usePOS((s) => s.categories);
+  const allCategories = usePOS((s) => s.categories);
+  const categoryActive = usePOS((s) => s.categoryActive);
   // Phase 7: non-admin staff (branch managers, cashiers) can edit stock and
   // descriptions but not price fields — base, MRP, or per-variant price.
   const isAdmin = useAuth((s) => s.isAdmin);
@@ -77,7 +85,15 @@ export function ProductModal({
   const isNew = !product;
   const [draft, setDraft] = useState<InvProduct>(product ? structuredClone(product) : blankProduct(initialName));
   const [error, setError] = useState<string | null>(null);
+  // The form is three short tabs instead of one long scroll: what it is, how it looks in the shop, what is in stock.
+  const [tab, setTab] = useState<TabKey>("details");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // INV-01: a switched-off category isn't offered any more, but a product already filed under one keeps it.
+  const CATEGORIES = useMemo(
+    () => allCategories.filter((c) => categoryActive[c] !== false || c === draft.category),
+    [allCategories, categoryActive, draft.category],
+  );
 
   const set = (patch: Partial<InvProduct>) => setDraft((d) => ({ ...d, ...patch }));
   const setVariant = (i: number, patch: Partial<Variant>) =>
@@ -109,6 +125,7 @@ export function ProductModal({
     // HSN/SAC is mandatory when creating a product (needed on every GST invoice).
     if (isNew && !/^\d{4,8}$/.test((draft.hsn ?? "").trim())) {
       setError("HSN / SAC code is required — enter 4 to 8 digits.");
+      setTab("details");
       return;
     }
     const name = draft.name.trim() || "Untitled product";
@@ -168,242 +185,297 @@ export function ProductModal({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="my-4 w-full max-w-3xl rounded-2xl bg-ivory-50 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        {/* header */}
-        <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
-          <h2 className="text-lg font-bold text-ink-900">{isNew ? "Add Product" : "Edit Product"}</h2>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
+      <div className="my-4 flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl bg-ivory-50 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* header + tabs */}
+        <div className="shrink-0 border-b border-ink-100">
+          <div className="flex items-center justify-between px-6 pt-5">
+            <div>
+              <h2 className="text-lg font-bold text-ink-900">{isNew ? "Add product" : "Edit product"}</h2>
+              <p className="text-xs text-ink-500">{isNew ? "Three short steps — details, how it looks in the shop, and what is in stock." : draft.name || "Untitled product"}</p>
+            </div>
+            <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="mt-4 flex gap-1 px-4">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "relative rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+                  tab === t.key ? "bg-[#FAF7EF] text-ink-900" : "text-ink-500 hover:text-ink-800",
+                )}
+              >
+                {t.label}
+                {t.key === "variants" && <span className="ml-2 rounded-full bg-ink-900/10 px-1.5 py-0.5 text-[10px] font-bold text-ink-600">{draft.variants.length}</span>}
+                {tab === t.key && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-gold-500" />}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Basic */}
-            <div>
-              <p className="mb-3 text-sm font-bold text-ink-900">Basic Details</p>
-              <label className={label}>Product Name</label>
-              <input value={draft.name} onChange={(e) => set({ name: e.target.value })} className={field} placeholder="e.g. Saraswathi Veena" />
-              <label className={cn(label, "mt-4")}>Description</label>
-              <textarea value={draft.description} onChange={(e) => set({ description: e.target.value })} rows={4} className={cn(field, "resize-none")} />
-              <p className="mb-2 mt-4 text-sm font-bold text-ink-900">Media Gallery</p>
-              <div className="flex flex-wrap items-center gap-3">
-                {photos.map((src, i) => (
-                  <div key={i} className="group relative h-20 w-20 overflow-hidden rounded-lg border border-ink-200 bg-ink-100">
-                    <img src={src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    {i === 0 && <span className="absolute left-1 top-1 rounded bg-ink-900/80 px-1 py-0.5 text-[7px] font-bold uppercase text-ivory-50">Primary</span>}
-                    <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-danger text-white shadow">
-                      <X className="h-3.5 w-3.5" />
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FAF7EF] px-6 py-5">
+          {/* ── Details ─────────────────────────────────────────────── */}
+          {tab === "details" && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card title="What it is">
+                <div>
+                  <label className={label}>Product name</label>
+                  <input value={draft.name} onChange={(e) => set({ name: e.target.value })} className={field} placeholder="e.g. Saraswathi Veena" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={label}>Category</label><select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                  <div><label className={label}>Department</label><select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>{DEPTS.map((c) => <option key={c}>{c}</option>)}</select></div>
+                </div>
+                <div>
+                  <label className={label}>Description</label>
+                  <textarea value={draft.description} onChange={(e) => set({ description: e.target.value })} rows={5} className={cn(field, "resize-none")} placeholder="What a customer should know about it." />
+                </div>
+              </Card>
+
+              <div className="space-y-4">
+                <Card title="Price &amp; weight">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={label}>Base price (₹){priceLocked && <span className="ml-1 normal-case tracking-normal text-[9px] text-ink-400">admin only</span>}</label>
+                      <MoneyInput value={draft.basePrice || 0} onChange={(paise) => set({ basePrice: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")} />
+                    </div>
+                    <div><label className={label}>Base weight (g)</label><input type="number" value={draft.baseWeight || ""} placeholder="500" onChange={(e) => set({ baseWeight: Number(e.target.value) })} className={field} /></div>
+                  </div>
+                  <div>
+                    <label className={label}>Discount label</label>
+                    <input value={draft.discountLabel ?? ""} onChange={(e) => set({ discountLabel: e.target.value })} className={field} placeholder="e.g. Festive Offer" />
+                  </div>
+                </Card>
+
+                <Card title="Tax (GST)">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={label}>Default GST rate</label>
+                      <select
+                        value={draft.gstRate == null ? "none" : String(draft.gstRate)}
+                        onChange={(e) => { const v = e.target.value === "none" ? null : Number(e.target.value); set({ gstRate: v, isGstApplicable: v != null }); }}
+                        className={field}
+                      >
+                        {GST_RATES.map((g) => <option key={g.label} value={g.value == null ? "none" : String(g.value)}>{g.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={label}>HSN / SAC code{isNew && <span className="text-danger"> *</span>}</label>
+                      <input value={draft.hsn ?? ""} onChange={(e) => { set({ hsn: e.target.value.replace(/\D/g, "").slice(0, 8) }); setError(null); }} inputMode="numeric" required={isNew} aria-invalid={!!error} className={cn(field, error && "border-danger")} placeholder="e.g. 9207" />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-ink-400">
+                    {draft.gstRate == null ? "Non-GST — never taxed, even on a GST bill." : "Default rate at the POS; editable per line when billing."}
+                  </p>
+                </Card>
+
+                <Card title="Stock &amp; visibility">
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-3 py-2.5">
+                    <div>
+                      <p className="text-sm font-semibold text-ink-900">Visible to customers</p>
+                      <p className="text-xs text-ink-500">{draft.active ? "Shown in the storefront catalog" : "Hidden / marked out of stock"}</p>
+                    </div>
+                    <button type="button" onClick={() => set({ active: !draft.active })} aria-pressed={draft.active} className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", draft.active ? "bg-success" : "bg-ink-300")}>
+                      <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all", draft.active ? "left-[22px]" : "left-0.5")} />
                     </button>
-                    {i > 0 && (
-                      <button type="button" aria-label="Make primary" onClick={() => setPhotos([src, ...photos.filter((_, j) => j !== i)])} className="absolute inset-x-0 bottom-0 bg-ink-900/80 py-0.5 text-[8px] font-bold uppercase text-ivory-50">
-                        Make primary
-                      </button>
-                    )}
                   </div>
-                ))}
-                {photos.length < MAX_PHOTOS && (
-                  <button type="button" onClick={() => fileRef.current?.click()} className="grid h-20 w-20 place-items-center rounded-lg border border-dashed border-ink-300 text-ink-400 hover:border-gold-500 hover:text-gold-600">
-                    <ImagePlus className="h-6 w-6" />
-                  </button>
-                )}
-                <input ref={fileRef} type="file" accept="image/*" multiple onChange={onUpload} className="hidden" />
-              </div>
-              <p className="mt-1.5 text-[11px] text-ink-400">Up to {MAX_PHOTOS} photos. Each is automatically converted to WebP and shrunk to a few KB.</p>
-            </div>
-
-            {/* Org & pricing */}
-            <div>
-              <p className="mb-3 text-sm font-bold text-ink-900">Organization &amp; Pricing</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className={label}>Category</label><select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
-                <div><label className={label}>Department</label><select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>{DEPTS.map((c) => <option key={c}>{c}</option>)}</select></div>
-                <div>
-                  <label className={label}>Base Price (₹){priceLocked && <span className="ml-1 text-[9px] text-ink-400">· admin only</span>}</label>
-                  <MoneyInput
-                    value={draft.basePrice || 0}
-                    onChange={(paise) => set({ basePrice: paise })}
-                    disabled={priceLocked}
-                    title={priceLocked ? "Only admins can change prices" : undefined}
-                    className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")}
-                  />
-                </div>
-                <div><label className={label}>Base Weight (g)</label><input type="number" value={draft.baseWeight || ""} onChange={(e) => set({ baseWeight: Number(e.target.value) })} className={field} /></div>
-              </div>
-              <label className={cn(label, "mt-4")}>Discount Label</label>
-              <input value={draft.discountLabel ?? ""} onChange={(e) => set({ discountLabel: e.target.value })} className={field} placeholder="e.g. Festive Offer" />
-              <label className="mt-4 flex items-center gap-2 text-sm text-ink-700">
-                <input type="checkbox" checked={!!draft.newArrival} onChange={(e) => set({ newArrival: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Mark as &quot;New Arrival&quot;
-              </label>
-
-              {/* visibility toggle */}
-              <div className="mt-4 flex items-center justify-between rounded-lg border border-ink-100 bg-[#FAF7EF] px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-semibold text-ink-900">Visible to customers</p>
-                  <p className="text-xs text-ink-500">{draft.active ? "Shown in the storefront catalog" : "Hidden / marked out of stock"}</p>
-                </div>
-                <button onClick={() => set({ active: !draft.active })} className={cn("relative h-6 w-11 rounded-full transition-colors", draft.active ? "bg-success" : "bg-ink-300")}>
-                  <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all", draft.active ? "left-[22px]" : "left-0.5")} />
-                </button>
-              </div>
-
-              <p className="mb-2 mt-4 text-sm font-bold text-ink-900">Inventory Alerts</p>
-              <label className={label}>Low-stock alert at</label>
-              <input type="number" value={draft.lowStockAt} onChange={(e) => set({ lowStockAt: Number(e.target.value) })} className={field} />
-
-              <p className="mb-2 mt-4 text-sm font-bold text-ink-900">Tax (GST)</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={label}>Default GST Rate</label>
-                  <select
-                    value={draft.gstRate == null ? "none" : String(draft.gstRate)}
-                    onChange={(e) => {
-                      const v = e.target.value === "none" ? null : Number(e.target.value);
-                      set({ gstRate: v, isGstApplicable: v != null });
-                    }}
-                    className={field}
-                  >
-                    {GST_RATES.map((g) => (
-                      <option key={g.label} value={g.value == null ? "none" : String(g.value)}>{g.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={label}>HSN / SAC Code{isNew && <span className="text-danger"> *</span>}</label>
-                  <input value={draft.hsn ?? ""} onChange={(e) => { set({ hsn: e.target.value.replace(/\D/g, "").slice(0, 8) }); setError(null); }} inputMode="numeric" required={isNew} aria-invalid={!!error} className={cn(field, error && "border-danger")} placeholder="e.g. 9207" />
-                </div>
-              </div>
-              <p className="mt-1.5 text-[11px] text-ink-400">
-                {draft.gstRate == null
-                  ? "Non-GST — never taxed, even on a GST bill."
-                  : "Default rate at the POS; editable per line when billing."}
-              </p>
-            </div>
-          </div>
-
-          {/* Storefront listing — the fields the customer-facing website shows */}
-          <div className="mt-6 rounded-xl border border-ink-100 bg-[#FAF7EF] p-4">
-            <div className="mb-3">
-              <p className="text-sm font-bold text-ink-900">Storefront Listing</p>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">How this product appears on the customer website</p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <label className={label}>Brand</label>
-                <input value={draft.brand ?? ""} onChange={(e) => set({ brand: e.target.value })} className={field} placeholder="e.g. Tanjore Classic" />
-              </div>
-              <div>
-                <label className={label}>URL Slug</label>
-                <input value={draft.slug ?? ""} onChange={(e) => set({ slug: e.target.value })} className={field} placeholder={slugify(draft.name || "auto-from-name")} />
-              </div>
-              <div>
-                <label className={label}>Origin</label>
-                <select value={draft.origin ?? "indian"} onChange={(e) => set({ origin: e.target.value as "indian" | "western" })} className={field}>
-                  <option value="indian">Indian</option>
-                  <option value="western">Western</option>
-                </select>
-              </div>
-              <div>
-                <label className={label}>
-                  MRP (₹) — strikethrough price{priceLocked && <span className="ml-1 text-[9px] text-ink-400">· admin only</span>}
-                </label>
-                <MoneyInput
-                  value={draft.mrp || 0}
-                  onChange={(paise) => set({ mrp: paise })}
-                  disabled={priceLocked}
-                  title={priceLocked ? "Only admins can change prices" : undefined}
-                  className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")}
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className={label}>Tagline</label>
-                <input value={draft.tagline ?? ""} onChange={(e) => set({ tagline: e.target.value })} className={field} placeholder="A short line shown under the name" />
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-ink-700">
-                <input type="checkbox" checked={!!draft.featured} onChange={(e) => set({ featured: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Featured
-              </label>
-              <label className="flex items-center gap-2 text-sm text-ink-700">
-                <input type="checkbox" checked={!!draft.bestSeller} onChange={(e) => set({ bestSeller: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Bestseller
-              </label>
-            </div>
-
-            {/* Specs */}
-            <div className="mt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <label className={label}>Specifications</label>
-                <button onClick={addSpec} className="flex items-center gap-1 rounded-lg border border-ink-200 px-2 py-1 text-[11px] font-semibold text-ink-600 hover:border-gold-500 hover:text-gold-600"><Plus className="h-3 w-3" /> Add spec</button>
-              </div>
-              <div className="space-y-2">
-                {(draft.specs ?? []).map((s, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input value={s.label} onChange={(e) => setSpec(i, { label: e.target.value })} placeholder="Label (e.g. Wood)" className={cn(field, "flex-1")} />
-                    <input value={s.value} onChange={(e) => setSpec(i, { value: e.target.value })} placeholder="Value (e.g. Jackwood)" className={cn(field, "flex-1")} />
-                    <button onClick={() => removeSpec(i)} className="grid h-8 w-8 shrink-0 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                  <div className="grid grid-cols-2 items-end gap-3">
+                    <div>
+                      <label className={label}>Low-stock alert at</label>
+                      <input type="number" min={0} value={draft.lowStockAt} onChange={(e) => set({ lowStockAt: Number(e.target.value) })} className={field} />
+                    </div>
+                    <label className="flex h-[42px] items-center gap-2 text-sm text-ink-700">
+                      <input type="checkbox" checked={!!draft.newArrival} onChange={(e) => set({ newArrival: e.target.checked })} className="h-4 w-4 accent-gold-500" /> New arrival
+                    </label>
                   </div>
-                ))}
-                {(draft.specs ?? []).length === 0 && <p className="text-[11px] text-ink-400">No specifications added.</p>}
+                </Card>
               </div>
             </div>
+          )}
 
-            {/* Features */}
-            <div className="mt-4">
-              <label className={label}>Features (one per line)</label>
-              <textarea
-                value={(draft.features ?? []).join("\n")}
-                onChange={(e) => set({ features: e.target.value.split("\n") })}
-                rows={4}
-                className={cn(field, "resize-none")}
-                placeholder={"Hand-carved resonator\nProfessional concert grade\nIncludes padded case"}
-              />
-            </div>
-          </div>
-
-          {/* Variants */}
-          <div className="mt-6 rounded-xl border border-ink-100 bg-[#FAF7EF] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-ink-900">Product Variants</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Manage models, finishes, and specific inventory</p>
-              </div>
-              <button onClick={addRow} className="flex items-center gap-1.5 rounded-lg bg-ink-900 px-3 py-2 text-xs font-semibold text-ivory-50 hover:bg-ink-800"><Plus className="h-3.5 w-3.5" /> Add Row</button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] text-sm">
-                <thead><tr className="text-left text-[9px] font-bold uppercase tracking-wider text-ink-400"><th className="pb-2">Variant</th><th>Finish</th><th>Price (₹)</th><th>Weight (g)</th><th>Photo</th><th>Stock <span className="font-semibold normal-case tracking-normal text-ink-300">{BRANCH_KEYS.map(branchLabel).join(" · ")}</span></th><th className="text-right">Actions</th></tr></thead>
-                <tbody>
-                  {draft.variants.map((v, i) => (
-                    <tr key={i} className={cn(v.disabled && "opacity-50")}>
-                      <td className="pr-2 py-1.5"><input value={v.attr} onChange={(e) => setVariant(i, { attr: e.target.value })} className="w-28 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className="w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2"><MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn("w-24 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none", priceLocked && "cursor-not-allowed opacity-70")} /></td>
-                      <td className="pr-2"><input type="number" value={v.weight || ""} onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className="w-20 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none" /></td>
-                      <td className="pr-2 py-1.5">
-                        <VariantPhoto
-                          value={v.photo}
-                          original={v.id ? product?.variants.find((o) => o.id === v.id)?.photo : undefined}
-                          onChange={(photo) => setVariant(i, { photo })}
-                          onError={setError}
-                        />
-                      </td>
-                      <td className="pr-2"><div className="flex gap-1">{BRANCH_KEYS.map((b) => (<input key={b} type="number" min={0} aria-label={`Stock at ${branchLabel(b)}`} title={isNew ? `Opening stock at ${branchLabel(b)}` : branchLabel(b)} value={variantStockAt(v, b) || ""} placeholder="0" onChange={(e) => setStockAt(i, b, Number(e.target.value))} className="w-14 rounded-lg border border-ink-200 bg-ivory-50 px-2 py-2 text-sm focus:border-gold-500 focus:outline-none disabled:opacity-50" />))}</div></td>
-                      <td className="text-right"><div className="flex items-center justify-end gap-1"><button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded px-2 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500")}>{v.disabled ? "Enable" : "Disable"}</button><button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
-                    </tr>
+          {/* ── Photos & storefront ─────────────────────────────────── */}
+          {tab === "storefront" && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card title="Photos" hint={`Up to ${MAX_PHOTOS}. Each is converted to WebP and shrunk to a few KB.`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  {photos.map((src, i) => (
+                    <div key={i} className="group relative h-24 w-24 overflow-hidden rounded-xl border border-ink-200 bg-ink-100">
+                      <img src={src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                      {i === 0 && <span className="absolute left-1 top-1 rounded bg-ink-900/80 px-1 py-0.5 text-[7px] font-bold uppercase text-ivory-50">Primary</span>}
+                      <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-danger text-white shadow"><X className="h-3.5 w-3.5" /></button>
+                      {i > 0 && (
+                        <button type="button" onClick={() => setPhotos([src, ...photos.filter((_, j) => j !== i)])} className="absolute inset-x-0 bottom-0 bg-ink-900/80 py-0.5 text-[8px] font-bold uppercase text-ivory-50">Make primary</button>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                  {photos.length < MAX_PHOTOS && (
+                    <button type="button" onClick={() => fileRef.current?.click()} className="grid h-24 w-24 place-items-center rounded-xl border border-dashed border-ink-300 text-ink-400 hover:border-gold-500 hover:text-gold-600"><ImagePlus className="h-6 w-6" /></button>
+                  )}
+                  <input ref={fileRef} type="file" accept="image/*" multiple onChange={onUpload} className="hidden" />
+                </div>
+              </Card>
+
+              <Card title="How it is listed">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={label}>Brand</label><input value={draft.brand ?? ""} onChange={(e) => set({ brand: e.target.value })} className={field} placeholder="e.g. Tanjore Classic" /></div>
+                  <div>
+                    <label className={label}>Origin</label>
+                    <select value={draft.origin ?? "indian"} onChange={(e) => set({ origin: e.target.value as "indian" | "western" })} className={field}>
+                      <option value="indian">Indian</option>
+                      <option value="western">Western</option>
+                    </select>
+                  </div>
+                  <div><label className={label}>URL slug</label><input value={draft.slug ?? ""} onChange={(e) => set({ slug: e.target.value })} className={field} placeholder={slugify(draft.name || "auto-from-name")} /></div>
+                  <div>
+                    <label className={label}>MRP (₹){priceLocked && <span className="ml-1 normal-case tracking-normal text-[9px] text-ink-400">admin only</span>}</label>
+                    <MoneyInput value={draft.mrp || 0} onChange={(paise) => set({ mrp: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")} />
+                  </div>
+                </div>
+                <div><label className={label}>Tagline</label><input value={draft.tagline ?? ""} onChange={(e) => set({ tagline: e.target.value })} className={field} placeholder="A short line shown under the name" /></div>
+                <div className="flex flex-wrap gap-4 pt-1">
+                  <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={!!draft.featured} onChange={(e) => set({ featured: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Featured</label>
+                  <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={!!draft.bestSeller} onChange={(e) => set({ bestSeller: e.target.checked })} className="h-4 w-4 accent-gold-500" /> Bestseller</label>
+                </div>
+              </Card>
+
+              <Card title="Specifications">
+                <div className="space-y-2">
+                  {(draft.specs ?? []).map((sp, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={sp.label} onChange={(e) => setSpec(i, { label: e.target.value })} placeholder="Label (e.g. Wood)" className={cn(field, "flex-1")} />
+                      <input value={sp.value} onChange={(e) => setSpec(i, { value: e.target.value })} placeholder="Value (e.g. Jackwood)" className={cn(field, "flex-1")} />
+                      <button onClick={() => removeSpec(i)} aria-label="Remove spec" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ))}
+                  {(draft.specs ?? []).length === 0 && <p className="text-[11px] text-ink-400">No specifications yet.</p>}
+                </div>
+                <button onClick={addSpec} className="flex items-center gap-1 self-start rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-ink-600 hover:border-gold-500 hover:text-gold-600"><Plus className="h-3 w-3" /> Add spec</button>
+              </Card>
+
+              <Card title="Features" hint="One per line.">
+                <textarea
+                  value={(draft.features ?? []).join("\n")}
+                  onChange={(e) => set({ features: e.target.value.split("\n") })}
+                  rows={6}
+                  className={cn(field, "resize-none")}
+                  placeholder={"Hand-carved resonator\nProfessional concert grade\nIncludes padded case"}
+                />
+              </Card>
             </div>
-            {isNew && <p className="mt-2 text-[11px] text-ink-400">The stock figures are the <strong>opening stock</strong> you already have in each branch — no vendor bill is created. For stock bought from now on, use <strong>Purchases</strong> so the vendor and cost are recorded.</p>}
-          </div>
+          )}
+
+          {/* ── Variants & stock ────────────────────────────────────── */}
+          {tab === "variants" && (
+            <div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-ink-900">Variants &amp; stock</p>
+                  <p className="text-xs text-ink-500">Models and finishes, each with its own price, photo and per-branch stock.</p>
+                </div>
+                <button onClick={addRow} className="flex items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 py-2.5 text-xs font-semibold text-ivory-50 hover:bg-ink-800"><Plus className="h-3.5 w-3.5" /> Add variant</button>
+              </div>
+
+              <div className="space-y-3">
+                {draft.variants.map((v, i) => {
+                  const rowTotal = BRANCH_KEYS.reduce((n, b) => n + (variantStockAt(v, b) || 0), 0);
+                  return (
+                    <div key={i} className={cn("rounded-xl border bg-white p-4", v.disabled ? "border-ink-200 opacity-70" : "border-ink-100")}>
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">
+                          Variant {i + 1}
+                          {v.disabled && <span className="ml-2 rounded bg-ink-900/85 px-1.5 py-0.5 text-[9px] text-ivory-50">Not for sale</span>}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => setVariant(i, { disabled: !v.disabled })} className={cn("rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase", v.disabled ? "bg-success/15 text-success" : "bg-ink-100 text-ink-500 hover:bg-ink-200")}>{v.disabled ? "Enable" : "Disable"}</button>
+                          <button onClick={() => removeRow(i)} aria-label={`Remove variant ${i + 1}`} className="grid h-7 w-7 place-items-center rounded-lg text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </div>
+
+                      {/* line 1 — what it is and what it costs */}
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div><label className={label}>Variant</label><input value={v.attr} onChange={(e) => setVariant(i, { attr: e.target.value })} className={field} placeholder="Standard" /></div>
+                        <div><label className={label}>Finish</label><input value={v.finish} onChange={(e) => setVariant(i, { finish: e.target.value })} className={field} placeholder="Natural" /></div>
+                        <div>
+                          <label className={label}>Price (₹)</label>
+                          <MoneyInput value={v.price || 0} onChange={(paise) => setVariant(i, { price: paise })} disabled={priceLocked} title={priceLocked ? "Only admins can change prices" : undefined} className={cn(field, priceLocked && "cursor-not-allowed bg-ink-50 opacity-70")} />
+                        </div>
+                        <div><label className={label}>Weight (g)</label><input type="number" value={v.weight || ""} placeholder="500" onChange={(e) => setVariant(i, { weight: Number(e.target.value) })} className={field} /></div>
+                      </div>
+
+                      {/* line 2 — photo and the stock each branch holds */}
+                      <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-ink-100 pt-3">
+                        <div>
+                          <p className={label}>Photo</p>
+                          <VariantPhoto
+                            value={v.photo}
+                            original={v.id ? product?.variants.find((o) => o.id === v.id)?.photo : undefined}
+                            onChange={(photo) => setVariant(i, { photo })}
+                            onError={setError}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <p className={label}>{isNew ? "Opening stock per branch" : "Stock per branch"}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {BRANCH_KEYS.map((b) => (
+                              <label key={b} className="block">
+                                <span className="mb-1 block text-[10px] font-medium text-ink-500">{branchLabel(b)}</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  aria-label={`Stock at ${branchLabel(b)}`}
+                                  title={isNew ? `Opening stock at ${branchLabel(b)}` : branchLabel(b)}
+                                  value={variantStockAt(v, b) || ""}
+                                  placeholder="0"
+                                  onChange={(e) => setStockAt(i, b, Number(e.target.value))}
+                                  className={cn(field, "w-20 text-right tabular-nums")}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="ml-auto text-right">
+                          <p className={label}>Total</p>
+                          <p className="text-lg font-bold tabular-nums text-ink-900">{rowTotal}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {draft.variants.length === 0 && (
+                  <p className="rounded-xl border border-dashed border-ink-200 bg-white px-4 py-10 text-center text-sm text-ink-400">No variants yet — add one so the product can be sold.</p>
+                )}
+              </div>
+
+              {isNew && (
+                <p className="mt-3 rounded-xl border border-ink-100 bg-white px-4 py-3 text-[11px] text-ink-500">
+                  These figures are the <strong className="text-ink-700">opening stock</strong> you already have in each branch — no vendor bill is created.
+                  For stock bought from now on use <strong className="text-ink-700">Purchases</strong>, so the vendor and cost are recorded.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-ink-100 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-ink-100 px-6 py-4">
           {error && <p className="mr-auto text-sm font-medium text-danger">{error}</p>}
           <button onClick={onClose} className="rounded-xl border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-          <button onClick={save} className="rounded-xl bg-ink-900 px-5 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800">{isNew ? "Create Product" : "Save Changes"}</button>
+          <button onClick={save} className="rounded-xl bg-ink-900 px-5 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800">{isNew ? "Create product" : "Save changes"}</button>
         </div>
       </div>
     </div>
+  );
+}
+
+/** One titled block inside the form, so related fields sit together instead of running on. */
+function Card({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="flex h-fit flex-col gap-3 rounded-xl border border-ink-100 bg-ivory-50 p-4">
+      <div>
+        <p className="text-sm font-bold text-ink-900">{title}</p>
+        {hint && <p className="text-[11px] text-ink-400">{hint}</p>}
+      </div>
+      {children}
+    </section>
   );
 }
