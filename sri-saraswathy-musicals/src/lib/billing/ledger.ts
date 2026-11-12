@@ -11,7 +11,7 @@ import { sql } from "drizzle-orm";
 import { db, invoices } from "@/lib/db";
 import { counters } from "@/lib/db/schema";
 import { getInvoiceByRefId, updateInvoice, createInvoice } from "@/lib/db/queries/invoices";
-import { getAllProducts } from "@/lib/db/queries/products";
+import { getPricingCatalog } from "@/lib/db/queries/products";
 import { getGstSettings } from "@/lib/db/queries/settings";
 import { taxLines } from "@/lib/gst/inclusive";
 import { isIntraSupply } from "@/lib/gst/place-of-supply";
@@ -66,7 +66,12 @@ export async function recordOrderInvoice(order: Order): Promise<void> {
   try {
     // One tax invoice per source order — never mint a second number on a retry.
     if (await getInvoiceByRefId(order.id)) return;
-    const [products, gstCfg] = await Promise.all([getAllProducts(), getGstSettings()]);
+    // Only the products on this order, and without their photos — reading the whole
+    // catalogue here added seconds (and megabytes) to every order placed.
+    const [products, gstCfg] = await Promise.all([
+      getPricingCatalog([...new Set(order.items.map((i) => i.productId))]),
+      getGstSettings(),
+    ]);
     const byId = new Map(products.map((p) => [p.id, p]));
     const intra = isIntraSupply(order.shipState, gstCfg.homeState);
 

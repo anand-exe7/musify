@@ -5,8 +5,10 @@ import { MapPin, Phone, ArrowRight, Clock, Navigation } from "lucide-react";
 import { useState } from "react";
 import { BUSINESS, type BranchInfo } from "@/lib/data/business";
 
+/** The embedded map for a branch — searched by shop name AND address, so it lands on the shop itself
+ *  rather than the middle of the street. */
 function embedUrl(b: BranchInfo): string {
-  const q = encodeURIComponent(`${b.street}, ${b.area}, ${b.zip}`);
+  const q = encodeURIComponent(`${BUSINESS.name}, ${b.street}, ${b.area}, ${b.zip}`);
   return `https://www.google.com/maps?q=${q}&output=embed`;
 }
 
@@ -27,7 +29,7 @@ export function Visit() {
   const activeBranch = branches.find((b) => b.id === active)!;
 
   return (
-    <section id="visit" className="py-24 md:py-32">
+    <section id="visit" className="py-14 md:py-20">
       <div className="container-page">
         {/* Header */}
         <motion.div
@@ -38,13 +40,13 @@ export function Visit() {
           className="mx-auto max-w-2xl text-center"
         >
           <p className="eyebrow centered">Fin</p>
-          <h2 className="heading-serif mx-auto mt-6 max-w-2xl text-display-xl text-ink-900">
+          <h2 className="heading-serif mx-auto mt-5 max-w-2xl text-display-xl text-ink-900">
             Come <em>play</em> something.
           </h2>
-          <p className="mx-auto mt-6 max-w-xl text-base text-ink-500 md:text-lg">
+          <p className="mx-auto mt-5 max-w-xl text-base text-ink-500 md:text-lg">
             Both shops are open by walk-in or appointment. Bring an instrument you already own, or come meet ours. A pot of coffee is always on. There is no obligation to buy anything, only to listen.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link href="/shop" className="btn-gold-solid">
               Browse instruments
               <ArrowRight className="h-3.5 w-3.5" />
@@ -56,7 +58,7 @@ export function Visit() {
         </motion.div>
 
         {/* Branch tabs + interactive map */}
-        <div className="mt-16 grid gap-8 lg:grid-cols-[minmax(280px,380px)_1fr] lg:gap-12">
+        <div className="mt-12 grid gap-6 lg:grid-cols-[minmax(280px,380px)_1fr] lg:gap-10">
           {/* Branch selector */}
           <div className="space-y-3">
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-600">
@@ -68,7 +70,7 @@ export function Visit() {
                 <button
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  className={`group block w-full border p-6 text-left transition-all ${
+                  className={`group block w-full rounded-2xl border p-5 text-left transition-all md:p-6 ${
                     isActive
                       ? "border-gold-500 bg-ink-900 text-ivory-100 shadow-lg"
                       : "border-ink-100 bg-ivory-50 hover:border-gold-300"
@@ -155,8 +157,8 @@ export function Visit() {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
-            className="relative overflow-hidden border border-ink-100 bg-ink-100"
-            style={{ minHeight: "480px" }}
+            className="relative overflow-hidden rounded-2xl border border-ink-100 bg-ink-100"
+            style={{ minHeight: "420px" }}
           >
             <iframe
               key={activeBranch.map}
@@ -169,7 +171,7 @@ export function Visit() {
             />
 
             {/* Overlay chip with the address */}
-            <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-[280px] rounded-sm border border-gold-400 bg-ivory-50/95 p-4 shadow-lg backdrop-blur-sm">
+            <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-[280px] rounded-2xl border border-gold-400 bg-ivory-50/95 p-4 shadow-lg backdrop-blur-sm">
               <p className="text-[9px] uppercase tracking-[0.22em] text-gold-600">You are here</p>
               <p className="heading-serif mt-1 text-lg text-ink-900">
                 {activeBranch.city} · {activeBranch.branch}

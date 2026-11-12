@@ -89,8 +89,12 @@ export function invalidateCatalog() {
 const pageListeners = new Set<() => void>();
 
 function useResource<T>(res: ReturnType<typeof makeResource<T>>) {
-  const [data, setData] = useState<T | null>(res.peek());
-  const [loading, setLoading] = useState<boolean>(!res.peek());
+  // The first render must match the server's, which has no module cache — seeding state from
+  // `res.peek()` here made React throw a hydration mismatch on any page reached once the cache
+  // was warm. The mount effect below fills it from the cache in the same tick, so nothing is
+  // refetched; there is just one paint without it.
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(
@@ -157,6 +161,8 @@ export interface ShopQuery {
   origin: string;
   /** Highest price, in paise. */
   maxPrice: number;
+  /** Words to look for in the name, brand, tagline or category. */
+  q?: string;
   sort: string;
   page: number;
   pageSize: number;
@@ -197,6 +203,7 @@ export function useProductPage(q: ShopQuery, opts: { skip?: boolean } = {}): { d
     if (query.category && query.category !== "all") sp.set("category", query.category);
     if (query.origin && query.origin !== "all") sp.set("origin", query.origin);
     if (query.maxPrice > 0) sp.set("maxPrice", String(query.maxPrice));
+    if (query.q && query.q.trim()) sp.set("q", query.q.trim());
     setLoading(true);
     setError(null);
     fetch(`/api/products?${sp}`, { cache: "no-store", signal: ctl.signal })

@@ -26,7 +26,9 @@ export async function fulfilOrder(
   branch: Branch,
   opts: { paid: boolean },
 ): Promise<Order> {
-  const catalog = new Map((await getPricingCatalog()).map((p) => [p.id, p]));
+  const catalog = new Map(
+    (await getPricingCatalog([...new Set(priced.items.map((i) => i.productId))])).map((p) => [p.id, p]),
+  );
   const lines: StockLine[] = [];
   for (const it of priced.items) {
     const idx = (catalog.get(it.productId)?.variants ?? []).findIndex((v) => keyOf(v) === it.variantKey);

@@ -68,7 +68,9 @@ async function reverseOrder(order: Order): Promise<void> {
 
   const tookStock = order.items.length > 0 && order.items.every((i) => typeof i.gstRate === "number");
   if (tookStock && isBranch(order.branch) && order.status !== "cancelled") {
-    const catalog = new Map((await getPricingCatalog()).map((p) => [p.id, p]));
+    const catalog = new Map(
+      (await getPricingCatalog([...new Set(order.items.map((i) => i.productId))])).map((p) => [p.id, p]),
+    );
     for (const it of order.items) {
       const idx = (catalog.get(it.productId)?.variants ?? []).findIndex((v) => variantKey(v) === it.variantKey);
       if (idx < 0) continue;

@@ -31,6 +31,9 @@ export function ProductImage({
   // e.g. the one for another variant — is tried afresh instead of being stuck on the first.
   const [failed, setFailed] = useState<string | null>(null);
   const src = failed === wanted ? FALLBACK : wanted;
+  // Our own image routes already hand back a few KB of WebP with an immutable cache header — putting them
+  // through the optimizer would re-fetch and re-encode every one for nothing.
+  const ours = src.startsWith("/api/");
 
   return (
     <div className={className ?? "relative h-full w-full overflow-hidden bg-ink-100"}>
@@ -40,6 +43,7 @@ export function ProductImage({
         fill
         sizes={sizes}
         priority={priority}
+        unoptimized={ours}
         onError={() => wanted !== FALLBACK && setFailed(wanted)}
         className={`${fit === "contain" ? "object-contain" : "object-cover"} ${imageClassName ?? ""}`}
       />

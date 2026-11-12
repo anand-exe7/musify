@@ -38,7 +38,7 @@ function Input({
       </span>
       <input
         {...rest}
-        className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
+        className="field"
       />
     </label>
   );
@@ -56,7 +56,7 @@ function Select({
       </span>
       <select
         {...rest}
-        className="w-full border border-ink-200 bg-ivory-50 px-4 py-3 text-sm text-ink-900 transition-colors focus:border-gold-500 focus:outline-none"
+        className="field"
       >
         {children}
       </select>
@@ -66,7 +66,7 @@ function Select({
 
 function ProfileRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-ink-100 bg-ivory-50 p-4 transition-colors hover:border-gold-200">
+    <div className="rounded-2xl border border-ink-100 bg-ivory-50 p-4 transition-colors hover:border-gold-200">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-400">{label}</p>
       <p className="mt-2 text-sm text-ink-900">{value}</p>
     </div>
@@ -99,11 +99,11 @@ function Modal({ open, onClose, title, children }: { open: boolean; onClose: () 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 300, damping: 26 }}
-            className="relative w-full max-w-lg border border-ink-200 bg-ivory-50 p-6 shadow-2xl md:p-8"
+            className="relative w-full max-w-lg rounded-3xl border border-ink-200 bg-ivory-50 p-6 shadow-2xl md:p-8"
           >
             <div className="mb-6 flex items-center justify-between">
               <h3 className="heading-serif text-xl text-ink-900">{title}</h3>
-              <button onClick={onClose} className="grid h-8 w-8 place-items-center text-ink-400 hover:text-ink-900">
+              <button onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-full text-ink-400 transition-colors hover:bg-ink-900/5 hover:text-ink-900">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -353,7 +353,7 @@ export default function ProfilePage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative mb-6 overflow-hidden border border-ink-100 bg-gradient-to-br from-ink-900 via-ink-900 to-ink-800 text-ivory-100"
+        className="relative mb-5 overflow-hidden rounded-3xl border border-ink-100 bg-gradient-to-br from-ink-900 via-ink-900 to-ink-800 text-ivory-100"
       >
         {/* faint staff-line motif */}
         <svg aria-hidden viewBox="0 0 1400 120" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 top-1/2 h-24 w-full -translate-y-1/2 text-gold-400/10">
@@ -367,27 +367,27 @@ export default function ProfilePage() {
           style={{ background: "radial-gradient(60% 120% at 85% 0%, rgba(201,162,75,0.16) 0%, transparent 60%)" }}
         />
 
-        <div className="relative flex flex-col items-start justify-between gap-6 p-6 md:flex-row md:items-center md:p-8">
-          <div className="flex items-center gap-5">
+        <div className="relative flex flex-col items-start justify-between gap-5 p-5 md:flex-row md:items-center md:p-6">
+          <div className="flex items-center gap-4">
             {user.avatar ? (
               <img
                 src={user.avatar}
                 alt={displayName}
                 loading="lazy"
                 decoding="async"
-                className="h-16 w-16 rounded-full object-cover ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-20 md:w-20"
+                className="h-14 w-14 rounded-full object-cover ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-16 md:w-16"
               />
             ) : (
-              <div className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 font-display text-2xl text-ink-900 ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-20 md:w-20 md:text-3xl">
+              <div className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 text-xl font-bold text-ink-900 ring-2 ring-gold-400/40 ring-offset-2 ring-offset-ink-900 md:h-16 md:w-16 md:text-2xl">
                 {displayName.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase()}
               </div>
             )}
             <div>
               <p className="text-[10px] uppercase tracking-[0.24em] text-gold-400">Welcome back</p>
-              <p className="heading-serif mt-1 text-2xl text-ivory-50 md:text-3xl">{displayName}</p>
+              <p className="heading-serif mt-0.5 text-xl text-ivory-50 md:text-2xl">{displayName}</p>
               <p className="mt-1 text-xs text-ivory-100/60">{displayEmail}</p>
               {firstOrderDate && (
-                <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300">
+                <span className="mt-2 inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300">
                   Patron · since {new Date(firstOrderDate).getFullYear()}
                 </span>
               )}
@@ -400,7 +400,7 @@ export default function ProfilePage() {
                 Admin panel
               </Link>
             )}
-            <button onClick={signOut} className="text-xs uppercase tracking-[0.18em] text-ivory-100/60 transition-colors hover:text-gold-400">
+            <button onClick={signOut} className="rounded-full border border-ivory-100/20 px-4 py-2.5 text-xs uppercase tracking-[0.18em] text-ivory-100/70 transition-colors hover:border-gold-400/50 hover:text-gold-400">
               <LogOut className="mr-1 inline h-3 w-3" /> Sign out
             </button>
           </div>
@@ -409,15 +409,15 @@ export default function ProfilePage() {
         {/* stats strip */}
         <div className="relative grid grid-cols-2 border-t border-ivory-100/10">
           {stats.map((s) => (
-            <div key={s.label} className="border-r border-ivory-100/10 px-6 py-4 last:border-r-0">
-              <p className="tabular font-display text-2xl text-gold-300 md:text-3xl">{s.value}</p>
+            <div key={s.label} className="border-r border-ivory-100/10 px-5 py-3 last:border-r-0">
+              <p className="tabular text-2xl font-bold text-gold-300">{s.value}</p>
               <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-ivory-100/50">{s.label}</p>
             </div>
           ))}
         </div>
       </motion.div>
 
-      <div className="grid gap-6 md:grid-cols-[240px_1fr]">
+      <div className="grid gap-5 md:grid-cols-[220px_1fr]">
         {/* Side nav */}
         <aside className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-col md:gap-1 md:px-0">
           {menu.map((m) => {
@@ -428,17 +428,17 @@ export default function ProfilePage() {
                 key={m.id}
                 onClick={() => setTab(m.id)}
                 className={cn(
-                  "flex shrink-0 items-center justify-between gap-3 border px-4 py-3 text-left text-sm transition-all md:border-transparent",
+                  "flex shrink-0 items-center justify-between gap-3 rounded-full border px-4 py-2.5 text-left text-sm transition-all md:rounded-xl",
                   active
-                    ? "border-gold-400 bg-gold-50 text-ink-900 md:border-l-2 md:border-l-gold-500 md:border-y-0 md:border-r-0 md:bg-transparent"
-                    : "border-ink-100 text-ink-600 hover:text-ink-900 md:hover:bg-ivory-100",
+                    ? "border-ink-900 bg-ink-900 text-ivory-50"
+                    : "border-ink-100 bg-ivory-50 text-ink-600 hover:border-gold-300 hover:text-ink-900",
                 )}
               >
                 <div className="flex items-center gap-3">
                   <Icon className="h-4 w-4" />
                   <span className="font-medium">{m.label}</span>
                 </div>
-                {m.count !== undefined && <span className="text-xs text-ink-400">{m.count}</span>}
+                {m.count !== undefined && <span className={cn("tabular text-xs", active ? "text-gold-300" : "text-ink-400")}>{m.count}</span>}
               </button>
             );
           })}
@@ -451,20 +451,20 @@ export default function ProfilePage() {
             <div className="space-y-4">
               <h2 className="heading-serif text-2xl text-ink-900">Your orders</h2>
               {orders.length === 0 && (
-                <p className="border border-dashed border-ink-200 p-8 text-center text-sm text-ink-500">
+                <p className="rounded-2xl border border-dashed border-ink-200 p-8 text-center text-sm text-ink-500">
                   No orders yet. Your placed orders will appear here.
                 </p>
               )}
               {orders.map((o, i) => (
                 <motion.div key={o.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: i * 0.06 }}
-                  className="border border-ink-100 bg-ivory-50 p-5 transition-colors hover:border-gold-200">
+                  className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 transition-colors hover:border-gold-200">
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-100 pb-4">
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-ink-400">Order #{o.id.toUpperCase()}</p>
                       <p className="mt-1 text-sm text-ink-500">Placed on {o.date}</p>
                     </div>
                     <span className={cn(
-                      "px-3 py-1 text-[10px] font-semibold uppercase tracking-widest",
+                      "rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-widest",
                       o.status === "delivered" && "bg-success/10 text-success",
                       o.status === "shipped" && "bg-info/10 text-info",
                       o.status === "processing" && "bg-warning/10 text-warning",
@@ -472,7 +472,7 @@ export default function ProfilePage() {
                     )}>{o.status}</span>
                   </div>
                   {(o.status === "shipped" || o.status === "delivered") && (o.courier || o.trackingNo) && (
-                    <p className="mt-4 bg-info/5 px-3 py-2 text-xs text-ink-700">
+                    <p className="mt-4 rounded-xl bg-info/5 px-3 py-2 text-xs text-ink-700">
                       <span className="font-semibold">{o.status === "shipped" ? "On its way" : "Delivered"}</span>
                       {" · "}
                       {[o.courier, o.trackingNo ? `Tracking ${o.trackingNo}` : ""].filter(Boolean).join(" · ")}
@@ -484,8 +484,8 @@ export default function ProfilePage() {
                       if (!p) return null;
                       return (
                         <Link href={`/product/${p.slug}`} key={item.productId} className="flex items-center gap-4 py-2">
-                          <div className="relative h-14 w-14 shrink-0 overflow-hidden bg-ink-100">
-                            <ProductImage product={p} sizes="56px" />
+                          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-ink-100">
+                            <ProductImage product={p} fit="contain" className="relative h-full w-full overflow-hidden bg-white p-1.5" sizes="56px" />
                           </div>
                           <div className="flex-1">
                             <p className="text-[10px] uppercase tracking-widest text-gold-600">{p.brand}</p>
@@ -544,7 +544,7 @@ export default function ProfilePage() {
             <div>
               <h2 className="heading-serif text-2xl text-ink-900">Saved addresses</h2>
               {addresses.length === 0 && (
-                <p className="mt-6 border border-dashed border-ink-200 p-8 text-center text-sm text-ink-500">
+                <p className="mt-6 rounded-2xl border border-dashed border-ink-200 p-8 text-center text-sm text-ink-500">
                   No saved addresses yet. Add one to speed up checkout.
                 </p>
               )}
@@ -556,7 +556,7 @@ export default function ProfilePage() {
                     initial={{ opacity: 0, scale: 0.97 }}
                     animate={{ opacity: 1, scale: 1 }}
                     className={cn(
-                      "relative border p-5 transition-colors",
+                      "relative rounded-2xl border p-5 transition-colors",
                       addr.isDefault
                         ? "border-gold-400 bg-gold-50/40"
                         : "border-ink-100 bg-ivory-50 hover:border-gold-200",

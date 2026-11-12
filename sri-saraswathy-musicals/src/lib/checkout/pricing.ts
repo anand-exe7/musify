@@ -120,7 +120,12 @@ export async function priceOrder(
   const wanted = (rawItems || []).filter((i) => i && i.productId && Number(i.quantity) > 0);
   if (wanted.length === 0) throw new HttpError(400, "Cart is empty");
 
-  const [catalog, zones, gstCfg] = await Promise.all([getPricingCatalog(), getZones(), getGstSettings()]);
+  const [catalog, zones, gstCfg] = await Promise.all([
+    // Only the products this cart names — never the whole catalogue.
+    getPricingCatalog([...new Set(wanted.map((i) => i.productId))]),
+    getZones(),
+    getGstSettings(),
+  ]);
   const byId = new Map(catalog.map((p) => [p.id, p]));
   const issues: PricingIssue[] = [];
 

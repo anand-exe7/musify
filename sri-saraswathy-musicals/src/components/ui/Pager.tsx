@@ -23,7 +23,7 @@ export function Pager({
 }) {
   const picker = pageSizes && onPageSize && pageSize;
   if (pages <= 1 && !picker) return null;
-  const btn = "grid h-9 min-w-9 place-items-center border px-2 text-xs font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-40";
+  const btn = "grid h-9 min-w-9 place-items-center rounded-xl border px-2 text-xs font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   return (
     <nav aria-label="Pagination" className={cn("flex flex-col items-center justify-between gap-3 sm:flex-row", className)}>
       <p className="text-xs text-ink-500" aria-live="polite">
@@ -33,7 +33,7 @@ export function Pager({
         {picker && (
           <label className="mr-2 flex items-center gap-1.5 text-xs text-ink-500">
             Per page
-            <select value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))} className="border border-ink-200 bg-ivory-50 px-2 py-1.5 text-xs text-ink-700 focus:border-gold-500 focus:outline-none">
+            <select value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))} className="rounded-lg border border-ink-200 bg-ivory-50 px-2 py-1.5 text-xs text-ink-700 focus:border-gold-500 focus:outline-none">
               {pageSizes.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
