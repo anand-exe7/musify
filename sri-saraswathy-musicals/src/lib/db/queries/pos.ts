@@ -1,7 +1,7 @@
 import { cleanPayments, paymentLabel, statusFor } from "@/lib/paymentSplit";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { posBills, products, coupons, posCategories, invoices, type ProductRow } from "@/lib/db/schema";
+import { posBills, products, coupons, posCategories, posDepartments, invoices, type ProductRow } from "@/lib/db/schema";
 import type { Bill, InvProduct, Coupon } from "@/lib/store/pos";
 import { isBranch, type Branch, type StockDelta } from "@/lib/stock";
 import { HttpError } from "@/lib/api/errors";
@@ -386,6 +386,32 @@ export async function getPosCategories(): Promise<string[]> {
 
 export async function addPosCategory(name: string): Promise<void> {
   await db.insert(posCategories).values({ name }).onConflictDoNothing();
+}
+
+/* ───────────────────────────  Departments  ─────────────────────────── */
+
+/** Department names (Indian / Western / …) — the level above a category in the product form. */
+export async function getPosDepartments(): Promise<string[]> {
+  const r = await db.select({ name: posDepartments.name }).from(posDepartments).orderBy(posDepartments.name);
+  return r.map((x) => x.name);
+}
+
+export async function getPosDepartmentRows(): Promise<{ name: string; active: boolean }[]> {
+  return db.select({ name: posDepartments.name, active: posDepartments.active }).from(posDepartments).orderBy(posDepartments.name);
+}
+
+export async function addPosDepartment(name: string): Promise<void> {
+  await db.insert(posDepartments).values({ name }).onConflictDoNothing();
+}
+
+export async function setPosDepartmentActive(name: string, active: boolean): Promise<boolean> {
+  const r = await db.update(posDepartments).set({ active }).where(eq(posDepartments.name, name)).returning({ name: posDepartments.name });
+  return r.length > 0;
+}
+
+export async function deletePosDepartment(name: string): Promise<boolean> {
+  const r = await db.delete(posDepartments).where(eq(posDepartments.name, name)).returning({ name: posDepartments.name });
+  return r.length > 0;
 }
 
 /** INV-01: every category with its enabled/disabled flag, for the Categories screen. */

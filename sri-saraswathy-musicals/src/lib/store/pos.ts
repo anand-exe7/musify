@@ -153,6 +153,9 @@ interface POSState {
   categories: string[];
   /** INV-01: which categories are enabled. A missing entry means enabled. */
   categoryActive: Record<string, boolean>;
+  /** INV-02: departments, the level above a category in the product form. */
+  departments: string[];
+  departmentActive: Record<string, boolean>;
   branch: BranchFilter;
   activeBranch: Branch; // branch a new POS bill is created for
   hydrated: boolean;
@@ -177,6 +180,10 @@ interface POSState {
   deleteCoupon: (code: string) => void;
   addCategory: (name: string) => void;
   setCategoryActive: (name: string, active: boolean) => void;
+  addDepartment: (name: string) => void;
+  renameDepartment: (from: string, to: string) => void;
+  deleteDepartment: (name: string) => void;
+  setDepartmentActive: (name: string, active: boolean) => void;
   renameCategory: (from: string, to: string) => void;
   deleteCategory: (name: string) => void;
   resetDemo: () => void;
@@ -190,6 +197,8 @@ export const usePOS = create<POSState>()((set, get) => ({
   coupons: [],
   categories: [],
   categoryActive: {},
+  departments: [],
+  departmentActive: {},
   branch: "all",
   activeBranch: DEFAULT_BRANCH,
   hydrated: false,
@@ -197,11 +206,12 @@ export const usePOS = create<POSState>()((set, get) => ({
   hydrate: async () => {
     // The catalogue is the heavy part, so it is re-read only if a screen has already asked for it.
     const wantInventory = get().invLoaded;
-    const [bills, invProducts, coupons, categories] = await Promise.allSettled([
+    const [bills, invProducts, coupons, categories, departments] = await Promise.allSettled([
       fetchJson<Bill[]>("/api/pos/bills"),
       wantInventory ? fetchJson<InvProduct[]>("/api/pos/inventory") : Promise.resolve<InvProduct[] | null>(null),
       fetchJson<Coupon[]>("/api/pos/coupons"),
       fetchJson<{ name: string; active: boolean }[]>("/api/pos/categories?view=full"),
+      fetchJson<{ name: string; active: boolean }[]>("/api/pos/departments?view=full"),
     ]);
     // Apply whichever slices loaded; name the ones that didn't.
     const patch: Partial<POSState> = {};
@@ -222,6 +232,12 @@ export const usePOS = create<POSState>()((set, get) => ({
       patch.categoryActive = Object.fromEntries(categories.value.map((c) => [c.name, c.active]));
     } else {
       failed.push(`categories (${errMsg(categories.reason)})`);
+    }
+    if (departments.status === "fulfilled") {
+      patch.departments = departments.value.map((d) => d.name);
+      patch.departmentActive = Object.fromEntries(departments.value.map((d) => [d.name, d.active]));
+    } else {
+      failed.push(`departments (${errMsg(departments.reason)})`);
     }
     set({ ...patch, hydrated: failed.length === 0, loadError: failed.length ? `Couldn't load ${failed.join(", ")}` : null });
     // Stock inward/transfers and every edit end in a re-hydrate, so this is also
@@ -346,6 +362,47 @@ export const usePOS = create<POSState>()((set, get) => ({
     const prev = get().categoryActive;
     set((s) => ({ categoryActive: { ...s.categoryActive, [name]: active } }));
     void send(`/api/pos/categories/${encodeURIComponent(name)}`, "PATCH", { active }, get().hydrate, () => set({ categoryActive: prev }));
+  },
+  addDepartment: (name) => {
+    if (get().departments.includes(name)) return;
+    const prev = get().departments;
+    set((s) => ({ departments: [...s.departments, name], departmentActive: { ...s.departmentActive, [name]: true } }));
+    void send("/api/pos/departments", "POST", { name }, get().hydrate, () => set({ departments: prev }));
+  },
+  setDepartmentActive: (name, active) => {
+    const prev = get().departmentActive;
+    set((s) => ({ departmentActive: { ...s.departmentActive, [name]: active } }));
+    void send(`/api/pos/departments/${encodeURIComponent(name)}`, "PATCH", { active }, get().hydrate, () => set({ departmentActive: prev }));
+  },
+  deleteDepartment: (name) => {
+    const prev = get().departments;
+    set((s) => ({ departments: s.departments.filter((d) => d !== name) }));
+    void send(`/api/pos/departments/${encodeURIComponent(name)}`, "DELETE", null, get().hydrate, () => set({ departments: prev }));
+  },
+  /** Renaming moves every product in the department, exactly as renaming a category does. */
+  renameDepartment: (from, to) => {
+    const prevDepartments = get().departments;
+    const prevProducts = get().invProducts;
+    set((s) => ({
+      departments: s.departments.map((d) => (d === from ? to : d)),
+      invProducts: s.invProducts.map((p) => (p.department === from ? { ...p, department: to } : p)),
+    }));
+    const affected = get().invProducts.filter((p) => p.department === to);
+    void (async () => {
+      const must = async (res: Response) => { if (!res.ok) throw new Error(await readError(res, "Request failed")); };
+      try {
+        await must(await fetch("/api/pos/departments", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: to }) }));
+        const results = await Promise.all(
+          affected.map((p) => fetch(`/api/pos/inventory/${p.id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ department: to }) })),
+        );
+        for (const r of results) await must(r);
+        await must(await fetch(`/api/pos/departments/${encodeURIComponent(from)}`, { method: "DELETE" }));
+        invalidateCatalog();
+      } catch (err) {
+        alert(`Couldn't rename the department: ${errMsg(err)}. Reverting to the saved values.`);
+        if (!(await get().hydrate())) set({ departments: prevDepartments, invProducts: prevProducts });
+      }
+    })();
   },
   renameCategory: (from, to) => {
     const prevCategories = get().categories;

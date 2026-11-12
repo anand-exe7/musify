@@ -11,8 +11,6 @@ import { cn, slugify } from "@/lib/utils";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { VariantPhoto } from "./VariantPhoto";
 
-const DEPTS = ["Indian", "Western", "Unisex"];
-
 type TabKey = "details" | "storefront" | "variants";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "details", label: "Details" },
@@ -28,7 +26,7 @@ function blankProduct(name = ""): InvProduct {
     brand: "",
     origin: "indian",
     category: "Strings",
-    department: "Indian",
+    department: "",
     photo: undefined,
     basePrice: 0,
     mrp: 0,
@@ -78,6 +76,8 @@ export function ProductModal({
   const updateProduct = usePOS((s) => s.updateProduct);
   const allCategories = usePOS((s) => s.categories);
   const categoryActive = usePOS((s) => s.categoryActive);
+  const allDepartments = usePOS((s) => s.departments);
+  const departmentActive = usePOS((s) => s.departmentActive);
   // Phase 7: non-admin staff (branch managers, cashiers) can edit stock and
   // descriptions but not price fields — base, MRP, or per-variant price.
   const isAdmin = useAuth((s) => s.isAdmin);
@@ -93,6 +93,11 @@ export function ProductModal({
   const CATEGORIES = useMemo(
     () => allCategories.filter((c) => categoryActive[c] !== false || c === draft.category),
     [allCategories, categoryActive, draft.category],
+  );
+  // INV-02: departments are managed on the Categories screen; a product keeps one that was later switched off.
+  const DEPTS = useMemo(
+    () => allDepartments.filter((d) => departmentActive[d] !== false || d === draft.department),
+    [allDepartments, departmentActive, draft.department],
   );
 
   const set = (patch: Partial<InvProduct>) => setDraft((d) => ({ ...d, ...patch }));
@@ -224,7 +229,13 @@ export function ProductModal({
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={label}>Category</label><select value={draft.category} onChange={(e) => set({ category: e.target.value })} className={field}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
-                  <div><label className={label}>Department</label><select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>{DEPTS.map((c) => <option key={c}>{c}</option>)}</select></div>
+                  <div>
+                    <label className={label}>Department</label>
+                    <select value={draft.department} onChange={(e) => set({ department: e.target.value })} className={field}>
+                      <option value="">— none —</option>
+                      {DEPTS.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className={label}>Description</label>

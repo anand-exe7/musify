@@ -596,6 +596,12 @@ export const coupons = pgTable("coupons", {
 });
 
 /** Free-form POS category labels (see `store/pos.ts` — `categories`). */
+/** Departments group categories (Indian / Western / Unisex …) — created and switched off like categories. */
+export const posDepartments = pgTable("pos_departments", {
+  name: text("name").primaryKey(),
+  active: boolean("active").notNull().default(true),
+});
+
 export const posCategories = pgTable("pos_categories", {
   name: text("name").primaryKey(),
   /** INV-01: a disabled category is kept (its products are untouched) but is no longer offered for new products. */

@@ -25,6 +25,7 @@ import {
   UsersRound,
   X,
   Loader2,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRepair, alertLevel } from "@/lib/store/repair";
@@ -41,6 +42,12 @@ interface Section { title: string; items: Item[] }
 
 const sections: Section[] = [
   {
+    title: "Today",
+    items: [
+      { href: "/admin/activity", label: "Activity", icon: Activity, staff: true },
+    ],
+  },
+  {
     title: "Sales",
     items: [
       { href: "/admin/billing", label: "Billing", icon: CreditCard, staff: true },
@@ -56,7 +63,7 @@ const sections: Section[] = [
     title: "Inventory",
     items: [
       { href: "/admin/inventory", label: "Inventory", icon: Package },
-      { href: "/admin/categories", label: "Categories", icon: Tags },
+      { href: "/admin/categories", label: "Categories & Depts", icon: Tags },
       { href: "/admin/stock-transfers", label: "Stock Transfers", icon: ArrowRightLeft },
     ],
   },
