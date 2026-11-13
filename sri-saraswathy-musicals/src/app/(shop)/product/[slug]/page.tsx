@@ -9,7 +9,6 @@ import { ProductCard } from "@/components/shop/ProductCard";
 import { useCart } from "@/lib/store/cart";
 import { formatINR, cn } from "@/lib/utils";
 import { variantKey as keyOf, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
-import { BUSINESS } from "@/lib/data/business";
 import {
   Minus,
   Plus,
@@ -58,7 +57,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
 
   // A few more from the same category (one extra in case this product is among them).
   const { data: relatedPage } = useProductPage(
-    { category: product?.category ?? "", origin: "all", maxPrice: 0, sort: "featured", page: 1, pageSize: 5 },
+    { department: "all", category: product?.category ?? "", origin: "all", maxPrice: 0, sort: "featured", page: 1, pageSize: 5 },
     { skip: !product },
   );
   const related = product && relatedPage ? relatedPage.items.filter((p) => p.id !== product.id).slice(0, 4) : [];
@@ -252,25 +251,6 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 <span className="font-medium text-danger">Currently unavailable</span>
               )}
             </div>
-            {activeVariant?.stockByBranch && (
-              <div className="mt-3 flex flex-wrap gap-2 border-t border-ink-100 pt-3">
-                {BUSINESS.branches.map((b) => {
-                  const n = activeVariant.stockByBranch?.[b.key] ?? 0;
-                  return (
-                    <span
-                      key={b.key}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px]",
-                        n > 0 ? "bg-success/10 text-success" : "bg-ink-900/[0.05] text-ink-400",
-                      )}
-                    >
-                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${n > 0 ? "bg-success" : "bg-ink-300"}`} />
-                      {b.area}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
           {/* Quantity + add */}
@@ -327,9 +307,9 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                   <Sparkles className="h-3.5 w-3.5" /> What stands out
                 </p>
                 <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {product.features.map((f) => (
+                  {product.features.map((f, i) => (
                     <li
-                      key={f}
+                      key={`${f}-${i}`}
                       className="flex items-start gap-2.5 rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-sm text-ink-700"
                     >
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
@@ -345,8 +325,8 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
             <div className="rounded-3xl border border-ink-100 bg-ivory-50 p-6 md:p-8">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gold-700">Specifications</p>
               <dl className="mt-4">
-                {specRows.map((s) => (
-                  <div key={s.label} className="flex items-baseline justify-between gap-4 border-b border-ink-100 py-3 last:border-0">
+                {specRows.map((s, i) => (
+                  <div key={`${s.label}-${i}`} className="flex items-baseline justify-between gap-4 border-b border-ink-100 py-3 last:border-0">
                     <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">{s.label}</dt>
                     <dd className="text-right text-sm font-medium text-ink-900">{s.value}</dd>
                   </div>

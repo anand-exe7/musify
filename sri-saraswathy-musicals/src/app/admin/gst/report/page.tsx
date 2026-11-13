@@ -1,5 +1,6 @@
 "use client";
 import { LoadingPanel } from "@/components/admin/LoadState";
+import { printElement } from "@/lib/print/isolate";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -102,7 +103,7 @@ function ReportInner() {
             {(period.fromMonth !== period.toMonth || period.fromYear !== period.toYear) && ` – ${reportPeriod.toMonth} ${reportPeriod.toYear}`}
           </span>
           <button
-            onClick={() => window.print()}
+            onClick={() => printElement("report-sheet", "size: A4 landscape; margin: 10mm;")}
             disabled={state !== "ready" || Boolean(dataError)}
             className="flex items-center gap-2 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600 disabled:opacity-40"
           >

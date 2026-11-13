@@ -14,7 +14,7 @@ import { findVariant, variantLabel, withVariantPhoto } from "@/lib/catalog/varia
 import { formatINR } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 import { formatWeight } from "@/lib/delivery/types";
-import { ChevronRight, Check, Lock, MapPin, Truck, AlertCircle, Scale } from "lucide-react";
+import { ChevronRight, Check, Lock, MapPin, AlertCircle, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
 import type { UserAddress } from "@/types";
@@ -66,7 +66,7 @@ export default function CheckoutPage() {
   const [branchPick, setBranch] = useState<string | null>(null);
   // Razorpay by default; pay-on-delivery is always available so an order can be placed
   // even when the online window can't open.
-  const [payment, setPayment] = useState<"card" | "cod">("card");
+  const payment = "card" as const;
   const [placed, setPlaced] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [placing, setPlacing] = useState(false);
@@ -290,13 +290,12 @@ export default function CheckoutPage() {
           window.location.href = "/auth/login?redirect=%2Fcheckout";
           return;
         }
-        // Online payments unavailable → offer the route that still works.
-        if (res.status === 503 && payment !== "cod") {
-          setPayment("cod");
+        // Online payments unavailable — there is no offline route any more, so say so plainly.
+        if (res.status === 503) {
           setStep(2);
           throw new Error(
             (data?.error as string) ||
-              "Online payments aren't available right now — switched you to Pay on delivery.",
+              "Online payments aren't available right now. Please try again shortly, or call the shop to place this order.",
           );
         }
         throw new Error(data?.error || "Checkout failed");
@@ -307,22 +306,13 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Pay on delivery — the order is already saved server-side.
-    if (data.mode === "cod") {
-      finalize(data.orderId);
-      return;
-    }
-
     // Online payment — open Razorpay's checkout, then verify the signature.
     const ready = await loadRazorpay();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const RZP = (window as unknown as { Razorpay?: any }).Razorpay;
     if (!alive.current) return;
     if (!ready || !RZP) {
-      alert(
-        "Couldn't open the payment window. Check your connection, or choose Pay on delivery and place the order now.",
-      );
-      setPayment("cod");
+      alert("Couldn't open the payment window. Check your connection and try again.");
       setStep(2);
       setPlacing(false);
       return;
@@ -641,18 +631,10 @@ export default function CheckoutPage() {
               <h2 className="heading-serif text-xl text-ink-900">Payment method</h2>
               <div className="mt-6 space-y-3">
                 <PaymentOption
-                  active={payment === "card"}
-                  onClick={() => setPayment("card")}
+                  active
                   icon={<Lock className="h-4 w-4" />}
                   title="Pay online"
                   desc="UPI, cards, net banking or wallets, in the Razorpay window on the last step."
-                />
-                <PaymentOption
-                  active={payment === "cod"}
-                  onClick={() => setPayment("cod")}
-                  icon={<Truck className="h-4 w-4" />}
-                  title="Pay on delivery"
-                  desc="Place the order now and pay our team when the instrument arrives."
                 />
               </div>
             </motion.div>
@@ -686,7 +668,7 @@ export default function CheckoutPage() {
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
                 <p className="text-ink-500">Delivery <span className="text-ink-900">{quote?.deliveryName || "—"}{quote?.deliveryEta ? ` · ${quote.deliveryEta}` : ""}</span></p>
                 <p className="text-ink-500">Branch <span className="text-ink-900">{branchLabel(branch)}</span></p>
-                <p className="text-ink-500">Payment <span className="text-ink-900">{payment === "cod" ? "Pay on delivery" : "Razorpay (online)"}</span></p>
+                <p className="text-ink-500">Payment <span className="text-ink-900">Razorpay (online)</span></p>
               </div>
             </motion.div>
           )}
@@ -741,7 +723,7 @@ export default function CheckoutPage() {
                   {placing
                     ? "Placing…"
                     : quote
-                      ? `${payment === "cod" ? "Place order" : "Pay"} · ${formatINR(quote.total)}`
+                      ? `Pay · ${formatINR(quote.total)}`
                       : "Pricing your order…"}
                 </button>
                 {!canPlace && blockedBecause && (
@@ -849,11 +831,13 @@ function PaymentOption({
   desc: string;
   icon: React.ReactNode;
   active: boolean;
-  onClick: () => void;
+  /** Omitted when the option is the only one on offer, so it renders as a plain panel. */
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={!onClick}
       onClick={onClick}
       className={cn(
         "flex w-full items-start gap-4 rounded-2xl border p-5 text-left transition-all",

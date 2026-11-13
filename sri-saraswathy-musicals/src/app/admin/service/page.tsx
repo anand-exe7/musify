@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Wrench, Plus, Search, AlertTriangle,
-  ExternalLink, Trash2, MessageCircle, ChevronRight,
+  ExternalLink, Trash2, MessageCircle, ChevronRight, Sheet,
 } from "lucide-react";
 import {
   useRepair, alertLevel, daysUntil, statusMeta, PRIORITY_META,
@@ -23,6 +23,7 @@ import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
 import { ReportTab, PERIODS, periodBounds, dayKey, type ReportPeriod } from "@/components/admin/ServiceReport";
+import { downloadXlsx, rupeesNum } from "@/lib/reports/excel";
 
 type Tab = "tickets" | "report";
 type BranchFilter = Branch | "all";
@@ -118,6 +119,47 @@ export default function ServicePage() {
     setFrom("");
     setTo("");
     setQuery("");
+  };
+
+  /** The tickets on screen, as a spreadsheet — same rows, same order as the table. */
+  const exportXlsx = () => {
+    const label = PERIODS.find((p) => p.key === period)?.label ?? "All";
+    void downloadXlsx(`Service-${label.replace(/\s+/g, "-")}-${dayKey(new Date().toISOString())}`, [
+      {
+        name: "Service tickets",
+        rows: [
+          ["Ticket", "Raised", "Deadline", "Customer", "Phone", "Instrument", "Category", "Brand", "Serial",
+           "Problem", "Technician", "Branch", "Status", "Priority", "Estimate (Rs)", "Charge (Rs)", "Paid (Rs)",
+           "Balance (Rs)", "Paid by"],
+          ...rows.map((t) => [
+            t.id,
+            dayKey(t.createdAt),
+            t.deadline ? dayKey(t.deadline) : "",
+            t.customerName,
+            t.phone,
+            t.productName,
+            t.category,
+            t.brand ?? "",
+            t.serial ?? "",
+            t.problem,
+            t.technician ?? "",
+            branchLabel(t.branch),
+            statusMeta(t.status).label,
+            PRIORITY_META[t.priority]?.label ?? t.priority,
+            rupeesNum(t.estimate),
+            rupeesNum(grossTotal(t)),
+            rupeesNum(t.advance),
+            rupeesNum(balanceDue(t)),
+            modesLabel(ticketPayments(t)),
+          ]),
+          [],
+          ["", "", "", "", "", "", "", "", "", "", "", "", "", `${rows.length} ticket${rows.length === 1 ? "" : "s"}`,
+           null, rupeesNum(rows.reduce((n, t) => n + grossTotal(t), 0)),
+           rupeesNum(rows.reduce((n, t) => n + t.advance, 0)),
+           rupeesNum(rows.reduce((n, t) => n + balanceDue(t), 0)), ""],
+        ],
+      },
+    ]);
   };
 
   const kpi = useMemo(() => {
@@ -290,11 +332,21 @@ export default function ServicePage() {
             </div>
           </div>
 
-          <div className="mb-3 flex items-center justify-between px-0.5">
+          <div className="mb-3 flex items-center justify-between gap-3 px-0.5">
             <p className="text-xs text-ink-500">{rows.length} ticket{rows.length === 1 ? "" : "s"}{statusF === "active" ? " · active" : ""}</p>
-            {filtered && (
-              <button onClick={clearFilters} className="text-xs font-semibold text-ink-500 transition-colors hover:text-gold-600">Clear filters</button>
-            )}
+            <div className="flex items-center gap-3">
+              {filtered && (
+                <button onClick={clearFilters} className="text-xs font-semibold text-ink-500 transition-colors hover:text-gold-600">Clear filters</button>
+              )}
+              <button
+                type="button"
+                onClick={exportXlsx}
+                disabled={rows.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ivory-50 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:border-gold-400 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Sheet className="h-3.5 w-3.5 text-gold-600" /> Excel
+              </button>
+            </div>
           </div>
 
           {/* Table */}

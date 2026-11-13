@@ -2,13 +2,13 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ProductCard } from "@/components/shop/ProductCard";
-import { useProductPage, useCategories } from "@/lib/client/catalog";
+import { useProductPage, useCategories, useDepartments } from "@/lib/client/catalog";
 import { Pager } from "@/components/ui/Pager";
 import { Search, X, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 
-type SortKey = "featured" | "price-asc" | "price-desc" | "name" | "rating";
+type SortKey = "featured" | "price-asc" | "price-desc" | "name" | "rating" | "department";
 
 const PAGE_SIZE = 12;
 
@@ -18,6 +18,7 @@ const SORTS: { value: SortKey; label: string }[] = [
   { value: "price-desc", label: "Price · high to low" },
   { value: "rating", label: "Top rated" },
   { value: "name", label: "Name · A to Z" },
+  { value: "department", label: "Department · A to Z" },
 ];
 
 /** A value that only follows `value` once it has stopped changing for `ms` (so typing doesn't fire a request per key). */
@@ -34,7 +35,9 @@ function ShopContent() {
   const params = useSearchParams();
   const router = useRouter();
   const { categories } = useCategories();
+  const { departments } = useDepartments();
   const activeCategory = params.get("category") || "all";
+  const activeDepartment = params.get("department") || "all";
   const urlQuery = params.get("q") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const [sort, setSort] = useState<SortKey>("featured");
@@ -47,7 +50,7 @@ function ShopContent() {
   const typed = useDebounced(query, 300);
 
   const { data, loading, error: loadError, refresh } = useProductPage({
-    category: activeCategory, origin: "all", maxPrice: 0, q: typed, sort, page, pageSize: PAGE_SIZE,
+    category: activeCategory, department: activeDepartment, origin: "all", maxPrice: 0, q: typed, sort, page, pageSize: PAGE_SIZE,
   });
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -60,6 +63,7 @@ function ShopContent() {
     router.push(`/shop${q.toString() ? "?" + q.toString() : ""}`, { scroll: false });
   };
   const setCategory = (id: string) => go({ category: id === "all" ? null : id, page: null });
+  const setDepartment = (d: string) => go({ department: d === "all" ? null : d, page: null });
   const goToPage = (n: number) => {
     go({ page: n <= 1 ? null : String(n) });
     gridTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -121,6 +125,25 @@ function ShopContent() {
               </button>
             )}
           </label>
+
+          {/* Departments ("Indian", "Western", …) sit above categories, so a visitor can narrow to a
+              whole side of the shop before picking an instrument family. */}
+          {departments.length > 1 && (
+            <label className="relative shrink-0">
+              <span className="sr-only">Department</span>
+              <select
+                value={activeDepartment}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="h-11 w-full appearance-none rounded-full border border-ink-200 bg-ivory-50 pl-4 pr-9 text-sm text-ink-700 transition-colors focus:border-gold-500 focus:outline-none md:w-48"
+              >
+                <option value="all">All departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <span aria-hidden className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-ink-400">▾</span>
+            </label>
+          )}
 
           <label className="relative shrink-0">
             <span className="sr-only">Sort by</span>
@@ -227,7 +250,7 @@ function ShopContent() {
             Try another word, or browse the whole collection.
           </p>
           <button
-            onClick={() => { setQuery(""); go({ q: null, category: null, page: null }); }}
+            onClick={() => { setQuery(""); go({ q: null, category: null, department: null, page: null }); }}
             className="btn-gold-solid mt-6"
           >
             Show everything

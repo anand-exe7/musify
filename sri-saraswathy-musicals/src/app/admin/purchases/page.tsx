@@ -608,7 +608,7 @@ export default function PurchasesPage() {
   );
 }
 
-const PAY_MODE_NAMES: Record<string, string> = { CASH: "Cash", UPI: "UPI / GPay", CARD: "Card", BANK: "Bank transfer", CREDIT: "On credit (not paid)", OTHER: "Other" };
+const PAY_MODE_NAMES: Record<string, string> = { CASH: "Cash", CARD: "Card", UPI: "UPI", CREDIT: "On credit (not paid)", BANK: "Bank transfer", OTHER: "Other" };
 
 /** A numbered section card of the purchase form. */
 function Step({ n, title, hint, right, children }: { n: number; title: string; hint?: string; right?: React.ReactNode; children: React.ReactNode }) {

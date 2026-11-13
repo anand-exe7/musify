@@ -45,11 +45,10 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: "payment", label: "Payment · A–Z" },
 ];
 
-const PAY_TONE: Record<PaymentMode, string> = {
+const PAY_TONE: Record<string, string> = {
   CASH: "bg-success/15 text-success",
-  UPI: "bg-info/15 text-info",
   CARD: "bg-gold-100 text-gold-700",
-  BANK: "bg-ink-900/10 text-ink-700",
+  UPI: "bg-info/15 text-info",
   OTHER: "bg-ink-100 text-ink-500",
 };
 

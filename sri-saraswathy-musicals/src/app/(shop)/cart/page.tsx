@@ -451,7 +451,7 @@ export default function CartPage() {
               </p>
             )}
             <div className="mt-4 space-y-1 text-center text-xs text-ink-400">
-              <p>Secure payment · UPI · Card · Pay on delivery</p>
+              <p>Secure payment · UPI · Card</p>
             </div>
           </div>
           <div className="mt-4 rounded-2xl border border-dashed border-gold-300 bg-gold-50/40 p-4 text-xs text-ink-600">

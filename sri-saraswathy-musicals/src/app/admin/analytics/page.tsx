@@ -65,16 +65,23 @@ const TREND_SERIES = [
 ];
 const BRANCH_COLOR = ["#0A0908", "#C9A24B", "#2563EB", "#16A34A"];
 
-/** ANA-01: bucket a free-text payment label into a reporting mode. */
-function paymentModeOf(label: string | undefined | null): "Cash" | "UPI" | "Card" | "Online" | "Other" {
+/** The only payment modes reported on, in the order they are always shown. */
+const REPORT_PAY_MODES = ["Cash", "Card", "UPI"] as const;
+type ReportPayMode = (typeof REPORT_PAY_MODES)[number];
+
+/**
+ * ANA-01: bucket a free-text payment label into one of Cash / Card / UPI.
+ * Anything else (a retired bank-transfer row, an online Razorpay collection) is not one of the three
+ * modes the shop reports on, so it is left out of this split rather than shown as "Other".
+ */
+function paymentModeOf(label: string | undefined | null): ReportPayMode | null {
   const s = (label || "").toLowerCase();
   if (s.includes("cash")) return "Cash";
-  if (s.includes("upi") || s.includes("gpay") || s.includes("google pay") || s.includes("phonepe") || s.includes("paytm")) return "UPI";
   if (s.includes("card")) return "Card";
-  if (s.includes("razor") || s.includes("online") || s.includes("netbank") || s.includes("bank")) return "Online";
-  return "Other";
+  if (s.includes("upi") || s.includes("gpay") || s.includes("google pay") || s.includes("phonepe") || s.includes("paytm")) return "UPI";
+  return null;
 }
-const PAYMODE_COLOR: Record<string, string> = { Cash: "#16A34A", UPI: "#2563EB", Card: "#C9A24B", Online: "#8B5CF6", Other: "#9CA3AF" };
+const PAYMODE_COLOR: Record<string, string> = { Cash: "#16A34A", Card: "#C9A24B", UPI: "#2563EB" };
 
 /** Re-export the shared stat tile under the local name used in this file. */
 const Stat = AdminStat;
@@ -161,21 +168,21 @@ export default function AnalyticsPage() {
       qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
     }));
     const topItems = [...revByItem.entries()].sort((a, b) => b[1] - a[1]);
-    // ANA-01: billed total split by payment mode (Cash / UPI / Card / Online / Other).
-    const payModeMap = new Map<string, number>();
+    // ANA-01: billed total split across Cash / Card / UPI, always in that order.
+    const payModeMap = new Map<string, number>(REPORT_PAY_MODES.map((k) => [k, 0]));
     scoped.forEach((b) => {
-      // A split bill (cash + card…) is counted under each mode for its own amount, not as "Other".
+      // A split bill (cash + card…) is counted under each mode for its own amount.
       if (b.payments && b.payments.length > 0) {
         for (const p of b.payments) {
           const k = paymentModeOf(p.method);
-          payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, p.amount));
+          if (k) payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, p.amount));
         }
         return;
       }
       const k = paymentModeOf(b.payment);
-      payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, b.total));
+      if (k) payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, b.total));
     });
-    const paymentModes = [...payModeMap.entries()].sort((a, b) => b[1] - a[1]);
+    const paymentModes: [string, number][] = REPORT_PAY_MODES.map((k) => [k, payModeMap.get(k) ?? 0]);
     return {
       totalRevenue,
       paymentModes,
@@ -258,7 +265,8 @@ export default function AnalyticsPage() {
     );
     const byMode = new Map<string, number>();
     for (const d of list) {
-      const k = paymentModeOf(d.mode === "BANK" ? "bank" : d.mode);
+      const k = paymentModeOf(d.mode);
+      if (!k) continue;
       byMode.set(k, (byMode.get(k) || 0) + d.amount);
     }
     return { list, total: list.reduce((n, d) => n + d.amount, 0), byMode };
@@ -572,7 +580,7 @@ export default function AnalyticsPage() {
             {/* ANA-01: payment-mode breakdown */}
             <Card>
               <p className="mb-4 text-sm font-bold text-ink-900">Payment Mode Split <span className="font-normal text-ink-400">(billed − linked expenses)</span></p>
-              {m.paymentModes.length === 0 ? (
+              {m.paymentModes.every(([, v]) => v === 0) ? (
                 <p className="py-6 text-center text-sm text-ink-400">No sales in this view.</p>
               ) : (
                 (() => {
@@ -580,14 +588,14 @@ export default function AnalyticsPage() {
                   return m.paymentModes.map(([mode, val]) => (
                     <div key={mode} className="mb-4 last:mb-0">
                       <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                        <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wider text-ink-500"><span className="h-2 w-2 rounded-full" style={{ background: PAYMODE_COLOR[mode] ?? PAYMODE_COLOR.Other }} />{mode}</span>
+                        <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wider text-ink-500"><span className="h-2 w-2 rounded-full" style={{ background: PAYMODE_COLOR[mode] }} />{mode}</span>
                         <span className="truncate font-bold tabular-nums text-ink-900">{formatINR(val)} <span className="font-medium text-ink-400">· {Math.round((val / tot) * 100)}%</span></span>
                       </div>
                       {(ded.byMode.get(mode) ?? 0) > 0 && (
                         <p className="mb-1 text-right text-[11px] tabular-nums text-ink-500"><span className="text-danger">− {formatINR(ded.byMode.get(mode) ?? 0)}</span> expenses = <b className="text-ink-800">{formatINR(val - (ded.byMode.get(mode) ?? 0))}</b></p>
                       )}
                       <div className="h-2 overflow-hidden rounded-full bg-ink-100">
-                        <div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: PAYMODE_COLOR[mode] ?? PAYMODE_COLOR.Other }} />
+                        <div className="h-full rounded-full" style={{ width: `${(val / tot) * 100}%`, background: PAYMODE_COLOR[mode] }} />
                       </div>
                     </div>
                   ));

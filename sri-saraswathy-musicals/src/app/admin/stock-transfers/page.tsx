@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightLeft, Search, ArrowRight, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, Search, ArrowRight, Trash2, X, Sheet } from "lucide-react";
 import { usePOS, useInventory, productStockAt, variantStockAt, type Branch, type InvProduct } from "@/lib/store/pos";
 import { useBranchScope, effectiveBranch } from "@/lib/store/branch";
 import { cn } from "@/lib/utils";
 import { BRANCH_KEYS, branchLabel } from "@/lib/stock";
 import { BranchOptions } from "@/components/admin/BranchOptions";
+import { downloadXlsx } from "@/lib/reports/excel";
 
 interface TransferRow {
   id: string;
@@ -133,6 +134,31 @@ export default function StockTransfersPage() {
     setFTo(range.to);
   };
   const clearFilters = () => { setPeriod("all"); setFFrom(""); setFTo(""); setFSrc("all"); setFDest("all"); setFProduct("all"); setFQuery(""); };
+
+  /** The transfer history on screen, as a spreadsheet — same rows, same order as the table. */
+  const exportXlsx = () => {
+    void downloadXlsx(`Stock-transfers-${localDay(new Date().toISOString())}`, [
+      {
+        name: "Stock transfers",
+        rows: [
+          ["Date", "Time", "Product", "Variant", "Quantity", "From", "To", "Moved by", "Note"],
+          ...shownTransfers.map((r) => [
+            localDay(r.transferredAt),
+            new Date(r.transferredAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+            r.productName,
+            r.variant,
+            r.quantity,
+            branchLabel(r.fromBranch),
+            branchLabel(r.toBranch),
+            r.createdByName || r.createdBy || "",
+            r.note || "",
+          ]),
+          [],
+          ["", "", `${shownTransfers.length} transfer${shownTransfers.length === 1 ? "" : "s"}`, "", movedUnits, "", "", "", ""],
+        ],
+      },
+    ]);
+  };
 
   useEffect(() => {
     setFromBranch(lockedSource ?? effectiveBranch(scopeSelected));
@@ -406,11 +432,21 @@ export default function StockTransfersPage() {
                   <input type="date" value={fTo} min={fFrom || undefined} onChange={(e) => setFTo(e.target.value)} aria-label="To date" className={filterCls} />
                 </div>
               )}
-              {hasTransferFilter && (
-                <button onClick={clearFilters} className="ml-auto inline-flex h-10 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-600 hover:border-gold-500 hover:text-gold-600">
-                  <X className="h-3.5 w-3.5" /> Clear filters
+              <div className="ml-auto flex items-center gap-2">
+                {hasTransferFilter && (
+                  <button onClick={clearFilters} className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-600 hover:border-gold-500 hover:text-gold-600">
+                    <X className="h-3.5 w-3.5" /> Clear filters
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={exportXlsx}
+                  disabled={shownTransfers.length === 0}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Sheet className="h-3.5 w-3.5 text-gold-600" /> Excel
                 </button>
-              )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

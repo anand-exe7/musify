@@ -4,7 +4,7 @@ import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Search, Globe, Store, Wrench, ChevronRight, Receipt, Banknote, Loader2 } from "lucide-react";
+import { FileText, Search, Globe, Store, Wrench, ChevronRight, Receipt, Banknote, Loader2, Sheet } from "lucide-react";
 import type { Invoice } from "@/types";
 import { formatINR, cn } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
@@ -14,6 +14,7 @@ import { invoiceToDoc } from "@/lib/print/doc";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
 import { useBranchScope } from "@/lib/store/branch";
 import { AdminStat } from "@/components/admin/AdminStat";
+import { downloadXlsx, rupeesNum } from "@/lib/reports/excel";
 
 /** yyyy-mm-dd of an invoice's timestamp in the viewer's local time (so an evening bill stays on its day). */
 function localDay(iso: string): string {
@@ -24,6 +25,7 @@ function localDay(iso: string): string {
 }
 
 type SourceFilter = "all" | "web" | "pos" | "service" | "manual";
+const SOURCE_LABEL: Record<string, string> = { web: "Online", pos: "In-store", service: "Service", manual: "Manual" };
 type StatusFilter = "all" | "paid" | "pending" | "cancelled";
 
 function fmtDate(d: string) {
@@ -149,6 +151,40 @@ export default function InvoicesLedgerPage() {
   }, [inScope]);
   const hasFilter = !!(from || to || branch !== "all");
 
+  /** LED-04: the ledger on screen, as a spreadsheet — same rows, same order, same filters. */
+  const exportXlsx = () => {
+    const span = from || to ? `${from || "start"}_to_${to || "today"}` : "all";
+    void downloadXlsx(`Invoices-${span}-${localDay(new Date().toISOString())}`, [
+      {
+        name: "Invoices",
+        rows: [
+          ["Invoice no.", "Reference", "Date", "Customer", "Branch", "Source", "Status", "Payment",
+           "Items", "Subtotal (Rs)", "CGST (Rs)", "SGST (Rs)", "IGST (Rs)", "Total (Rs)"],
+          ...rows.map((v) => [
+            v.number,
+            v.reference ?? "",
+            localDay(v.date),
+            v.customer,
+            branchLabel(v.branch),
+            SOURCE_LABEL[v.source ?? "manual"] ?? "Manual",
+            v.status,
+            v.paymentMode,
+            (v.items ?? []).map((l) => `${l.name} x ${l.qty}`).join("; "),
+            rupeesNum(v.subtotal),
+            rupeesNum(v.cgst ?? 0),
+            rupeesNum(v.sgst ?? 0),
+            rupeesNum(v.igst ?? 0),
+            rupeesNum(v.total),
+          ]),
+          [],
+          // Cancelled bills are listed but never counted, exactly as the tiles above do it.
+          ["", "", "", "", "", "", "", "", `${rows.length} invoice${rows.length === 1 ? "" : "s"} (${rows.filter((v) => v.status === "cancelled").length} cancelled)`,
+           null, null, null, null, rupeesNum(rows.filter((v) => v.status !== "cancelled").reduce((n, v) => n + v.total, 0))],
+        ],
+      },
+    ]);
+  };
+
   const filters: { key: SourceFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "web", label: "Online" },
@@ -202,6 +238,14 @@ export default function InvoicesLedgerPage() {
         {hasFilter && (
           <button onClick={() => { setFrom(""); setTo(""); setBranch("all"); }} className="pb-2.5 text-xs font-semibold text-gold-600 hover:underline">Clear filters</button>
         )}
+        <button
+          type="button"
+          onClick={exportXlsx}
+          disabled={rows.length === 0}
+          className="mb-0.5 ml-auto inline-flex items-center gap-2 self-end rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-gold-400 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Sheet className="h-4 w-4 text-gold-600" /> Excel
+        </button>
       </div>
 
       {/* Controls */}

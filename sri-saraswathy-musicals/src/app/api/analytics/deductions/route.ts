@@ -56,6 +56,6 @@ export function GET() {
     }
 
     const settings = await getDeliverySettings();
-    return ok({ modes: settings.expenseDeductModes ?? ["CASH", "UPI", "CARD", "BANK", "OTHER"], entries: out });
+    return ok({ modes: settings.expenseDeductModes ?? ["CASH", "CARD", "UPI"], entries: out });
   });
 }

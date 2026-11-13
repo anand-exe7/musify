@@ -18,7 +18,7 @@ interface CreateBody {
   items: { productId: string; variantKey?: string; quantity: number }[];
   delivery: DeliveryMethod;
   couponCode?: string;
-  payment: "upi" | "card" | "bank" | "cod";
+  payment: "upi" | "card";
   shipState?: string;
   branch?: Branch;
   customerName?: string;
@@ -59,38 +59,9 @@ export function POST(request: NextRequest) {
       weightG: priced.weightG,
     };
 
-    if (body.payment === "cod") {
-      const order: Order = {
-        id: await nextOrderId(),
-        date: new Date().toISOString().slice(0, 10),
-        status: "processing",
-        userId: user.id,
-        customerName,
-        email,
-        phone,
-        paymentMethod: "cod",
-        paymentId: "",
-        shipState: (body.shipState || "").trim(),
-        branch,
-        items: [], // filled from the priced lines by fulfilOrder
-        subtotal: priced.subtotal,
-        discount: priced.discount,
-        couponCode: priced.couponCode,
-        gst: priced.gst,
-        shipping: priced.shipping,
-        total: priced.total,
-        address,
-        ...delivery,
-      };
-      const saved = await fulfilOrder(order, priced, branch, { paid: false });
-      await recordOrderInvoice(saved);
-      await sendOrderConfirmation(saved, email);
-      return created({ mode: "cod", orderId: saved.id });
-    }
-
     // Online payment via Razorpay.
     if (!razorpayConfigured()) {
-      throw new HttpError(503, "Online payments aren't configured yet. Please choose Pay on delivery.");
+      throw new HttpError(503, "Online payments aren't available right now. Please try again shortly, or call the shop to place this order.");
     }
     const rp = await createRazorpayOrder(priced.total, `rcpt_${Date.now().toString(36)}`);
     const draft = {
