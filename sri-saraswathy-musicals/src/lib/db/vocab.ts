@@ -30,7 +30,10 @@ export const REPAIR_STATUSES = [
   "cancelled",
 ] as const;
 export const REPAIR_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
-export const PAYMENT_MODES = ["CASH", "UPI", "CARD", "BANK", "OTHER"] as const;
+/** The only payment modes the business takes, in the order they are shown everywhere. */
+export const PAYMENT_MODES = ["CASH", "CARD", "UPI"] as const;
+/** Modes retired from the UI; kept only so rows saved before the change still read properly. */
+export const LEGACY_PAYMENT_MODES = ["BANK", "OTHER", "CREDIT"] as const;
 export const INQUIRY_STATUSES = ["new", "contacted", "resolved"] as const;
 
 /** `col IN ('a', 'b', …)` with literals inlined (CHECKs can't take parameters). */

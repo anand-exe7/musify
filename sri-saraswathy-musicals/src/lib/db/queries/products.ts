@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, type ProductRow } from "@/lib/db/schema";
 import { selectProduct, selectProducts, selectStorefront, selectPricingRows, insertVariants } from "./variants";
@@ -171,11 +171,13 @@ export async function getStorefrontProducts(): Promise<Product[]> {
 
 /* ─────────────────────────  One page of the shop  ───────────────────────── */
 
-export const SHOP_SORTS = ["featured", "price-asc", "price-desc", "name", "rating"] as const;
+export const SHOP_SORTS = ["featured", "price-asc", "price-desc", "name", "rating", "department"] as const;
 export type ShopSort = (typeof SHOP_SORTS)[number];
 
 export interface ShopPageQuery {
   category?: string;
+  /** INV-02 department ("Indian", "Western", …); "all" or empty shows every department. */
+  department?: string;
   origin?: string;
   /** Highest price to show, in paise. */
   maxPrice?: number;
@@ -204,6 +206,7 @@ export async function getStorefrontPage(q: ShopPageQuery = {}): Promise<ShopPage
   const pageSize = Math.min(MAX_SHOP_PAGE_SIZE, Math.max(1, Math.floor(Number(q.pageSize)) || 12));
   const conds = [eq(products.active, true)];
   if (q.category && q.category !== "all") conds.push(eq(products.category, q.category));
+  if (q.department && q.department !== "all") conds.push(eq(products.department, q.department));
   if (q.origin && q.origin !== "all") conds.push(eq(products.origin, q.origin));
   if (Number.isFinite(q.maxPrice) && (q.maxPrice as number) > 0) conds.push(lte(products.price, Math.floor(q.maxPrice as number)));
   const term = (q.q ?? "").trim().slice(0, 80);
@@ -218,6 +221,7 @@ export async function getStorefrontPage(q: ShopPageQuery = {}): Promise<ShopPage
     : q.sort === "price-desc" ? [desc(products.price)]
     : q.sort === "name" ? [asc(products.name)]
     : q.sort === "rating" ? [desc(products.rating), asc(products.name)]
+    : q.sort === "department" ? [asc(products.department), asc(products.name)]
     : [desc(products.featured), asc(products.name)];
   const at = (p: number) =>
     selectStorefront(where, { order: [...order, asc(products.id)], limit: pageSize, offset: (p - 1) * pageSize });
@@ -235,6 +239,16 @@ export async function getStorefrontPage(q: ShopPageQuery = {}): Promise<ShopPage
   // Only when the page asked for ran past the end (a filter just changed) is a second read needed.
   const rows = page === wanted ? firstRows : await at(page);
   return { items: rows.map(toProduct), total, page, pageSize, pages };
+}
+
+/** The departments that actually have something on sale, A–Z — for the shop's department picker. */
+export async function getStorefrontDepartments(): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ department: products.department })
+    .from(products)
+    .where(and(eq(products.active, true), ne(products.department, "")))
+    .orderBy(asc(products.department));
+  return rows.map((r) => r.department).filter(Boolean);
 }
 
 /** The active products with these ids (a cart, a wishlist). Unknown or hidden ids are simply absent. */

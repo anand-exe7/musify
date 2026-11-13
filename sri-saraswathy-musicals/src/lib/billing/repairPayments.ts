@@ -8,15 +8,17 @@
  *
  * Pure functions — shared by the browser (ticket page) and the server (API validation).
  */
-export const REPAIR_PAY_MODES = ["CASH", "UPI", "CARD", "BANK", "OTHER"] as const;
+export const REPAIR_PAY_MODES = ["CASH", "CARD", "UPI"] as const;
 export type RepairPayMode = (typeof REPAIR_PAY_MODES)[number];
 
 export const PAY_MODE_LABEL: Record<string, string> = {
   CASH: "Cash",
-  UPI: "GPay / UPI",
   CARD: "Card",
+  UPI: "UPI",
+  // Retired modes — no longer offered, kept so older rows still print a readable label.
   BANK: "Bank transfer",
   OTHER: "Other",
+  CREDIT: "On credit (not paid)",
 };
 
 export interface RepairPayment {

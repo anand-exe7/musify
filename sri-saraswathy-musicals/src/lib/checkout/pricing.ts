@@ -18,7 +18,7 @@ import { variantKey as keyOf, variantLabel } from "@/lib/catalog/variants";
 import { evaluateCoupon } from "@/lib/checkout/coupon";
 import { taxLines } from "@/lib/gst/inclusive";
 import { isIntraSupply } from "@/lib/gst/place-of-supply";
-import { variantStockAt, isBranch, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
+import { variantStockAt, isBranch, branchLabel, BRANCH_KEYS, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
 
 /** A delivery method is whatever the admin has set up — its id, not a fixed enum. */
 export type DeliveryMethod = string;
@@ -99,7 +99,14 @@ export async function priceOrder(
   shipState = "",
   opts: { couponCode?: string | null; branch?: Branch } = {},
 ): Promise<PricedOrder> {
-  const branch: Branch = isBranch(opts.branch) ? opts.branch : DEFAULT_BRANCH;
+  /**
+   * A shop is only picked at checkout. Until then the cart is priced without one, and a line counts as
+   * short only when NO branch can supply it — stock moves between the three shops, so a piece sitting in
+   * Ashok Nagar is still a piece we can sell. Once a branch IS named (checkout, order placement), the
+   * check goes back to that one branch, because that is where the goods are actually taken out of stock.
+   */
+  const branchChosen = isBranch(opts.branch);
+  const branch: Branch = branchChosen ? (opts.branch as Branch) : DEFAULT_BRANCH;
 
   const wanted = (rawItems || []).filter((i) => i && i.productId && Number(i.quantity) > 0);
   if (wanted.length === 0) throw new HttpError(400, "Cart is empty");
@@ -146,14 +153,14 @@ export async function priceOrder(
 
     if (variant?.disabled) issues.push({ kind: "variant", message: `${name}: that option is currently unavailable.` });
     if (variant) {
-      const onHand = variantStockAt(variant, branch);
+      const onHand = branchChosen
+        ? variantStockAt(variant, branch)
+        : BRANCH_KEYS.reduce((n, b) => n + variantStockAt(variant, b), 0);
       if (onHand < i.quantity) {
+        const where = branchChosen ? ` at ${branchLabel(branch)}` : "";
         issues.push({
           kind: "stock",
-          message:
-            onHand > 0
-              ? `${name}: only ${onHand} available at ${branch}.`
-              : `${name}: out of stock at ${branch}.`,
+          message: onHand > 0 ? `${name}: only ${onHand} available${where}.` : `${name}: out of stock${where}.`,
         });
       }
     }

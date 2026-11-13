@@ -72,6 +72,7 @@ function makeResource<T>(url: string, what: string) {
 
 const productsRes = makeResource<Product[]>("/api/products", "products");
 const categoriesRes = makeResource<CategoryItem[]>("/api/categories", "categories");
+const departmentsRes = makeResource<string[]>("/api/products?departments=true", "departments");
 const featuredRes = makeResource<Product[]>("/api/products?featured=true", "featured products");
 const bestSellerRes = makeResource<Product[]>("/api/products?bestSeller=true", "bestsellers");
 
@@ -83,6 +84,7 @@ export const fetchCategories = () => categoriesRes.load();
 export function invalidateCatalog() {
   productsRes.invalidate();
   categoriesRes.invalidate();
+  departmentsRes.invalidate();
   featuredRes.invalidate();
   bestSellerRes.invalidate();
   pageListeners.forEach((l) => l());
@@ -150,6 +152,12 @@ export function useCategories(): { categories: CategoryItem[]; loading: boolean;
   return { categories: data ?? [], loading, error, refresh };
 }
 
+/** Storefront departments — only the ones with something on sale. */
+export function useDepartments(): { departments: string[]; loading: boolean; error: string | null } {
+  const { data, loading, error } = useResource(departmentsRes);
+  return { departments: data ?? [], loading, error };
+}
+
 /** A single product by slug, from the cached list. */
 export function useProduct(slug: string): { product: Product | undefined; loading: boolean; error: string | null; refresh: () => void } {
   const { products, loading, error, refresh } = useProducts();
@@ -160,6 +168,7 @@ export function useProduct(slug: string): { product: Product | undefined; loadin
 
 export interface ShopQuery {
   category: string;
+  department: string;
   origin: string;
   /** Highest price, in paise. */
   maxPrice: number;
@@ -203,6 +212,7 @@ export function useProductPage(q: ShopQuery, opts: { skip?: boolean } = {}): { d
     const query = JSON.parse(key) as ShopQuery;
     const sp = new URLSearchParams({ page: String(query.page), pageSize: String(query.pageSize), sort: query.sort });
     if (query.category && query.category !== "all") sp.set("category", query.category);
+    if (query.department && query.department !== "all") sp.set("department", query.department);
     if (query.origin && query.origin !== "all") sp.set("origin", query.origin);
     if (query.maxPrice > 0) sp.set("maxPrice", String(query.maxPrice));
     if (query.q && query.q.trim()) sp.set("q", query.q.trim());

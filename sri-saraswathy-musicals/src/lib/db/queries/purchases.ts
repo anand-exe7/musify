@@ -31,7 +31,8 @@ import { createInward, validateInwardBatch, type InwardBatchLine } from "./stock
 import { definedOnly, row, rows } from "./_util";
 
 export type PurchasePaymentMode = "" | "CASH" | "UPI" | "CARD" | "BANK" | "OTHER" | "CREDIT";
-const PAYMENT_MODES = ["", "CASH", "UPI", "CARD", "BANK", "OTHER", "CREDIT"] as const;
+// Accepts the retired BANK/OTHER too, so editing an old bill that still carries one does not fail.
+const PAYMENT_MODES = ["", "CASH", "CARD", "UPI", "CREDIT", "BANK", "OTHER"] as const;
 
 export interface PurchaseRecord {
   id: string;
@@ -854,7 +855,7 @@ export interface VendorPaymentInput {
   purchaseId?: string | null;
   branch: Branch;
   amount: number;
-  mode: "CASH" | "UPI" | "CARD" | "BANK" | "OTHER";
+  mode: "CASH" | "CARD" | "UPI";
   reference?: string;
   paidAt?: string;
   notes?: string;
@@ -864,7 +865,7 @@ export async function createVendorPayment(input: VendorPaymentInput, createdBy: 
   if (!input.vendorId) throw new PurchaseValidationError("Vendor is required.");
   if (!isBranch(input.branch)) throw new PurchaseValidationError("Unknown branch.");
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw new PurchaseValidationError("Amount must be a whole number of paise > 0.");
-  if (!["CASH", "UPI", "CARD", "BANK", "OTHER"].includes(input.mode)) throw new PurchaseValidationError("Unknown payment mode.");
+  if (!["CASH", "CARD", "UPI"].includes(input.mode)) throw new PurchaseValidationError("Payment mode must be Cash, Card or UPI.");
   assertPaidAt(input.paidAt);
   const [vendor] = await db.select({ id: vendors.id }).from(vendors).where(eq(vendors.id, input.vendorId)).limit(1);
   if (!vendor) throw new PurchaseValidationError("Unknown vendor.");

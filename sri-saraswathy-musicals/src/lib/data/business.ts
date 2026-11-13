@@ -17,17 +17,20 @@ export interface BranchInfo {
   whatsapp: string;
   // Google Maps share link for the branch.
   maps: string;
+  /** Exact text the embedded map is searched by. Set it when searching by shop name + street lands on the
+   *  wrong spot; falls back to "<shop name>, <street>, <area>, <zip>". */
+  mapQuery?: string;
   hours: string;
 }
 
 export const BUSINESS = {
   name: "Sri Saraswathy Musicals",
-  tagline: "Instruments, set up by hand · Since 1978",
+  tagline: "Instruments, set up by hand · Since 1965",
   // Registered Tamil Nadu GSTIN (covers every Chennai branch).
   gstin: "33BDVPP9993A1ZV",
   owner: "R Punitha",
-  // Primary WhatsApp line customers reach for inquiries & service (Vadapalani branch).
-  whatsapp: "919940638409",
+  // The single WhatsApp line every customer chat is directed to, whichever branch they pick.
+  whatsapp: "919840088111",
   email: "sshw1964@yahoo.co.in",
   website: "srisaraswathymusicals.in",
   /**
@@ -43,8 +46,8 @@ export const BUSINESS = {
       area: "Vadapalani",
       street: "70/1, 100 Feet Road",
       zip: "Chennai 600026",
-      phone: "+91 99406 38409",
-      whatsapp: "919940638409",
+      phone: "+91 9087 22 22 56",
+      whatsapp: "919840088111",
       maps: "https://maps.app.goo.gl/Z9e67TaCuMShY7iJA",
       hours: "Mon — Sat · 10:00 to 20:00",
     },
@@ -54,8 +57,8 @@ export const BUSINESS = {
       area: "Porur",
       street: "12, Trunk Road, Jaya Nagar",
       zip: "Chennai 600116",
-      phone: "+91 72001 78753",
-      whatsapp: "917200178753",
+      phone: "+91 9087 22 22 57",
+      whatsapp: "919840088111",
       maps: "https://maps.app.goo.gl/uhTzDhPpkhXfBYxW9",
       hours: "Mon — Sat · 10:00 to 20:00",
     },
@@ -63,12 +66,13 @@ export const BUSINESS = {
       key: "Branch 3",
       city: "Chennai",
       area: "Ashok Nagar",
-      street: "68A, 100 Feet Road",
+      street: "68A, 100 Feet Road, Zaffarkhanpet",
       zip: "Chennai 600083",
-      // TODO: replace with the Ashok Nagar branch's own numbers.
-      phone: "+91 99406 38409",
-      whatsapp: "919940638409",
-      maps: "https://www.google.com/maps/search/?api=1&query=Sri+Saraswathy+Musicals+68A+100+Feet+Road+Ashok+Nagar+Chennai+600083",
+      // The shop's own Google Maps place, so the pin lands on the door rather than on the road.
+      mapQuery: "13.0365631,80.2121385",
+      phone: "+91 9087 22 22 58",
+      whatsapp: "919840088111",
+      maps: "https://maps.app.goo.gl/FjmQfoo7EMBEDbod7",
       hours: "Mon — Sat · 10:00 to 20:00",
     },
   ] as BranchInfo[],
