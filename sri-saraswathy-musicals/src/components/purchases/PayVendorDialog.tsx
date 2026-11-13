@@ -43,7 +43,7 @@ export function PayVendorDialog({
 
   const [amount, setAmount] = useState(owed);
   const [paidBy, setPaidBy] = useState<string>(allBranches ? "each" : allowed[0] ?? "each");
-  const [mode, setMode] = useState<"CASH" | "UPI" | "CARD" | "BANK" | "OTHER">("CASH");
+  const [mode, setMode] = useState<"CASH" | "CARD" | "UPI">("CASH");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);

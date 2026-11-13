@@ -398,18 +398,6 @@ export function ProductModal({
 
               <Card title="How it is listed">
                 <div><label className={label}>Tagline</label><input value={draft.tagline ?? ""} onChange={(e) => set({ tagline: e.target.value })} className={field} placeholder="A short line shown under the name" /></div>
-                {/* The home page has exactly one featured slot: saving this on takes it off whatever
-                    product holds it now (enforced when saving, not just here). */}
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-ink-100 bg-white px-3 py-2.5">
-                  <input type="checkbox" checked={!!draft.featured} onChange={(e) => set({ featured: e.target.checked })} className="mt-0.5 h-4 w-4 shrink-0 accent-gold-500" />
-                  <span>
-                    <span className="block text-sm font-semibold text-ink-900">Show on the home page</span>
-                    <span className="block text-xs text-ink-500">
-                      The featured piece in the hero — photo, name and “Shop the piece”. Only one product at a
-                      time: switching this on takes it off the product that has it now.
-                    </span>
-                  </span>
-                </label>
                 {/* The home page has room for exactly BESTSELLER_SLOTS of these, so the box goes
                     dead once they are taken rather than silently dropping one. */}
                 <label

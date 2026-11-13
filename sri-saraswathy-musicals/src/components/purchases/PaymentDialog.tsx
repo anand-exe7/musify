@@ -7,6 +7,7 @@ import { BranchPayTable, enteredPay, overBranches, overMessage, type BranchPayRo
 import { allocList, sumAlloc, type PaymentAlloc } from "@/lib/paymentAlloc";
 import { splitByWeights } from "@/lib/vendorPayPlan";
 import { receivingBranches, type PurchaseRow } from "./types";
+import { PAY_METHODS, PAY_LABEL } from "@/lib/paymentSplit";
 
 /** Record a part-payment against ONE purchase invoice, split across the branches that owe it. */
 export function PaymentDialog({
@@ -22,7 +23,7 @@ export function PaymentDialog({
   // Only a branch the stock went into can pay for it (and only one the user may act for).
   const receiving = receivingBranches(purchase);
   const options = receiving.filter((b) => allowed.includes(b));
-  const [mode, setMode] = useState<"CASH" | "UPI" | "CARD" | "BANK" | "OTHER">("CASH");
+  const [mode, setMode] = useState<"CASH" | "CARD" | "UPI">("CASH");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -78,7 +79,7 @@ export function PaymentDialog({
           <div>
             <label className={label}>Mode</label>
             <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className={field}>
-              {(["CASH", "UPI", "CARD", "BANK", "OTHER"] as const).map((m) => <option key={m} value={m}>{m}</option>)}
+              {PAY_METHODS.map((m) => <option key={m} value={m}>{PAY_LABEL[m]}</option>)}
             </select>
           </div>
           <div>

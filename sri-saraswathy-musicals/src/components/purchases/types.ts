@@ -32,7 +32,8 @@ export interface PurchaseRow {
   lines: { id: string; productName: string; variant: string; quantity: number; unitCost: number; gst: number; branch: string }[];
 }
 
-export const PAY_MODES = ["", "CASH", "UPI", "CARD", "BANK", "CREDIT", "OTHER"] as const;
+// "" = not paid yet, CREDIT = bought on credit. The money modes are Cash, Card, UPI only.
+export const PAY_MODES = ["", "CASH", "CARD", "UPI", "CREDIT"] as const;
 
 /** Branches a purchase put stock into (payments must come from one of them). */
 export function receivingBranches(p: Pick<PurchaseRow, "lines" | "openingBranch">): string[] {

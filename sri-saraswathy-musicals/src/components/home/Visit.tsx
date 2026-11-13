@@ -8,7 +8,7 @@ import { BUSINESS, type BranchInfo } from "@/lib/data/business";
 /** The embedded map for a branch — searched by shop name AND address, so it lands on the shop itself
  *  rather than the middle of the street. */
 function embedUrl(b: BranchInfo): string {
-  const q = encodeURIComponent(`${BUSINESS.name}, ${b.street}, ${b.area}, ${b.zip}`);
+  const q = encodeURIComponent(b.mapQuery ?? `${BUSINESS.name}, ${b.street}, ${b.area}, ${b.zip}`);
   return `https://www.google.com/maps?q=${q}&output=embed`;
 }
 
@@ -27,6 +27,16 @@ const branches = BUSINESS.branches.map((b) => ({
 export function Visit() {
   const [active, setActive] = useState<string>(branches[0].id);
   const activeBranch = branches.find((b) => b.id === active)!;
+  /**
+   * The map starts inert. An embedded Google map grabs the wheel to zoom itself, which fights the page's
+   * smooth scrolling and makes the whole section feel like it is dragging; it only takes the wheel once
+   * the visitor deliberately clicks into it. Switching branch parks it again.
+   */
+  const [mapLive, setMapLive] = useState(false);
+  const pickBranch = (id: string) => {
+    setActive(id);
+    setMapLive(false);
+  };
 
   return (
     <section id="visit" className="py-14 md:py-20">
@@ -69,7 +79,7 @@ export function Visit() {
               return (
                 <button
                   key={b.id}
-                  onClick={() => setActive(b.id)}
+                  onClick={() => pickBranch(b.id)}
                   className={`group block w-full rounded-2xl border p-5 text-left transition-all md:p-6 ${
                     isActive
                       ? "border-gold-500 bg-ink-900 text-ivory-100 shadow-lg"
@@ -158,17 +168,31 @@ export function Visit() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
             className="relative overflow-hidden rounded-2xl border border-ink-100 bg-ink-100"
-            style={{ minHeight: "420px" }}
+            style={{ minHeight: "420px", contain: "paint" }}
           >
             <iframe
               key={activeBranch.map}
               title={`Map of ${activeBranch.city}`}
               src={activeBranch.map}
-              className="absolute inset-0 h-full w-full"
+              className={`absolute inset-0 h-full w-full ${mapLive ? "" : "pointer-events-none"}`}
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
-              style={{ border: 0, filter: "grayscale(0.35) contrast(1.05)" }}
+              style={{ border: 0 }}
             />
+
+            {/* Tap once to hand the map the wheel; until then the page scrolls past it. */}
+            {!mapLive && (
+              <button
+                type="button"
+                onClick={() => setMapLive(true)}
+                aria-label={`Activate the ${activeBranch.branch} map`}
+                className="group absolute inset-0 z-[5] grid place-items-center bg-transparent"
+              >
+                <span className="rounded-full bg-ivory-50/95 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-700 opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  Click to move the map
+                </span>
+              </button>
+            )}
 
             {/* Overlay chip with the address */}
             <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-[280px] rounded-2xl border border-gold-400 bg-ivory-50/95 p-4 shadow-lg backdrop-blur-sm">

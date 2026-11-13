@@ -25,7 +25,7 @@ export function Footer() {
           <div className="md:col-span-2">
             <Logo variant="light" size="md" />
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-ivory-100/70">
-              Instruments, set up by hand, delivered by the people who set them up. Since 1978.
+              Instruments, set up by hand, delivered by the people who set them up. Since 1965.
             </p>
             <div className="mt-6 space-y-2 text-xs uppercase tracking-[0.2em] text-ivory-100/50">
               {BUSINESS.branches.map((b) => (

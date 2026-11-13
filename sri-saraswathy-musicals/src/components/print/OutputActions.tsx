@@ -5,6 +5,7 @@ import { Printer, Download, MessageCircle, ChevronDown, Receipt, FileText, Loade
 import { ThermalReceipt, type ThermalWidth } from "@/components/print/ThermalReceipt";
 import { BUSINESS } from "@/lib/data/business";
 import { docWhatsAppText, type PrintDoc } from "@/lib/print/doc";
+import { printElement } from "@/lib/print/isolate";
 import { cn } from "@/lib/utils";
 import { waUrl } from "@/lib/whatsapp";
 
@@ -14,51 +15,12 @@ export const THERMAL_ROOT = "thermal-print-root";
 const noopSubscribe = () => () => {};
 
 /**
- * Print only the element `#rootId` (a direct child of <body>) on a page of the given size.
- *
- * Everything else leaves the print layout, and any other `@page` rule on the page (e.g. the A4 rule that ships with
- * the invoice sheet) is switched off for the duration — otherwise the browser keeps the A4 sheet size and the
- * 80 mm receipt prints in the middle of an A4 page. The rule is appended last in <body> so it also wins on order.
+ * Print only `#rootId` on a page of the given size. See `@/lib/print/isolate` — everything off the path to the
+ * sheet leaves the print layout, and any other `@page` rule on the page is switched off for the duration
+ * (otherwise an 80 mm receipt prints in the middle of an A4 sheet).
  */
 export function printIsolated(rootId: string, page: string, mode: "thermal" | "a4") {
-  const root = document.getElementById(rootId);
-  if (!root) return;
-  const muted: HTMLStyleElement[] = [];
-  for (const el of Array.from(document.querySelectorAll("style"))) {
-    if (el.textContent?.includes("@page") && el.media !== "not print") {
-      el.dataset.prevMedia = el.media;
-      el.media = "not print";
-      muted.push(el);
-    }
-  }
-  const style = document.createElement("style");
-  style.setAttribute("data-isolated-print", mode);
-  style.textContent = `
-@media print {
-  html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
-  body > *:not(#${rootId}) { display: none !important; }
-  #${rootId} { display: block !important; position: static !important; left: auto !important; top: auto !important; visibility: visible !important; }
-  #${rootId} * { visibility: visible !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  @page { ${page} }
-}`;
-  document.body.appendChild(style);
-  document.documentElement.dataset.printMode = mode;
-  let done = false;
-  const cleanup = () => {
-    if (done) return;
-    done = true;
-    style.remove();
-    for (const el of muted) {
-      el.media = el.dataset.prevMedia ?? "";
-      delete el.dataset.prevMedia;
-    }
-    delete document.documentElement.dataset.printMode;
-    window.removeEventListener("afterprint", cleanup);
-  };
-  window.addEventListener("afterprint", cleanup);
-  window.print();
-  // Some mobile browsers never fire afterprint.
-  setTimeout(cleanup, 60_000);
+  printElement(rootId, page, mode);
 }
 
 /** Thermal: roll width × the receipt's own height, no margins, so the printer cuts right after the receipt. */
@@ -109,7 +71,9 @@ export async function downloadSheetPdf(targetId: string, fileName: string): Prom
         width: `${A4_WIDTH_PX}px`,
         maxWidth: `${A4_WIDTH_PX}px`,
         margin: "0",
-        // The page is the border; a rounded, shadowed card reads as a screenshot.
+        // The page is the border; a rounded, bordered, shadowed card reads as a screenshot of a
+        // sheet lying on a page rather than as the page itself.
+        border: "0",
         borderRadius: "0",
         boxShadow: "none",
       },
@@ -123,12 +87,20 @@ export async function downloadSheetPdf(targetId: string, fileName: string): Prom
   img.src = dataUrl;
   await img.decode();
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-  const margin = 8;
-  const pageW = 210 - margin * 2;
-  const pageH = 297 - margin * 2;
+  // Full bleed: the sheet already carries its own generous padding, so a second margin here is what
+  // made the invoice look like a smaller sheet resting on a blank page.
+  const margin = 0;
+  const pageW = 210;
+  const pageH = 297;
   const imgH = (img.height * pageW) / img.width;
+  /** How far past one page a bill may run and still be shrunk onto it rather than split. */
+  const FIT_LIMIT = 1.6;
   if (imgH <= pageH) {
     pdf.addImage(dataUrl, "JPEG", margin, margin, pageW, imgH);
+  } else if (imgH <= pageH * FIT_LIMIT) {
+    // A few lines over: scale it down onto one page instead of leaving an almost-empty second sheet.
+    const w = (pageW * pageH) / imgH;
+    pdf.addImage(dataUrl, "JPEG", (210 - w) / 2, 0, w, pageH);
   } else {
     // Slice the tall image into A4 pages.
     const slicePx = Math.floor((pageH * img.width) / pageW);
@@ -201,14 +173,8 @@ export function OutputActions({
     queryParam === "thermal80" || queryParam === "thermal58" || queryParam === "a4" || queryParam === "pdf" ? queryParam : null;
 
   const printA4 = useCallback(() => {
-    document.documentElement.dataset.printMode = "a4";
-    const cleanup = () => {
-      delete document.documentElement.dataset.printMode;
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    window.print();
-  }, []);
+    printElement(a4TargetId, "size: A4; margin: 8mm;", "a4");
+  }, [a4TargetId]);
 
   const pdf = useCallback(async () => {
     setBusy(true);
