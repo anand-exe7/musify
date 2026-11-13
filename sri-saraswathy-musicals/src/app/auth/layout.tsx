@@ -3,7 +3,7 @@ import { Logo } from "@/components/ui/Logo";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-ivory-50">
+    <div className="min-h-dvh bg-ivory-50">
       <header className="border-b border-ink-100 bg-ivory-50">
         <div className="container-page flex items-center justify-between py-4">
           <Logo size="sm" />
@@ -12,7 +12,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </Link>
         </div>
       </header>
-      <main className="flex min-h-[calc(100vh-72px)] items-center justify-center py-10">
+      <main className="flex min-h-[calc(100dvh-72px)] items-center justify-center py-10">
         {children}
       </main>
     </div>

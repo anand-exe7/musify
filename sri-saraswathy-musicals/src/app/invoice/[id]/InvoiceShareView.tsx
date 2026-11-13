@@ -26,7 +26,7 @@ export function InvoiceShareView({ invoice, payment, receipt }: { invoice: Invoi
   };
 
   return (
-    <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
+    <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
       <style>{TAX_INVOICE_PRINT_CSS}</style>
 
       {/* Toolbar (hidden on print) */}

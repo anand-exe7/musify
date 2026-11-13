@@ -243,7 +243,7 @@ export function AdminSidebar({
       {/* Desktop */}
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-ink-100 bg-ivory-50/95 backdrop-blur-sm lg:flex",
+          "sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-ink-100 bg-ivory-50/95 backdrop-blur-sm lg:flex",
           collapsed && "lg:hidden",
         )}
       >

@@ -64,9 +64,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#F4F1EA] text-ink-900">
+    <div className="flex min-h-dvh bg-[#F4F1EA] text-ink-900">
       <AdminSidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} collapsed={collapsed} />
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
         <AdminTopbar onMenu={onMenu} />
         <main className="flex-1">
           <div className={cn("w-full transition-all", collapsed && "mx-auto max-w-[1500px]")}>

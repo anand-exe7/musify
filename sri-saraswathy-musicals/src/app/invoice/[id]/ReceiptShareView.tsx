@@ -9,7 +9,7 @@ import type { PrintDoc } from "@/lib/print/doc";
 /** REP-02: the customer's share link for a part-paid repair — a payment receipt, not a tax invoice. */
 export function ReceiptShareView({ doc }: { doc: PrintDoc }) {
   return (
-    <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
+    <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
       <style>{TAX_INVOICE_PRINT_CSS}</style>
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">

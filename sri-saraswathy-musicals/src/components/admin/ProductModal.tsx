@@ -219,7 +219,7 @@ export function ProductModal({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="my-4 flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl bg-ivory-50 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="my-4 flex max-h-[92dvh] w-full max-w-5xl flex-col rounded-2xl bg-ivory-50 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* header + tabs */}
         <div className="shrink-0 border-b border-ink-100">
           <div className="flex items-center justify-between px-6 pt-5">

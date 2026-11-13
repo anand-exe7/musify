@@ -46,7 +46,7 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
   }
 
   return (
-    <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
+    <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
       <style>{TAX_INVOICE_PRINT_CSS}</style>
 
       {/* Toolbar. Two tiers rather than one wrapping row: where you are, then what you can do —
