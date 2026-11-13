@@ -235,11 +235,11 @@ export default function VendorBillsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           <Segmented label="Show" value={state.status} options={[["all", "All"], ["open", "To pay"], ["paid", "Paid"]] as const} onChange={(k) => set({ status: k })} />
-          <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">Dates</span>
-            <input type="date" value={state.from} max={state.to || undefined} onChange={(e) => set({ from: e.target.value })} aria-label="From date" className={cn(input, "h-9 w-[9.5rem] px-2.5 text-xs")} />
+            <input type="date" value={state.from} max={state.to || undefined} onChange={(e) => set({ from: e.target.value })} aria-label="From date" className={cn(input, "h-9 w-[9.5rem] max-w-full px-2.5 text-xs")} />
             <span className="text-ink-300">–</span>
-            <input type="date" value={state.to} min={state.from || undefined} onChange={(e) => set({ to: e.target.value })} aria-label="To date" className={cn(input, "h-9 w-[9.5rem] px-2.5 text-xs")} />
+            <input type="date" value={state.to} min={state.from || undefined} onChange={(e) => set({ to: e.target.value })} aria-label="To date" className={cn(input, "h-9 w-[9.5rem] max-w-full px-2.5 text-xs")} />
           </div>
           <select value={state.sort} onChange={(e) => set({ sort: e.target.value as Query["sort"] })} aria-label="Sort" className={cn(input, "h-9 text-xs")}>
             <option value="newest">Newest first</option>

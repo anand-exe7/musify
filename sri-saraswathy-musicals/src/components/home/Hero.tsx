@@ -11,13 +11,10 @@ import {
 } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { useRef } from "react";
-import { useFeatured } from "@/lib/client/catalog";
 
 export function Hero() {
   const sectionRef = useRef<HTMLElement | null>(null);
   const prefersReduced = useReducedMotion();
-  const { products } = useFeatured();
-  const featured = products[0];
 
   const { scrollYProgress } = useScroll({
     target: sectionRef,
@@ -56,10 +53,6 @@ export function Hero() {
   const wordX = useTransform(sx, R, [24, -24]);
   const wordMY = useTransform(sy, R, [14, -14]);
 
-  const cardX = useTransform(sx, R, [-30, 30]);
-  const cardMY = useTransform(sy, R, [-20, 20]);
-  const cardRX = useTransform(sy, R, [7, -7]);
-  const cardRY = useTransform(sx, R, [-9, 9]);
 
   const clefX = useTransform(sx, R, [-48, 48]);
   const clefY = useTransform(sy, R, [-30, 30]);
@@ -297,57 +290,6 @@ export function Hero() {
             </motion.div>
           </div>
         </div>
-
-        {/* The one featured piece — set in Admin → Inventory, where only one product can hold the flag.
-            Desktop only: on a phone the frosted card sat over the artwork and read as a smudge. */}
-        {featured && (
-          <div className="pointer-events-none absolute right-0 top-[46%] z-30 hidden w-[17rem] -translate-y-1/2 lg:block">
-            <motion.div
-              style={{
-                x: cardX,
-                y: cardMY,
-                rotateX: cardRX,
-                rotateY: cardRY,
-                transformPerspective: 900,
-              }}
-              className="will-change-transform"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.5 }}
-              >
-                <Link
-                  href={`/product/${featured.slug}`}
-                  className="group pointer-events-auto block overflow-hidden rounded-[1.6rem] border border-ivory-200/70 bg-ivory-50/85 p-3 shadow-[0_24px_60px_-24px_rgba(10,9,8,0.4)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_34px_70px_-24px_rgba(10,9,8,0.5)]"
-                >
-                  <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.1rem] bg-white">
-                    {featured.photo && (
-                      <Image
-                        src={featured.photo}
-                        alt={featured.name}
-                        fill
-                        unoptimized={featured.photo.startsWith("/api/")}
-                        sizes="272px"
-                        className="object-contain p-3 transition-transform duration-500 group-hover:scale-105"
-                      />
-                    )}
-                    <span className="absolute left-3 top-3 rounded-full bg-ink-900/85 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-gold-300">
-                      Featured
-                    </span>
-                  </div>
-                  <p className="mt-3 line-clamp-2 px-1 text-sm font-semibold leading-snug text-ink-900">
-                    {featured.name}
-                  </p>
-                  <span className="mt-3 flex items-center justify-center gap-2 rounded-full bg-ink-900 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-colors group-hover:bg-gold-500 group-hover:text-ink-900">
-                    Shop the piece
-                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-                  </span>
-                </Link>
-              </motion.div>
-            </motion.div>
-          </div>
-        )}
 
         {/* Scroll cue — desktop only */}
         <div className="pointer-events-none absolute bottom-16 right-1 z-40 hidden items-center gap-3 lg:flex lg:flex-col">

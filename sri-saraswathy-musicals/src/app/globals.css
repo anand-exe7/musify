@@ -91,6 +91,9 @@ address,
      never exceeds its box, and long unbroken strings wrap instead of widening. */
   img, svg, video, canvas, iframe { max-width: 100%; }
   button, input, select, textarea { min-width: 0; max-width: 100%; }
+  /* Grid items default to min-width:auto, which lets a wide child (table, pill
+     row) stretch an implicit track past the viewport. */
+  .grid > *, [class*="grid-cols-"] > * { min-width: 0; }
   h1, h2, h3, h4, h5, h6, p, li, label, td, th { overflow-wrap: break-word; }
 
   /* Number inputs — remove spinners */

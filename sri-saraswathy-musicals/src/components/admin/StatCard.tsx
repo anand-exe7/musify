@@ -31,7 +31,7 @@ export function StatCard({ label, value, change, hint, accent = "ink", index = 0
         accentClasses[accent],
       )}
     >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-500">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-500 sm:tracking-[0.22em]">{label}</p>
       <p className="mt-3 text-[28px] font-bold tabular-nums tracking-tight text-ink-900 md:text-[32px]">{value}</p>
       <div className="mt-3 flex items-center gap-2 text-xs">
         {change !== undefined && (

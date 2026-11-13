@@ -251,7 +251,7 @@ export default function InvoicesLedgerPage() {
       {/* Controls */}
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 ring-1 ring-ink-100">
+          <div className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl bg-ivory-50 p-1 ring-1 ring-ink-100">
             {filters.map((f) => (
               <button
                 key={f.key}
@@ -266,7 +266,7 @@ export default function InvoicesLedgerPage() {
             ))}
           </div>
           {/* LED-05: Paid / Pending / Cancelled status filter. */}
-          <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 ring-1 ring-ink-100">
+          <div className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl bg-ivory-50 p-1 ring-1 ring-ink-100">
             {statusFilters.map((f) => (
               <button
                 key={f.key}

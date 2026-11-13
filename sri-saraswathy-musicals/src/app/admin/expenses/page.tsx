@@ -338,7 +338,7 @@ export default function ExpensesPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* Ledger */}
-        <section>
+        <section className="min-w-0">
           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex flex-1 items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-3 py-2 focus-within:border-gold-500">
               <Search className="h-4 w-4 shrink-0 text-ink-400" />

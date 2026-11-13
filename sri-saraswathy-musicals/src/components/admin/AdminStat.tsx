@@ -59,14 +59,14 @@ export function AdminStat({ label, value, hint, accent = "ink", icon, change, cl
         onClick={() => setOpen(true)}
         title="Click for details"
         className={cn(
-          "group relative w-full min-w-0 overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 p-5 text-left",
+          "group relative w-full min-w-0 overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 p-3.5 text-left sm:p-5",
           "shadow-[0_1px_2px_rgba(10,9,8,0.03)] transition-all hover:-translate-y-0.5 hover:border-ink-200 hover:shadow-[0_8px_24px_-12px_rgba(10,9,8,0.18)] focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-500/40",
           className,
         )}
       >
         <div className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", a.bar)} />
-        <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.2em] text-ink-500">{label}</p>
+        <div className="flex items-start justify-between gap-2 sm:gap-3">
+          <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-500 sm:tracking-[0.2em]">{label}</p>
           {icon ? (
             <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-full", a.iconTone)}>{icon}</span>
           ) : (

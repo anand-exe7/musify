@@ -161,11 +161,11 @@ export default function CategoriesPage() {
       </div>
 
       {/* Which list */}
-      <div className="mb-5 flex w-fit items-center gap-1 rounded-xl bg-ink-900/[0.04] p-1">
-        <button onClick={() => switchKind("category")} className={cn("inline-flex h-9 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors", isCat ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>
+      <div className="mb-5 flex w-full items-center gap-1 rounded-xl sm:w-fit bg-ink-900/[0.04] p-1">
+        <button onClick={() => switchKind("category")} className={cn("inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm sm:flex-none sm:px-4 font-semibold transition-colors", isCat ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>
           <Tags className="h-4 w-4" /> Categories <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-bold", isCat ? "bg-ivory-50/20" : "bg-ink-900/10")}>{categories.length}</span>
         </button>
-        <button onClick={() => switchKind("department")} className={cn("inline-flex h-9 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors", !isCat ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>
+        <button onClick={() => switchKind("department")} className={cn("inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm sm:flex-none sm:px-4 font-semibold transition-colors", !isCat ? "bg-ink-900 text-ivory-50" : "text-ink-600 hover:text-ink-900")}>
           <Layers className="h-4 w-4" /> Departments <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-bold", !isCat ? "bg-ivory-50/20" : "bg-ink-900/10")}>{departments.length}</span>
         </button>
       </div>
