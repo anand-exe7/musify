@@ -6,7 +6,7 @@ import { MessageCircle, Phone, Mail, MapPin, CheckCircle2, ArrowRight, Send } fr
 import { useInquiry, genInquiryId, INQUIRY_TOPICS, type Inquiry as InquiryRecord } from "@/lib/store/inquiry";
 import { BUSINESS, waLink } from "@/lib/data/business";
 import { E } from "@/lib/whatsapp";
-import { useBranchContacts, whatsappFor, phoneFor } from "@/lib/client/branchContacts";
+import { useBranchContacts, phoneFor } from "@/lib/client/branchContacts";
 
 /**
  * Enquiry section embedded directly on the home page (id="inquiry"), so the
@@ -14,7 +14,8 @@ import { useBranchContacts, whatsappFor, phoneFor } from "@/lib/client/branchCon
  */
 export function Inquiry() {
   const addInquiry = useInquiry((s) => s.addInquiry);
-  // INQ-02: the inquiry goes to the WhatsApp number of the branch the customer picks (set on Admin → Branches).
+  // Printed phone numbers still come per branch from Admin → Branches; every WhatsApp chat, whichever
+  // branch the customer picks, is directed to the single line in BUSINESS.whatsapp.
   const contacts = useBranchContacts();
   const [done, setDone] = useState<InquiryRecord | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export function Inquiry() {
     addInquiry(inquiry);
     setDone(inquiry);
     if (openWhatsApp) {
-      window.open(waLink(whatsappFor(contacts, inquiry.branch), customerMessage(inquiry)), "_blank", "noopener,noreferrer");
+      window.open(waLink(BUSINESS.whatsapp, customerMessage(inquiry)), "_blank", "noopener,noreferrer");
     }
   };
 
@@ -88,7 +89,7 @@ export function Inquiry() {
               <p className="heading-serif mt-3 text-2xl text-ivory-50">We&apos;re on WhatsApp.</p>
               <p className="mt-2 text-sm text-ivory-100/70">Message us directly and we&apos;ll help you pick, price or repair the right instrument.</p>
               <a
-                href={waLink(whatsappFor(contacts, form.branch), `Hi ${BUSINESS.name}! I have an enquiry.`)}
+                href={waLink(BUSINESS.whatsapp, `Hi ${BUSINESS.name}! I have an enquiry.`)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#128C4B] px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"
@@ -126,7 +127,7 @@ export function Inquiry() {
                 </p>
                 <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
                   <a
-                    href={waLink(whatsappFor(contacts, done.branch), customerMessage(done))}
+                    href={waLink(BUSINESS.whatsapp, customerMessage(done))}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-full bg-[#128C4B] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#0f7a41]"

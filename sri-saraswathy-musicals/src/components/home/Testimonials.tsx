@@ -32,7 +32,7 @@ const voices = [
   },
   {
     quote:
-      "Ordered a mridangam from Mylapore, delivered to Bangalore in three days, already tuned to the room I recorded in. Uncommon service.",
+      "Ordered a mridangam from Vadapalani, delivered to Bangalore in three days, already tuned to the room I recorded in. Uncommon service.",
     name: "Anoushka Menon",
     role: "Percussionist · Bengaluru",
     avatar:

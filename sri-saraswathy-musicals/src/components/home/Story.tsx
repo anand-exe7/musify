@@ -3,10 +3,8 @@ import { motion } from "framer-motion";
 import { Quote } from "lucide-react";
 
 const stats = [
-  { n: "47", u: "years", label: "On the bench", note: "Since we opened in Mylapore, 1978." },
+  { n: "61", u: "years", label: "On the bench", note: "Since we opened in Mambalam, 1965." },
   { n: "4", u: "hours", label: "Per set-up", note: "Every new instrument passes through our workshop." },
-  { n: "312", u: "placed", label: "Concert placements", note: "Into orchestras, halls and private hands." },
-  { n: "12", u: "months", label: "Trial period", note: "Return any instrument within a year." },
 ];
 
 export function Story() {
@@ -36,7 +34,7 @@ export function Story() {
             <span>
               <span className="block text-base font-semibold text-ink-900">R. Krishnan Naidu</span>
               <span className="mt-0.5 block text-[11px] uppercase tracking-[0.2em] text-ink-400">
-                Head luthier · Est. 1978
+                Head luthier · Est. 1965
               </span>
             </span>
           </figcaption>
@@ -70,7 +68,7 @@ export function Story() {
         </motion.div>
 
         {/* Stats — each a card, so the number, its unit and the line under it read as one thing. */}
-        <div className="mt-12 grid grid-cols-2 gap-3 md:mt-16 md:grid-cols-4 md:gap-4">
+        <div className="mt-12 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-16 md:gap-4">
           {stats.map((s, i) => (
             <motion.div
               key={s.label}

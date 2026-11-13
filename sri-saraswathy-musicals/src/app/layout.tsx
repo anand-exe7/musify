@@ -19,7 +19,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Sri Saraswathy Musicals — Instruments, curated by hand.",
   description:
-    "A house for professional-grade musical instruments — Indian classical and Western. Set up by luthiers, delivered with care. Since 1978.",
+    "A house for professional-grade musical instruments — Indian classical and Western. Set up by luthiers, delivered with care. Since 1965.",
   keywords: ["musical instruments", "violin", "veena", "sitar", "guitar", "tabla", "Sri Saraswathy"],
 };
 

@@ -118,16 +118,19 @@ function NavPendingNote() {
   return pending ? <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gold-600">Opening…</span> : null;
 }
 
+/** The original logotype, left-aligned and on nothing — no chip, no ring, no wordmark beside it. */
 function Brand() {
   return (
-    <div className="flex items-center gap-3 px-5 py-5">
-      <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-ink-900 ring-1 ring-gold-500/40">
-        <Image src="/LOGO2.png" alt="" width={28} height={28} className="object-contain" />
-      </div>
-      <div className="min-w-0 leading-tight">
-        <p className="truncate text-[15px] font-bold tracking-tight text-ink-900">Saraswathy</p>
-        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-gold-600">Admin Suite</p>
-      </div>
+    <div className="px-5 py-5">
+      <Image
+        src="/Logo.png"
+        alt="Sri Saraswathy Musicals"
+        width={190}
+        height={94}
+        priority
+        className="object-contain object-left"
+        style={{ height: "44px", width: "auto" }}
+      />
     </div>
   );
 }

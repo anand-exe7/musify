@@ -95,7 +95,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
               </p>
               <p className="mt-1.5 text-[11px] italic text-ink-500">{BUSINESS.tagline}</p>
               <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.22em] text-gold-700">
-                {BUSINESS.branches.map((b) => b.area).join(" · ")} · Since 1978
+                {BUSINESS.branches.map((b) => b.area).join(" · ")} · Since 1965
               </p>
             </div>
           </div>

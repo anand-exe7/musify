@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import { printElement } from "@/lib/print/isolate";
 import { Download, Printer, TrendingUp, TrendingDown } from "lucide-react";
 import type { Expense } from "@/lib/store/expenses";
 import { buildExpenseReport, expenseReportRows, type Slice } from "@/lib/reports/expenses";
@@ -73,7 +74,7 @@ export function ExpenseReport({ expenses, periodLabel, branchName, revenue }: Pr
         </div>
         <div className="no-print flex flex-wrap gap-2">
           <button onClick={download} disabled={report.count === 0} className={btn}><Download className="h-4 w-4" /> Download CSV (Excel)</button>
-          <button onClick={() => window.print()} disabled={report.count === 0} className={btn}><Printer className="h-4 w-4" /> Print / Save PDF</button>
+          <button onClick={() => printElement("expense-report", "size: A4; margin: 10mm;")} disabled={report.count === 0} className={btn}><Printer className="h-4 w-4" /> Print / Save PDF</button>
         </div>
       </div>
 
