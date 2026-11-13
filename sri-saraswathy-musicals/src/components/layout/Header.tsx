@@ -467,7 +467,7 @@ export function Header() {
                 </button>
               </div>
 
-              <div className="max-h-[60vh] overflow-y-auto">
+              <div className="max-h-[60dvh] overflow-y-auto">
                 {search.trim() === "" && (
                   <div className="p-5">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-600">

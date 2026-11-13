@@ -54,7 +54,7 @@ export function AdminSidebar() {
       </div>
 
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-ink-100 bg-ivory-50 md:flex">
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-ink-100 bg-ivory-50 md:flex">
         <div className="border-b border-ink-100 px-4 py-5">
           <Logo size="sm" />
           <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-gold-600">Admin panel</p>

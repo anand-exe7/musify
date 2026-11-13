@@ -14,7 +14,7 @@ export const TAX_INVOICE_PRINT_CSS = `
 @media print {
   body * { visibility: hidden !important; }
   #invoice-sheet, #invoice-sheet * { visibility: visible !important; }
-  #invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; margin: 0; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+  #invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; min-height: 281mm; margin: 0; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
   @page { size: A4; margin: 8mm; }
 }
 `;
@@ -54,8 +54,14 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
   const branch = branchInfo(invoice.branch);
   const overall = invoice.discount ?? 0;
   const status = payment ? (payment.balance > 0 ? (payment.paid > 0 ? "part paid" : "pending") : "paid") : invoice.status;
-  const itemsTotal = invoice.items.reduce((n, l) => n + l.amount, 0);
-  const showDiscount = invoice.items.some((l) => (l.discount ?? 0) > 0);
+  /**
+   * Discounts are never itemised on the bill — a customer should not have to read a per-line
+   * discount column to see what they saved. The gross before any discount, the line discounts and
+   * the bill-level discount are added up and shown as ONE line in the totals block instead.
+   */
+  const grossTotal = invoice.items.reduce((n, l) => n + l.rate * l.qty, 0);
+  const lineDiscount = invoice.items.reduce((n, l) => n + (l.discount ?? 0), 0);
+  const discountTotal = lineDiscount + overall;
   const saved = invoice.items.reduce((n, l) => n + Math.max(0, Math.max(l.mrp ?? 0, l.rate) * l.qty - l.amount), 0) + overall;
   const docTitle = isBillOfSupply ? "Bill of Supply" : "Tax Invoice";
   // BIL-01: GST split-up — rate, CGST / SGST (or IGST) and total tax.
@@ -64,7 +70,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
   return (
     <div
       id="invoice-sheet"
-      className="relative mx-auto max-w-3xl overflow-hidden rounded-sm border border-ink-200 bg-white shadow-[0_2px_6px_rgba(10,9,8,0.06),_0_30px_60px_-30px_rgba(10,9,8,0.25)]"
+      className="relative mx-auto flex max-w-3xl flex-col overflow-hidden rounded-sm border border-ink-200 bg-white shadow-[0_2px_6px_rgba(10,9,8,0.06),_0_30px_60px_-30px_rgba(10,9,8,0.25)]"
     >
       {/* Decorative double-rule top band — reads formal, like a notarised doc. */}
       <div className="relative">
@@ -81,7 +87,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
       </div>
 
       <PrintFit />
-      <div className="relative p-7 md:p-11 print:p-6">
+      <div className="relative flex-1 p-7 md:p-11 print:p-6">
         {/* ─────────────────────────────────────────────────────────────
             Letterhead — logo + name on left, GSTIN block on right.
             ───────────────────────────────────────────────────────────── */}
@@ -174,7 +180,6 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                 <th className="border-r border-ink-800 px-3 text-right">MRP</th>
                 <th className="border-r border-ink-800 px-3 text-center">Qty</th>
                 <th className="border-r border-ink-800 px-3 text-right">Rate</th>
-                {showDiscount && <th className="border-r border-ink-800 px-3 text-right">Disc.</th>}
                 <th className="px-3 text-right">Amount (₹)</th>
               </tr>
             </thead>
@@ -195,16 +200,6 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                   <td className="border-r border-ink-100 px-3 text-right tabular-nums text-ink-500">{formatINR(Math.max(l.mrp ?? 0, l.rate))}</td>
                   <td className="border-r border-ink-100 px-3 text-center tabular-nums font-semibold text-ink-800">{l.qty}</td>
                   <td className="border-r border-ink-100 px-3 text-right tabular-nums text-ink-800">{formatINR(l.rate)}</td>
-                  {showDiscount && (
-                    <td className="border-r border-ink-100 px-3 text-right tabular-nums text-success">
-                      {l.discount ? (
-                        <>
-                          {formatINR(l.discount)}
-                          <span className="block text-[10px] text-ink-400">({+((l.discount / (l.rate * l.qty || 1)) * 100).toFixed(2)}%)</span>
-                        </>
-                      ) : "—"}
-                    </td>
-                  )}
                   <td className="px-3 text-right font-bold tabular-nums text-ink-900">{formatINR(l.amount)}</td>
                 </tr>
               ))}
@@ -264,13 +259,13 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
           </div>
           <div className="sm:col-span-2">
             <dl className="divide-y divide-ink-100 rounded border border-ink-200 text-[12px]">
-              {overall > 0 && (
+              {discountTotal > 0 && (
                 <>
-                  <Row dt="Items total" dd={formatINR(itemsTotal)} />
-                  <Row dt="Overall discount" dd={`- ${formatINR(overall)}`} ddClassName="text-success" />
+                  <Row dt="Items total" dd={formatINR(grossTotal)} />
+                  <Row dt="Discount applied" dd={`- ${formatINR(discountTotal)}`} ddClassName="text-success" />
                 </>
               )}
-              <Row dt={overall > 0 ? "Taxable value" : "Subtotal"} dd={formatINR(invoice.subtotal)} />
+              <Row dt={discountTotal > 0 ? "Taxable value" : "Subtotal"} dd={formatINR(invoice.subtotal)} />
               {!isBillOfSupply && (
                 intra ? (
                   <>

@@ -72,7 +72,7 @@ export function ProductCatalogModal({
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-ink-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
-      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl bg-ivory-50 shadow-xl sm:max-w-3xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-ivory-50 shadow-xl sm:max-w-3xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="border-b border-ink-100 p-4">
           <div className="flex items-center justify-between gap-3">

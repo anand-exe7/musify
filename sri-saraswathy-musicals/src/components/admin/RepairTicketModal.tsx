@@ -207,7 +207,7 @@ export function RepairTicketModal({ ticket, onClose }: { ticket: RepairTicket | 
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="max-h-[68vh] space-y-6 overflow-y-auto px-6 py-5">
+        <div className="max-h-[68dvh] space-y-6 overflow-y-auto px-6 py-5">
           {/* Customer */}
           <section>
             <SectionTitle icon={<UserIcon className="h-4 w-4" />}>Customer</SectionTitle>

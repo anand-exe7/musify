@@ -33,6 +33,8 @@ export function printThermal(width: ThermalWidth, rootId = THERMAL_ROOT) {
 
 /** A4's printable width in CSS pixels (210 mm at 96 dpi). */
 const A4_WIDTH_PX = 794;
+/** A4 height at the same 96 dpi, floored so one page's worth never rounds past 297mm. */
+const A4_HEIGHT_PX = Math.floor((A4_WIDTH_PX * 297) / 210);
 
 /**
  * Render `targetId` (the A4 sheet) to a multi-page A4 PDF and download it.
@@ -53,6 +55,9 @@ export async function downloadSheetPdf(targetId: string, fileName: string): Prom
   node.style.width = `${A4_WIDTH_PX}px`;
   node.style.maxWidth = `${A4_WIDTH_PX}px`;
   node.style.margin = "0 auto";
+  // A short bill still occupies a whole sheet of paper, so the closing band sits at the foot of the
+  // page rather than halfway down with blank paper under it.
+  node.style.minHeight = `${A4_HEIGHT_PX}px`;
 
   let dataUrl: string;
   try {
@@ -70,6 +75,7 @@ export async function downloadSheetPdf(targetId: string, fileName: string): Prom
       style: {
         width: `${A4_WIDTH_PX}px`,
         maxWidth: `${A4_WIDTH_PX}px`,
+        minHeight: `${A4_HEIGHT_PX}px`,
         margin: "0",
         // The page is the border; a rounded, bordered, shadowed card reads as a screenshot of a
         // sheet lying on a page rather than as the page itself.

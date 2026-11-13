@@ -118,7 +118,7 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
                 </button>
               </div>
 
-              <div className="max-h-[70vh] overflow-y-auto">
+              <div className="max-h-[70dvh] overflow-y-auto">
                 {count === 0 && (
                   <p className="px-4 py-10 text-center text-sm text-ink-400">You&apos;re all caught up 🎵</p>
                 )}

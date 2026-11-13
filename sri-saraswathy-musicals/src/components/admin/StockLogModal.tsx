@@ -74,7 +74,7 @@ export function StockLogModal({ onClose }: { onClose: () => void }) {
             {Object.entries(REASON_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
-        <div className="max-h-[60vh] overflow-auto">
+        <div className="max-h-[60dvh] overflow-auto">
           {error && <p className="p-6 text-sm text-danger">{error}</p>}
           {!error && rows === null && <p className="p-6 text-sm text-ink-400">Loading…</p>}
           {rows !== null && (
