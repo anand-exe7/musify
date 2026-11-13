@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SmoothScroll } from "@/components/SmoothScroll";
 import { Splash } from "@/components/Splash";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, SITE_KEYWORDS, organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 
 // One typeface across the whole storefront. Weight — not a different family —
 // carries the hierarchy: regular for body, semibold/bold/black for headings.
@@ -26,10 +28,21 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Sri Saraswathy Musicals — Instruments, curated by hand.",
-  description:
-    "A house for professional-grade musical instruments — Indian classical and Western. Set up by luthiers, delivered with care. Since 1965.",
-  keywords: ["musical instruments", "violin", "veena", "sitar", "guitar", "tabla", "Sri Saraswathy"],
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_TITLE, template: `%s | ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  keywords: SITE_KEYWORDS,
+  applicationName: SITE_NAME,
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "en_IN",
+    url: "/",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: { card: "summary_large_image", title: SITE_TITLE, description: SITE_DESCRIPTION },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large" } },
 };
 
 export default function RootLayout({
@@ -38,8 +51,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en-IN" className={inter.variable}>
       <body className="min-h-dvh bg-ivory-50 text-ink-900 antialiased">
+        <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
         <SmoothScroll />
         <Splash />
         {children}
