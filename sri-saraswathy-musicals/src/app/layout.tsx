@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { SmoothScroll } from "@/components/SmoothScroll";
@@ -16,6 +16,15 @@ const inter = Inter({
   display: "swap",
 });
 
+// Layout viewport = the device's real CSS width. `viewport-fit=cover` lets the
+// layout extend under notches; safe-area insets are applied where it matters.
+// Zoom is intentionally NOT restricted.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
   title: "Sri Saraswathy Musicals — Instruments, curated by hand.",
   description:
@@ -30,7 +39,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-ivory-50 text-ink-900 antialiased">
+      <body className="min-h-dvh bg-ivory-50 text-ink-900 antialiased">
         <SmoothScroll />
         <Splash />
         {children}

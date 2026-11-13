@@ -100,7 +100,7 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
   }
 
   return (
-    <div className="min-h-screen bg-ivory-100 p-5 md:p-8">
+    <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
       <style>{QUOTATION_PRINT_CSS}</style>
 
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">

@@ -803,7 +803,7 @@ export default function BillingPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 60, scale: 0.98 }}
               transition={{ type: "spring", stiffness: 280, damping: 28 }}
-              className="flex max-h-[88vh] w-full flex-col overflow-hidden rounded-t-3xl bg-ivory-50 shadow-2xl sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
+              className="flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-ivory-50 shadow-2xl sm:max-h-[85dvh] sm:max-w-3xl sm:rounded-2xl"
               role="dialog"
               aria-modal="true"
               aria-label="Product catalog"

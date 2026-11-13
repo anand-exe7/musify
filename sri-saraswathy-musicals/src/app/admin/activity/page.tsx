@@ -27,6 +27,8 @@ interface Item {
   tone: string;
   href: string;
   urgent?: boolean;
+  /** The source only knows the day, not the time — so say "Today", never "17 hrs ago". */
+  dayOnly?: boolean;
 }
 
 const KINDS: { key: Kind | "all"; label: string; icon: React.ReactNode }[] = [
@@ -55,6 +57,21 @@ function ago(ms: number): string {
   if (h < 24) return `${h} hr${h === 1 ? "" : "s"} ago`;
   const d = Math.round(h / 24);
   if (d < 30) return `${d} day${d === 1 ? "" : "s"} ago`;
+  return new Date(ms).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+}
+
+/**
+ * Orders are stored with a date and no clock time, so a bill taken this evening would otherwise read
+ * "17 hrs ago" — the distance from midnight. For those, say which day it was and nothing finer.
+ */
+function agoDay(ms: number): string {
+  if (!ms) return "";
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const days = Math.round((startOfToday.getTime() - new Date(ms).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days} days ago`;
   return new Date(ms).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
@@ -102,7 +119,7 @@ export default function ActivityPage() {
 
     for (const o of orderLatest) {
       out.push({
-        id: `order-${o.id}`, kind: "order", at: time(o.date),
+        id: `order-${o.id}`, kind: "order", at: time(o.date), dayOnly: true,
         title: o.customerName || "Online customer",
         sub: `${o.id} · ${branchLabel(o.branch)}`,
         badge: formatINR(o.total), tone: "bg-gold-100 text-gold-700",
@@ -231,7 +248,7 @@ export default function ActivityPage() {
                   </span>
                   <span className="shrink-0 text-right">
                     <span className={cn("block whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", i.tone)}>{i.badge}</span>
-                    {i.at > 0 && <span className="mt-0.5 block text-[10px] text-ink-400">{ago(i.at)}</span>}
+                    {i.at > 0 && <span className="mt-0.5 block text-[10px] text-ink-400">{i.dayOnly ? agoDay(i.at) : ago(i.at)}</span>}
                   </span>
                 </button>
               </li>

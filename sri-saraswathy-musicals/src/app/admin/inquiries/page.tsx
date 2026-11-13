@@ -139,7 +139,7 @@ export default function InquiriesPage() {
       {showAdd && (
         // Header and buttons stay put; only the form scrolls — so it always fits the screen (a sheet on phones).
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/40 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setShowAdd(false)}>
-          <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-ivory-50 shadow-xl sm:max-h-[88vh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-ivory-50 shadow-xl sm:max-h-[88dvh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
               <h3 className="text-lg font-bold text-ink-900">Add inquiry</h3>
               <button onClick={() => setShowAdd(false)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-lg text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>

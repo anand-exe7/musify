@@ -52,7 +52,6 @@ address,
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    overflow-x: hidden;
   }
 
   ::selection {
@@ -86,6 +85,13 @@ address,
     outline-offset: 2px;
     border-radius: 4px;
   }
+
+  /* Layout safety net: nothing may force its container wider than the space
+     it is given. Flex/grid children may shrink below their content width, media
+     never exceeds its box, and long unbroken strings wrap instead of widening. */
+  img, svg, video, canvas, iframe { max-width: 100%; }
+  button, input, select, textarea { min-width: 0; max-width: 100%; }
+  h1, h2, h3, h4, h5, h6, p, li, label, td, th { overflow-wrap: break-word; }
 
   /* Number inputs — remove spinners */
   input[type="number"]::-webkit-outer-spin-button,
@@ -141,15 +147,15 @@ address,
 
   /* Every control on the storefront is a pill; every panel is a soft rectangle. */
   .btn-gold {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-full bg-ink-900 px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-all hover:bg-gold-600 hover:text-ink-900 active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 min-h-11 max-w-full min-w-0 rounded-full bg-ink-900 px-5 py-3.5 text-center text-xs sm:px-6 font-semibold uppercase tracking-[0.2em] text-ivory-50 transition-all hover:bg-gold-600 hover:text-ink-900 active:scale-[0.98];
   }
 
   .btn-gold-solid {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-full bg-gold-400 px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:bg-gold-300 active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 min-h-11 max-w-full min-w-0 rounded-full bg-gold-400 px-5 py-3.5 text-center text-xs sm:px-6 font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:bg-gold-300 active:scale-[0.98];
   }
 
   .btn-ghost {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-full border border-ink-300/50 bg-transparent px-6 py-3.5 text-xs font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:border-gold-500 hover:text-gold-600 active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 min-h-11 max-w-full min-w-0 rounded-full border border-ink-300/50 bg-transparent px-5 py-3.5 text-center text-xs sm:px-6 font-semibold uppercase tracking-[0.2em] text-ink-900 transition-all hover:border-gold-500 hover:text-gold-600 active:scale-[0.98];
   }
 
   /* A panel: the one surface the storefront is built from. */
@@ -193,6 +199,25 @@ address,
 }
 
 @layer utilities {
+  /* Reusable action-group: buttons wrap, shrink, and go full-width when narrow. */
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .actions > * { min-width: 0; max-width: 100%; }
+  @media (max-width: 480px) {
+    .actions--stack > * { flex: 1 1 100%; width: 100%; }
+    .actions--grow > * { flex: 1 1 auto; }
+  }
+
+  /* Safe-area aware padding for fixed bars / sheets. */
+  .pb-safe { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0); }
+
   .text-balance { text-wrap: balance; }
   .text-pretty { text-wrap: pretty; }
 
@@ -281,7 +306,7 @@ address,
 
   /* Underline tab row. */
   .admin-tabs {
-    @apply flex gap-6 border-b border-ink-100;
+    @apply flex gap-4 overflow-x-auto border-b border-ink-100 sm:gap-6;
   }
   .admin-tab {
     @apply relative -mb-px border-b-2 border-transparent pb-3 text-sm font-semibold tracking-wide text-ink-400 transition-colors hover:text-ink-700;
@@ -300,7 +325,7 @@ address,
 
   /* Primary / secondary admin buttons — rounded, calmer than storefront. */
   .admin-btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex max-w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-center text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .admin-btn--gold {
     @apply bg-gold-500 text-ink-900 hover:bg-gold-400;

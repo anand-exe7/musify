@@ -370,7 +370,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
               exit={{ opacity: 0, y: 40 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-t-3xl border border-ink-100 bg-ivory-50 shadow-2xl sm:rounded-3xl"
+              className="max-h-[80dvh] w-full max-w-lg overflow-hidden rounded-t-3xl border border-ink-100 bg-ivory-50 shadow-2xl sm:rounded-3xl"
             >
               <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-5 py-4">
                 <div>
@@ -382,7 +382,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
                 </button>
               </div>
 
-              <ul className="max-h-[56vh] overflow-y-auto p-3">
+              <ul className="max-h-[56dvh] overflow-y-auto p-3">
                 {selectableVariants.map((v) => {
                   const left = v.stock ?? 0;
                   const isActive = activeVariant ? keyOf(v) === keyOf(activeVariant) : false;
