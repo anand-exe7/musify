@@ -68,9 +68,15 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
   const gs = gstSummary(invoice.items, invoice.cgst ?? 0, invoice.sgst ?? 0, invoice.igst ?? 0);
 
   return (
+    <>
+      {/* On a phone the invoice keeps its full printed layout and scrolls sideways, like a document viewer. */}
+      <p className="mx-auto mb-2 max-w-3xl text-center text-[11px] font-medium text-ink-400 md:hidden print:hidden">
+        Swipe sideways to see the full invoice →
+      </p>
+      <div className="-mx-5 overflow-x-auto px-5 py-2 md:mx-0 md:px-0 print:m-0 print:overflow-visible print:p-0">
     <div
       id="invoice-sheet"
-      className="relative mx-auto flex max-w-3xl flex-col overflow-hidden rounded-sm border border-ink-200 bg-white shadow-[0_2px_6px_rgba(10,9,8,0.06),_0_30px_60px_-30px_rgba(10,9,8,0.25)]"
+      className="relative mx-auto flex w-full min-w-[720px] max-w-3xl flex-col overflow-hidden rounded-sm border border-ink-200 bg-white shadow-[0_2px_6px_rgba(10,9,8,0.06),_0_30px_60px_-30px_rgba(10,9,8,0.25)]"
     >
       {/* Decorative double-rule top band — reads formal, like a notarised doc. */}
       <div className="relative">
@@ -346,6 +352,8 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
         <div className="h-2.5 w-full bg-gradient-to-r from-gold-500 via-gold-300 to-gold-500" />
       </div>
     </div>
+      </div>
+    </>
   );
 }
 

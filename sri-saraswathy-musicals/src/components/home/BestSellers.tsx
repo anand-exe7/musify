@@ -35,7 +35,7 @@ export function BestSellers() {
         </div>
 
         {loading && items.length === 0 ? (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
+          <div className="product-grid">
             {Array.from({ length: BESTSELLER_SLOTS }, (_, i) => (
               <div key={i} className="overflow-hidden rounded-2xl border border-ink-100">
                 <div className="aspect-square animate-pulse bg-ink-100/70" />
@@ -48,7 +48,7 @@ export function BestSellers() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
+          <div className="product-grid">
             {items.map((p, i) => (
               <motion.div
                 key={p.id}

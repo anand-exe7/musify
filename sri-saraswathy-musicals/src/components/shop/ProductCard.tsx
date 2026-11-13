@@ -51,81 +51,85 @@ export function ProductCard({ product: p, index = 0 }: Props) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-40px" }}
       transition={{ duration: 0.45, delay: (index % 4) * 0.05 }}
-      className="h-full"
+      className="pcard"
     >
       <Link
         href={`/product/${p.slug}`}
         className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 transition-all duration-300 hover:-translate-y-1 hover:border-gold-400 hover:shadow-card"
       >
         {/* Photo plate */}
-        <div className="relative aspect-square w-full overflow-hidden rounded-t-2xl bg-white">
+        <div className="relative aspect-square w-full overflow-hidden rounded-t-2xl border-b border-ink-100/70 bg-white">
           <ProductImage
             product={p}
             fit="contain"
-            className="relative h-full w-full overflow-hidden bg-white p-4 sm:p-6"
+            className="relative h-full w-full overflow-hidden bg-white p-3 sm:p-6"
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 320px"
             imageClassName="transition-transform duration-500 group-hover:scale-[1.06]"
           />
 
-          <div className="pointer-events-none absolute left-3 top-3 flex flex-col items-start gap-1.5">
-            {p.bestSeller && (
-              <span className="rounded-full bg-ink-900 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-gold-400">
-                Bestseller
-              </span>
-            )}
-            {p.new && (
-              <span className="rounded-full border border-gold-400 bg-ivory-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-gold-700">
-                New
-              </span>
-            )}
-            {off > 0 && (
-              <span className="rounded-full bg-success px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
-                {off}% off
-              </span>
-            )}
-          </div>
+          {(p.bestSeller || p.new) && (
+            <div className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1 sm:left-3 sm:top-3">
+              {p.bestSeller && (
+                <span className="rounded-full bg-ink-900 px-2 py-[3px] text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-gold-400">
+                  Bestseller
+                </span>
+              )}
+              {p.new && (
+                <span className="rounded-full border border-gold-400 bg-ivory-50 px-2 py-[3px] text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-gold-700">
+                  New
+                </span>
+              )}
+            </div>
+          )}
+
+          {off > 0 && (
+            <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-success px-2 py-[3px] text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-white sm:bottom-3 sm:left-3">
+              {off}% off
+            </span>
+          )}
 
           {soldOut && (
-            <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-ink-900/85 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-ivory-50">
+            <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-ink-900/85 px-2 py-[3px] text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-ivory-50 sm:right-3 sm:top-3">
               Sold out
             </span>
           )}
         </div>
 
         {/* Detail */}
-        <div className="flex flex-1 flex-col gap-3 p-4">
-          <div className="min-h-[3.5rem]">
-            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-gold-600">
+        <div className="flex flex-1 flex-col gap-2 p-3 sm:gap-3 sm:p-4">
+          <div>
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-600">
               {p.brand || p.category}
             </p>
-            <p className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug text-ink-900">{p.name}</p>
+            {/* Two lines reserved so every card in a row has the same name height. */}
+            <p className="mt-0.5 line-clamp-2 min-h-[2.5rem] text-[14px] font-semibold leading-5 text-ink-900 sm:text-[15px]">{p.name}</p>
           </div>
 
-          <div className="mt-auto flex items-end justify-between gap-2">
+          <div className="pcard__buy mt-auto">
+            {/* Three fixed lines (From / price / was-price) so the price sits at the same height on every card. */}
             <div className="min-w-0">
-              {selectable.length > 1 && (
-                <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-400">From</span>
-              )}
-              <p className="tabular text-lg font-bold leading-none text-ink-900 md:text-xl">
-                {formatINR(displayPrice)}
-              </p>
-              {off > 0 && (
-                <p className="tabular mt-1 text-[11px] text-ink-400 line-through">{formatINR(p.mrp)}</p>
+              <span className={cn("pcard__from block font-semibold uppercase tracking-[0.18em] text-ink-400", selectable.length > 1 ? "" : "invisible")}>From</span>
+              <p className="pcard__price pcard__price--now font-bold text-ink-900">{formatINR(displayPrice)}</p>
+              {off > 0 ? (
+                <p className="pcard__price pcard__price--was text-ink-400 line-through">{formatINR(p.mrp)}</p>
+              ) : (
+                <p className="pcard__price--was" aria-hidden="true" />
               )}
             </div>
             <button
               onClick={handleAdd}
               disabled={soldOut}
               className={cn(
-                "grid h-10 w-10 shrink-0 place-items-center rounded-full border transition-all",
+                "pcard__add",
                 added
                   ? "border-success bg-success text-white"
-                  : "border-ink-200 text-ink-700 hover:border-ink-900 hover:bg-ink-900 hover:text-gold-400",
-                soldOut && "cursor-not-allowed opacity-40 hover:border-ink-200 hover:bg-transparent hover:text-ink-700",
+                  : "border-ink-900 bg-ink-900 text-ivory-50 hover:border-gold-500 hover:bg-gold-500 hover:text-ink-900 active:scale-[0.97]",
+                soldOut && "cursor-not-allowed border-ink-200 bg-transparent text-ink-700 opacity-40 hover:border-ink-200 hover:bg-transparent hover:text-ink-700",
               )}
               aria-label={singleVariant ? `Add ${p.name} to cart` : `Choose an option for ${p.name}`}
             >
               {added ? <Check className="h-4 w-4" strokeWidth={3} /> : <ShoppingBag className="h-4 w-4" />}
+              <span className="pcard__add-label">{added ? "Added" : singleVariant ? "Add" : "Options"}</span>
             </button>
           </div>
         </div>

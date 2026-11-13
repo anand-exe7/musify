@@ -23,8 +23,8 @@ export function MobileNav() {
   useEffect(() => setMounted(true), []);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-100 bg-ivory-50/95 backdrop-blur-md safe-bottom md:hidden">
-      <div className="grid grid-cols-4">
+    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-100 bg-ivory-50/95 backdrop-blur-md safe-bottom md:hidden">
+      <div className="mx-auto grid max-w-xl grid-cols-4">
         {tabs.map((t) => {
           const active = t.href === "/" ? pathname === "/" : pathname?.startsWith(t.href);
           const Icon = t.icon;
@@ -35,7 +35,7 @@ export function MobileNav() {
               key={t.href}
               href={href}
               className={cn(
-                "relative flex flex-col items-center gap-1 py-3 text-[10px] uppercase tracking-[0.14em] transition-colors",
+                "relative flex min-h-[3.5rem] min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors active:bg-ink-900/[0.03]",
                 active ? "text-gold-600" : "text-ink-500",
               )}
             >
@@ -47,7 +47,7 @@ export function MobileNav() {
                   </span>
                 )}
               </span>
-              {t.label}
+              <span className="max-w-full truncate">{t.label}</span>
               {active && <span className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 bg-gold-500" />}
             </Link>
           );

@@ -46,6 +46,10 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
+  // Slides out of view while scrolling down, and back as soon as the user scrolls up.
+  const [hidden, setHidden] = useState(false);
+  const lastY = useRef(0);
+  const panelOpen = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [megaOpen, setMegaOpen] = useState(false);
@@ -68,7 +72,15 @@ export function Header() {
 
   useEffect(() => {
     setMounted(true);
-    const onScroll = () => setScrolled(window.scrollY > 40);
+    const onScroll = () => {
+      const y = Math.max(0, window.scrollY);
+      setScrolled(y > 40);
+      const dy = y - lastY.current;
+      if (y < 80 || panelOpen.current) setHidden(false);
+      else if (dy > 6) setHidden(true);
+      else if (dy < -6) setHidden(false);
+      if (Math.abs(dy) > 6) lastY.current = y;
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -81,6 +93,11 @@ export function Header() {
     setSearchOpen(false);
     setAccountOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    panelOpen.current = menuOpen || searchOpen || megaOpen || accountOpen;
+    if (panelOpen.current) setHidden(false);
+  }, [menuOpen, searchOpen, megaOpen, accountOpen]);
 
   // The body must not scroll behind a full-screen panel.
   useEffect(() => {
@@ -154,7 +171,8 @@ export function Header() {
     <>
       <header
         className={cn(
-          "fixed inset-x-0 top-0 z-40 h-20 border-b bg-ivory-100/85 backdrop-blur-md transition-shadow duration-300",
+          "fixed inset-x-0 top-0 z-40 h-20 border-b bg-ivory-100/85 backdrop-blur-md transition-[transform,box-shadow] duration-300",
+          hidden && "-translate-y-full",
           scrolled ? "border-ink-100 shadow-[0_8px_30px_-20px_rgba(10,9,8,0.5)]" : "border-ink-100/50",
         )}
       >

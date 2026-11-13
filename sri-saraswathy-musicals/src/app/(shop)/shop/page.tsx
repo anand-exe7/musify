@@ -104,7 +104,7 @@ function ShopContent() {
 
       {/* One toolbar: search, then categories, then sort. No origin dropdown and no price slider —
           they hid products without saying so, which is what made the shop look empty. */}
-      <div className="sticky top-20 z-20 -mx-4 mb-6 bg-[var(--page-bg)]/92 px-4 py-3 backdrop-blur-md md:static md:mx-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none">
+      <div className="mb-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <label className="relative flex-1">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
@@ -193,7 +193,7 @@ function ShopContent() {
       {/* Products grid */}
       <div ref={gridTop} className="scroll-mt-32" />
       {loading && !data ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6 lg:grid-cols-4" aria-busy="true">
+        <div className="product-grid" aria-busy="true">
           {Array.from({ length: PAGE_SIZE }, (_, i) => (
             <div key={i} className="overflow-hidden rounded-2xl border border-ink-100">
               <div className="aspect-square animate-pulse bg-ink-100/70" />
@@ -208,7 +208,7 @@ function ShopContent() {
       ) : (
         <div
           className={cn(
-            "grid grid-cols-2 gap-4 transition-opacity md:grid-cols-3 md:gap-6 lg:grid-cols-4",
+            "product-grid transition-opacity",
             loading && "opacity-50",
           )}
           aria-busy={loading}

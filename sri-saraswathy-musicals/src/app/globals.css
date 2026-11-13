@@ -201,6 +201,54 @@ address,
   }
 }
 
+@layer components {
+  /* Product grid: column count follows the room available, not the device.
+     --card-min is the narrowest a card may be before it drops a column; the
+     max() caps the grid at four columns so wide screens don't sprout tiny cards. */
+  .product-grid {
+    --gap: 0.75rem;
+    --card-min: 8.5rem;
+    display: grid;
+    gap: var(--gap);
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--card-min), calc((100% - 3 * var(--gap)) / 4))), 1fr));
+  }
+  /* Phones: always two cards across, whatever the width. */
+  @media (max-width: 639px) {
+    .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 640px) {
+    .product-grid { --gap: 1.25rem; --card-min: 12rem; }
+  }
+  @media (min-width: 1024px) {
+    .product-grid { --gap: 1.5rem; }
+  }
+
+  /* Product card: the card is a size container so the buy row can react to the
+     card's own width (a narrow card stacks price over a full-width button;
+     a roomy card puts a compact round button beside the price). */
+  .pcard { container-type: inline-size; height: 100%; }
+  .pcard__buy { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+  .pcard__price { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* Price scales with the card so it always fits on one line; never wraps. */
+  .pcard__price--now { font-size: clamp(14px, 10.5cqw, 18px); line-height: 1.2; }
+  .pcard__price--was { font-size: 11px; line-height: 14px; min-height: 14px; }
+  .pcard__from { font-size: 9px; line-height: 12px; min-height: 12px; }
+  .pcard__add {
+    display: inline-flex; width: 100%; height: 2.5rem; min-width: 0;
+    align-items: center; justify-content: center; gap: 0.4rem;
+    border-radius: 9999px; border: 1px solid; font-size: 0.6875rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; transition: all .2s;
+  }
+  .pcard__add-label { display: inline; }
+  @container (min-width: 14.5rem) {
+    .pcard__buy { flex-direction: row; align-items: flex-end; justify-content: space-between; gap: 0.5rem; }
+    .pcard__add { width: 2.5rem; flex-shrink: 0; padding: 0; }
+    .pcard__add-label { display: none; }
+  }
+}
+
 @layer utilities {
   /* Reusable action-group: buttons wrap, shrink, and go full-width when narrow. */
   .actions {
