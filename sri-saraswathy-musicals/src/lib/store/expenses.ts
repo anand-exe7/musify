@@ -2,8 +2,8 @@
 import { create } from "zustand";
 import { fetchJson, errMsg, readError } from "@/lib/client/api";
 
-export type PaymentMode = "CASH" | "UPI" | "CARD" | "BANK" | "OTHER";
-export const PAYMENT_MODES: PaymentMode[] = ["CASH", "UPI", "CARD", "BANK", "OTHER"];
+export type PaymentMode = "CASH" | "CARD" | "UPI";
+export const PAYMENT_MODES: PaymentMode[] = ["CASH", "CARD", "UPI"];
 
 /** Preset expense categories; custom ones can be typed in on the fly. */
 export const EXPENSE_CATEGORIES = [

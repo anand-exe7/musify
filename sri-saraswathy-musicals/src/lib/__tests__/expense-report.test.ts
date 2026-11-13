@@ -9,10 +9,10 @@ const exp = (over: Partial<Expense>): Expense => ({
 });
 
 const list = [
-  exp({ title: "Shop rent", category: "Rent", amount: 20_000_00, expenseDate: "2026-09-01", paymentMode: "BANK" }),
+  exp({ title: "Shop rent", category: "Rent", amount: 20_000_00, expenseDate: "2026-09-01", paymentMode: "CARD" }),
   exp({ title: "Power", category: "Electricity", amount: 3_000_00, expenseDate: "2026-10-03", branch: "Branch 2" }),
   exp({ title: "Auto", category: "Transport", amount: 500_00, expenseDate: "2026-10-05", paymentMode: "UPI" }),
-  exp({ title: "Rent Porur", category: "Rent", amount: 10_000_00, expenseDate: "2026-10-01", branch: "Branch 2", paymentMode: "BANK" }),
+  exp({ title: "Rent Porur", category: "Rent", amount: 10_000_00, expenseDate: "2026-10-01", branch: "Branch 2", paymentMode: "CARD" }),
 ];
 
 describe("buildExpenseReport", () => {
@@ -34,7 +34,7 @@ describe("buildExpenseReport", () => {
   });
 
   it("groups by payment mode and branch, and by month oldest first", () => {
-    expect(r.byPayment.map((s) => [s.key, s.amount])).toEqual([["BANK", 30_000_00], ["CASH", 3_000_00], ["UPI", 500_00]]);
+    expect(r.byPayment.map((s) => [s.key, s.amount])).toEqual([["CARD", 30_000_00], ["CASH", 3_000_00], ["UPI", 500_00]]);
     expect(r.byBranch.map((s) => [s.key, s.label, s.amount])).toEqual([
       ["Branch 1", "Vadapalani", 20_500_00], ["Branch 2", "Porur", 13_000_00],
     ]);

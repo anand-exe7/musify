@@ -46,7 +46,7 @@ const DEFAULTS: Scalars = {
   storePickup: true,
   lowStockAlerts: true,
   lowStockSound: true,
-  expenseDeductModes: ["CASH", "UPI", "CARD", "BANK", "OTHER"],
+  expenseDeductModes: ["CASH", "CARD", "UPI"],
   expenseCategories: [],
 };
 
