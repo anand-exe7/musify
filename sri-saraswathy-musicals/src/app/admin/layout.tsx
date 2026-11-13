@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import { AdminShell } from "@/components/admin/AdminShell";
 
@@ -10,6 +11,11 @@ const poppins = Poppins({
   variable: "--font-admin",
   display: "swap",
 });
+
+export const metadata: Metadata = {
+  title: "Admin",
+  robots: { index: false, follow: false },
+};
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
