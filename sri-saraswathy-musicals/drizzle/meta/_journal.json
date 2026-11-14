@@ -309,6 +309,20 @@
       "when": 1794491659775,
       "tag": "0043_empty_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794651776271,
+      "tag": "0044_site_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794651836271,
+      "tag": "0045_site_media_in_db",
+      "breakpoints": true
     }
   ]
 }
