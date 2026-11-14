@@ -27,6 +27,7 @@ import {
   index,
   primaryKey,
   uniqueIndex,
+  customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -713,6 +714,38 @@ export const inquiries = pgTable("inquiries", {
   check("inquiries_status_check", oneOf(t.status, INQUIRY_STATUSES)),
   check("inquiries_branch_check", oneOf(t.branch, INQUIRY_BRANCHES)),
 ]);
+
+/**
+ * Landing-page gallery (admin → Site Media). A row is the item's metadata; the file itself sits in
+ * `site_media_chunks`, cut into 2 MB pieces so each upload request stays under Vercel's 4.5 MB body
+ * cap. `version` bumps when a slot's file is replaced (it is part of the file's URL, so browsers and
+ * the CDN can cache it forever). `ready` is false while an upload is still arriving. Photos come
+ * before videos on the page; within a kind, `position` orders them.
+ */
+export const siteMedia = pgTable("site_media", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  contentType: text("content_type").notNull(),
+  size: integer("size").notNull(),
+  position: integer("position").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  ready: boolean("ready").notNull().default(false),
+  createdAt: text("created_at").notNull(),
+}, (t) => [
+  check("site_media_kind_check", oneOf(t.kind, ["image", "video"])),
+  index("site_media_kind_position_idx").on(t.kind, t.position),
+]);
+
+/** Postgres bytea; only ever touched through decode()/encode() SQL, so the TS side is just a string. */
+const bytea = customType<{ data: string; driverData: string }>({ dataType: () => "bytea" });
+
+export const siteMediaChunks = pgTable("site_media_chunks", {
+  mediaId: text("media_id").notNull().references(() => siteMedia.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  idx: integer("idx").notNull(),
+  /** Raw bytes (bytea). Written and read through decode()/encode() in the query module. */
+  data: bytea("data").notNull(),
+}, (t) => [primaryKey({ columns: [t.mediaId, t.version, t.idx] })]);
 
 /* ─────────────────────────  Settings (config)  ─────────────────────── */
 

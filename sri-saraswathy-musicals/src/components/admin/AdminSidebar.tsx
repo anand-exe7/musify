@@ -26,6 +26,7 @@ import {
   X,
   Loader2,
   Activity,
+  Clapperboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRepair, alertLevel } from "@/lib/store/repair";
@@ -89,6 +90,7 @@ const sections: Section[] = [
     items: [
       { href: "/admin/coupons", label: "Coupons", icon: Ticket },
       { href: "/admin/delivery", label: "Delivery", icon: Truck },
+      { href: "/admin/media", label: "Site Media", icon: Clapperboard },
       { href: "/admin/branches", label: "Branches", icon: Building2 },
       { href: "/admin/users", label: "Users", icon: Users },
     ],
