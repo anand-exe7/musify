@@ -12,13 +12,11 @@ import { useProductsByIds } from "@/lib/client/catalog";
 import { ProductImage } from "@/components/ui/ProductImage";
 import { findVariant, variantLabel, withVariantPhoto } from "@/lib/catalog/variants";
 import { formatINR } from "@/lib/utils";
-import { BUSINESS } from "@/lib/data/business";
 import { formatWeight } from "@/lib/delivery/types";
 import { ChevronRight, Check, Lock, MapPin, AlertCircle, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
 import type { UserAddress } from "@/types";
-import { BRANCH_KEYS, DEFAULT_BRANCH, branchLabel } from "@/lib/stock";
 
 const steps = ["Address", "Delivery", "Payment", "Review"];
 
@@ -63,7 +61,6 @@ export default function CheckoutPage() {
   const { byId, loading: productsLoading } = useProductsByIds(items.map((i) => i.productId));
   const user = useAuth((s) => s.user);
   const [step, setStep] = useState(0);
-  const [branchPick, setBranch] = useState<string | null>(null);
   // Razorpay by default; pay-on-delivery is always available so an order can be placed
   // even when the online window can't open.
   const payment = "card" as const;
@@ -182,25 +179,6 @@ export default function CheckoutPage() {
     [items, byId],
   );
 
-  // Which stores can supply the whole cart. A web order is fulfilled from ONE
-  // store, so a store is only offered as "available" when every line is in stock there.
-  const branchShort = useMemo(() => {
-    const out: Record<string, string[]> = Object.fromEntries(BRANCH_KEYS.map((b) => [b, [] as string[]]));
-    for (const i of cartItems) {
-      const have = i.variant?.stockByBranch;
-      if (!have) continue;
-      for (const b of BRANCH_KEYS) {
-        if ((have[b] ?? 0) < i.quantity) out[b].push(i.product.name);
-      }
-    }
-    return out;
-  }, [cartItems]);
-  // Until the shopper chooses, start on the first store that can fill the cart.
-  const branch: string =
-    branchPick ?? BRANCH_KEYS.find((b) => branchShort[b].length === 0) ?? DEFAULT_BRANCH;
-  // Other stores that could supply the whole cart if the chosen one cannot.
-  const altBranches = BRANCH_KEYS.filter((b) => b !== branch && branchShort[b].length === 0);
-
   // The one source of prices, tax, shipping and discounts: the server.
   const {
     quote,
@@ -212,7 +190,6 @@ export default function CheckoutPage() {
       items: cartItems.map((i) => ({ productId: i.productId, variantKey: i.variantKey, quantity: i.quantity })),
       delivery,
       shipState,
-      branch,
       couponCode,
     },
     mounted && !productsLoading && !placed,
@@ -269,7 +246,6 @@ export default function CheckoutPage() {
       delivery,
       payment,
       shipState,
-      branch,
       customerName: addr.name,
       phone: addr.phone,
       email: addr.email,
@@ -510,58 +486,6 @@ export default function CheckoutPage() {
                     Save this address to my profile for next time
                   </label>
                 )}
-                {/* An order ships from ONE store, so a store that can't supply the whole cart is
-                    named with what it is missing and simply can't be chosen. */}
-                <div className="md:col-span-2">
-                  <span className="field-label">Fulfilling branch</span>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {BUSINESS.branches.map((b) => {
-                      const missing = branchShort[b.key] ?? [];
-                      const canSupply = missing.length === 0;
-                      return (
-                        <button
-                          key={b.key}
-                          type="button"
-                          disabled={!canSupply}
-                          onClick={() => setBranch(b.key)}
-                          className={cn(
-                            "rounded-xl border p-3 text-left transition-colors",
-                            !canSupply
-                              ? "cursor-not-allowed border-ink-100 bg-ink-900/[0.02] opacity-70"
-                              : branch === b.key
-                                ? "border-gold-500 bg-gold-50/40"
-                                : "border-ink-200 hover:border-ink-300",
-                          )}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border-2",
-                                !canSupply ? "border-ink-200" : branch === b.key ? "border-gold-500" : "border-ink-300",
-                              )}
-                            >
-                              {canSupply && branch === b.key && <span className="h-1.5 w-1.5 rounded-full bg-gold-500" />}
-                            </span>
-                            <span className="truncate text-sm font-semibold text-ink-900">{b.area}</span>
-                          </span>
-                          <span className="mt-1 block text-[11px] text-ink-500">{b.city}</span>
-                          {!canSupply && (
-                            <span className="mt-1.5 block text-[11px] text-ink-500">
-                              No {missing.join(", ")} here
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <span className="mt-1.5 block text-[11px] text-ink-500">Your order is billed and dispatched from this store.</span>
-                  {altBranches.length === 0 && branchShort[branch]?.length > 0 && (
-                    <span className="mt-1.5 block text-[11px] font-medium text-danger">
-                      No single store has your whole cart. Reduce a quantity, or contact us and we&rsquo;ll move stock
-                      between stores for you.
-                    </span>
-                  )}
-                </div>
               </div>
               <p className="mt-3 text-xs text-ink-500">
                 You pick the delivery state on the next step — it sets both the courier charge and the tax.
@@ -667,7 +591,6 @@ export default function CheckoutPage() {
               <div className="mt-6 space-y-2 text-sm">
                 <p className="text-ink-500">Delivering to <span className="text-ink-900">{addr.name || "—"}, {addr.line1}, {addr.city} {addr.pincode}</span></p>
                 <p className="text-ink-500">Delivery <span className="text-ink-900">{quote?.deliveryName || "—"}{quote?.deliveryEta ? ` · ${quote.deliveryEta}` : ""}</span></p>
-                <p className="text-ink-500">Branch <span className="text-ink-900">{branchLabel(branch)}</span></p>
                 <p className="text-ink-500">Payment <span className="text-ink-900">Razorpay (online)</span></p>
               </div>
             </motion.div>

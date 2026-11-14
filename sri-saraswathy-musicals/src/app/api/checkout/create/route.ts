@@ -8,7 +8,7 @@ import { nextOrderId } from "@/lib/db/queries/orders";
 import { createRazorpayOrder, razorpayConfigured, razorpayKeyId } from "@/lib/payments/razorpay";
 import { sendOrderConfirmation } from "@/lib/email/resend";
 import { recordOrderInvoice } from "@/lib/billing/ledger";
-import { isBranch, DEFAULT_BRANCH, type Branch } from "@/lib/stock";
+import { DEFAULT_BRANCH } from "@/lib/stock";
 import { dispatchDeadline } from "@/lib/delivery/types";
 import type { Order } from "@/types";
 
@@ -20,7 +20,6 @@ interface CreateBody {
   couponCode?: string;
   payment: "upi" | "card";
   shipState?: string;
-  branch?: Branch;
   customerName?: string;
   phone?: string;
   email?: string;
@@ -36,10 +35,8 @@ interface CreateBody {
 export function POST(request: NextRequest) {
   return handle("user", async ({ user }) => {
     const body = await readJson<CreateBody>(request);
-    const branch: Branch = isBranch(body.branch) ? body.branch : DEFAULT_BRANCH;
     const priced = await priceOrder(body.items, body.delivery, body.shipState, {
       couponCode: body.couponCode,
-      branch,
     });
     // Anything the shopper could still fix (stale option, short stock, a coupon
     // that no longer applies) stops the order here — they are never charged a
@@ -72,7 +69,7 @@ export function POST(request: NextRequest) {
       phone,
       address,
       shipState: (body.shipState || "").trim(),
-      branch,
+      branch: DEFAULT_BRANCH, // placeholder: the branch that supplies the stock is set when the order is saved
       ...delivery,
       razorpayOrderId: rp.id,
     };

@@ -8,7 +8,6 @@ interface QuoteBody {
   items: CartLineInput[];
   delivery: DeliveryMethod;
   shipState?: string;
-  branch?: string;
   couponCode?: string;
 }
 
@@ -24,7 +23,6 @@ export function POST(request: NextRequest) {
     return ok(
       await priceOrder(body.items, body.delivery, body.shipState, {
         couponCode: body.couponCode,
-        branch: body.branch,
       }),
     );
   });

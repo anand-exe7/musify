@@ -61,7 +61,7 @@ export async function finalizePaidOrder(
     paymentMethod: instrument || "razorpay",
     paymentId,
     shipState: draft.shipState,
-    branch: draft.branch,
+    branch: draft.branch, // replaced by fulfilOrder with the branch that actually supplied the stock
     items: [], // filled from the priced lines by fulfilOrder
     subtotal: draft.subtotal,
     discount: draft.discount,
@@ -80,7 +80,7 @@ export async function finalizePaidOrder(
   // race has already put its stock back, so it just returns the winner's order.
   let saved: Order;
   try {
-    saved = await fulfilOrder(order, draft, draft.branch, { paid: true });
+    saved = await fulfilOrder(order, draft, { paid: true });
   } catch (err) {
     const winner = isUniqueViolation(err) ? await getOrderByPaymentId(paymentId) : undefined;
     if (!winner) throw err;
