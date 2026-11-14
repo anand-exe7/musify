@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, stockMovements, type ProductRow } from "@/lib/db/schema";
 import { HttpError } from "@/lib/api/errors";
-import { isBranch, type StockDelta, branchLabel } from "@/lib/stock";
+import { isBranch, type StockDelta, branchLabel, BRANCH_KEYS } from "@/lib/stock";
 import { bumpStock, selectProduct, setVariantPrice as setPrice } from "./variants";
 
 export { setPrice as setVariantPrice };
@@ -185,4 +185,91 @@ export async function takeStock(
     throw err;
   }
   return { undo, shortfalls };
+}
+
+export interface TakeAnywhereResult extends TakeStockResult {
+  /** The branch that supplied the most units — recorded on the order as the one that dispatches it. */
+  branch: string;
+}
+
+/**
+ * Take lines out of stock WITHOUT the shopper (or caller) naming a branch: each line comes from the first
+ * branch that holds all of it, or — when no single branch does — is drained from the branches holding the most.
+ * The web shop works this way, since customers don't pick a store; the total across the shops is what counts.
+ * All-or-nothing like `takeStock`; with `allowShort` (already paid) any unavoidable remainder clamps at zero.
+ */
+export async function takeStockAnywhere(
+  lines: StockLine[],
+  opts: Pick<StockWriteOptions, "allowShort"> = {},
+): Promise<TakeAnywhereResult> {
+  const done: { l: StockLine; branch: string; qty: number }[] = [];
+  const shortfalls: TakeStockResult["shortfalls"] = [];
+  const perBranch = new Map<string, number>();
+  const undo = async () => {
+    for (const d of done.splice(0)) {
+      try {
+        await bumpStock(d.l.productId, d.l.variantIndex, d.branch, d.qty, true);
+      } catch (err) {
+        console.error("[stock] failed to restore stock for", d.l, err);
+      }
+    }
+  };
+  try {
+    const todo = lines.filter((l) => l.quantity > 0);
+    const products = new Map<string, Awaited<ReturnType<typeof selectProduct>>>();
+    for (const id of new Set(todo.map((l) => l.productId))) products.set(id, await selectProduct(id));
+
+    // Decide where each line comes from, from the stock as it is now.
+    const plan: { l: StockLine; branch: string; qty: number; clamp: boolean }[] = [];
+    for (const l of todo) {
+      const prod = products.get(l.productId);
+      if (!prod) throw new HttpError(404, `Unknown product: ${l.productId}`);
+      const v = prod.variants[l.variantIndex];
+      if (!v) throw new HttpError(400, "Unknown variant on this product");
+      const have = (b: string) => v.stockByBranch[b] ?? 0;
+      const single = BRANCH_KEYS.find((b) => have(b) >= l.quantity);
+      if (single) { plan.push({ l, branch: single, qty: l.quantity, clamp: false }); continue; }
+      let need = l.quantity;
+      for (const b of [...BRANCH_KEYS].sort((a, c) => have(c) - have(a))) {
+        const take = Math.min(need, have(b));
+        if (take > 0) { plan.push({ l, branch: b, qty: take, clamp: false }); need -= take; }
+      }
+      if (need > 0) {
+        const total = BRANCH_KEYS.reduce((n, b) => n + have(b), 0);
+        if (!opts.allowShort) throw new HttpError(409, `${prod.name} — only ${total} in stock, ${l.quantity} needed`);
+        const top = [...BRANCH_KEYS].sort((a, c) => have(c) - have(a))[0];
+        plan.push({ l, branch: top, qty: need, clamp: true });
+        shortfalls.push({ ...l, onHand: total });
+      }
+    }
+
+    // Each write is atomic and guarded; if one is refused (stock moved in the meantime), the rest are put back.
+    const results = await Promise.allSettled(
+      plan.map((p) => bumpStock(p.l.productId, p.l.variantIndex, p.branch, -p.qty, p.clamp)),
+    );
+    results.forEach((res, i) => {
+      if (res.status === "fulfilled" && res.value) {
+        const p = plan[i];
+        const taken = p.clamp ? Math.min(p.qty, res.value.before) : p.qty;
+        if (taken > 0) {
+          done.push({ l: p.l, branch: p.branch, qty: taken });
+          perBranch.set(p.branch, (perBranch.get(p.branch) ?? 0) + taken);
+        }
+      }
+    });
+    for (let i = 0; i < plan.length; i++) {
+      const res = results[i];
+      if (res.status === "rejected") throw res.reason;
+      if (res.value === undefined) throw new HttpError(400, "Unknown variant on this product");
+      if (res.value === null) {
+        const name = products.get(plan[i].l.productId)?.name ?? plan[i].l.productId;
+        throw new HttpError(409, `${name} — someone just bought the last of it. Please refresh your cart.`);
+      }
+    }
+  } catch (err) {
+    await undo();
+    throw err;
+  }
+  const branch = [...perBranch.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? BRANCH_KEYS[0];
+  return { undo, shortfalls, branch };
 }

@@ -27,7 +27,7 @@ import { db } from "@/lib/db";
 import { products, orders, stockTransfers, vendors, variantStock } from "@/lib/db/schema";
 import { insertVariants, selectProduct } from "@/lib/db/queries/variants";
 import { eq } from "drizzle-orm";
-import { takeStock, adjustProductStock } from "@/lib/db/queries/stockOps";
+import { takeStock, takeStockAnywhere, adjustProductStock } from "@/lib/db/queries/stockOps";
 import { createTransfer, createTransferBatch } from "@/lib/db/queries/stockTransfers";
 import { createInwardBatch } from "@/lib/db/queries/stock";
 import { updateInventoryProduct } from "@/lib/db/queries/pos";
@@ -73,6 +73,41 @@ describe("takeStock undo", () => {
       ),
     ).rejects.toMatchObject({ status: 409 });
     expect(await stockOf("p-a", 0, "Branch 1")).toBe(3);
+  });
+});
+
+describe("takeStockAnywhere (web orders: the customer doesn't pick a branch)", () => {
+  it("takes the whole line from one branch when a single branch holds it", async () => {
+    await seed("p-any1", [v(1, 5)]);
+    const r = await takeStockAnywhere([{ productId: "p-any1", variantIndex: 0, quantity: 3 }]);
+    expect(await stockOf("p-any1", 0, "Branch 1")).toBe(1);
+    expect(await stockOf("p-any1", 0, "Branch 2")).toBe(2);
+    expect(r.branch).toBe("Branch 2");
+  });
+
+  it("splits a line across branches when no single branch has enough", async () => {
+    await seed("p-any2", [v(2, 3)]);
+    const r = await takeStockAnywhere([{ productId: "p-any2", variantIndex: 0, quantity: 5 }]);
+    expect(await stockOf("p-any2", 0, "Branch 1")).toBe(0);
+    expect(await stockOf("p-any2", 0, "Branch 2")).toBe(0);
+    await r.undo();
+    expect(await stockOf("p-any2", 0, "Branch 1")).toBe(2);
+    expect(await stockOf("p-any2", 0, "Branch 2")).toBe(3);
+  });
+
+  it("refuses (and changes nothing) when all branches together fall short", async () => {
+    await seed("p-any3", [v(2, 1)]);
+    await expect(takeStockAnywhere([{ productId: "p-any3", variantIndex: 0, quantity: 4 }])).rejects.toMatchObject({ status: 409 });
+    expect(await stockOf("p-any3", 0, "Branch 1")).toBe(2);
+    expect(await stockOf("p-any3", 0, "Branch 2")).toBe(1);
+  });
+
+  it("a paid order that oversold still records, clamped at zero", async () => {
+    await seed("p-any4", [v(2, 1)]);
+    const r = await takeStockAnywhere([{ productId: "p-any4", variantIndex: 0, quantity: 4 }], { allowShort: true });
+    expect(r.shortfalls).toHaveLength(1);
+    expect(await stockOf("p-any4", 0, "Branch 1")).toBe(0);
+    expect(await stockOf("p-any4", 0, "Branch 2")).toBe(0);
   });
 });
 

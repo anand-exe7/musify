@@ -49,7 +49,7 @@ export const BUSINESS = {
       phone: "+91 9087 22 22 56",
       whatsapp: "919840088111",
       maps: "https://maps.app.goo.gl/Z9e67TaCuMShY7iJA",
-      hours: "Mon — Sat · 10:00 to 20:00",
+      hours: "Mon — Sun · 10:00 to 20:00",
     },
     {
       key: "Branch 2",
@@ -60,7 +60,7 @@ export const BUSINESS = {
       phone: "+91 9087 22 22 57",
       whatsapp: "919840088111",
       maps: "https://maps.app.goo.gl/uhTzDhPpkhXfBYxW9",
-      hours: "Mon — Sat · 10:00 to 20:00",
+      hours: "Mon — Sun · 10:00 to 20:00",
     },
     {
       key: "Branch 3",
@@ -73,7 +73,7 @@ export const BUSINESS = {
       phone: "+91 9087 22 22 58",
       whatsapp: "919840088111",
       maps: "https://maps.app.goo.gl/FjmQfoo7EMBEDbod7",
-      hours: "Mon — Sat · 10:00 to 20:00",
+      hours: "Mon — Sun · 10:00 to 20:00",
     },
   ] as BranchInfo[],
 } as const;

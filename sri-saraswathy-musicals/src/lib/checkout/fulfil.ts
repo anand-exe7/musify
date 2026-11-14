@@ -1,6 +1,6 @@
 /**
- * Turn a priced order into a stored one: take the goods out of stock at the
- * fulfilling branch, use up the coupon, then insert the order — undoing the
+ * Turn a priced order into a stored one: take the goods out of stock (from whichever
+ * branches hold them — the customer doesn't choose one), use up the coupon, then insert the order — undoing the
  * earlier steps if a later one fails.
  *
  * `paid: true` is for orders whose money has already been collected (Razorpay
@@ -14,16 +14,14 @@ import { HttpError } from "@/lib/api/errors";
 import { getPricingCatalog } from "@/lib/db/queries/products";
 import { createOrder } from "@/lib/db/queries/orders";
 import { consumeCoupon, releaseCoupon } from "@/lib/db/queries/pos";
-import { takeStock, type StockLine } from "@/lib/db/queries/stockOps";
+import { takeStockAnywhere, type StockLine } from "@/lib/db/queries/stockOps";
 import { variantKey as keyOf } from "@/lib/catalog/variants";
 import { orderItemsOf, type PricedOrder } from "@/lib/checkout/pricing";
-import type { Branch } from "@/lib/stock";
 import type { Order } from "@/types";
 
 export async function fulfilOrder(
   order: Order,
   priced: Pick<PricedOrder, "items" | "couponCode">,
-  branch: Branch,
   opts: { paid: boolean },
 ): Promise<Order> {
   const catalog = new Map(
@@ -37,10 +35,10 @@ export async function fulfilOrder(
     if (idx >= 0) lines.push({ productId: it.productId, variantIndex: idx, quantity: it.quantity });
   }
 
-  const { undo, shortfalls } = await takeStock(lines, branch, { allowShort: opts.paid });
+  const { undo, shortfalls, branch } = await takeStockAnywhere(lines, { allowShort: opts.paid });
   for (const s of shortfalls) {
     console.error(
-      `[checkout] OVERSOLD ${s.productId} variant #${s.variantIndex} at ${branch}: ${s.quantity} sold, ${s.onHand} on hand (order ${order.id})`,
+      `[checkout] OVERSOLD ${s.productId} variant #${s.variantIndex}: ${s.quantity} sold, ${s.onHand} on hand across all branches (order ${order.id})`,
     );
   }
 
@@ -53,7 +51,7 @@ export async function fulfilOrder(
         console.error(`[checkout] coupon ${priced.couponCode} ran out before payment cleared — honouring it for ${order.id}`);
       }
     }
-    return await createOrder({ ...order, items: orderItemsOf(priced) });
+    return await createOrder({ ...order, branch, items: orderItemsOf(priced) });
   } catch (err) {
     if (couponUsed && priced.couponCode) await releaseCoupon(priced.couponCode).catch(() => {});
     await undo(); // paid or not, a sale that wasn't recorded must not keep the stock
