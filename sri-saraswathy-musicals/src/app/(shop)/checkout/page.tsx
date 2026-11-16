@@ -17,6 +17,7 @@ import { ChevronRight, Check, Lock, MapPin, AlertCircle, Scale } from "lucide-re
 import { cn } from "@/lib/utils";
 import { OrderCelebration } from "@/components/OrderCelebration";
 import type { UserAddress } from "@/types";
+import { toastError } from "@/lib/store/toast";
 
 const steps = ["Address", "Delivery", "Payment", "Review"];
 
@@ -277,7 +278,7 @@ export default function CheckoutPage() {
         throw new Error(data?.error || "Checkout failed");
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "We couldn't start your checkout. Please try again.");
+      toastError(err instanceof Error ? err.message : "We couldn't start your checkout. Please try again.");
       setPlacing(false);
       return;
     }
@@ -288,7 +289,7 @@ export default function CheckoutPage() {
     const RZP = (window as unknown as { Razorpay?: any }).Razorpay;
     if (!alive.current) return;
     if (!ready || !RZP) {
-      alert("Couldn't open the payment window. Check your connection and try again.");
+      toastError("Couldn't open the payment window. Check your connection and try again.");
       setStep(2);
       setPlacing(false);
       return;
@@ -322,7 +323,7 @@ export default function CheckoutPage() {
           if (!vr.ok) throw new Error(vd?.error || "Payment verification failed");
           finalize(vd.orderId);
         } catch (err) {
-          alert(
+          toastError(
             err instanceof Error
               ? err.message
               : "Payment couldn't be verified. If you were charged, contact us and we'll sort it out.",
@@ -335,7 +336,7 @@ export default function CheckoutPage() {
     });
     const onFailed = () => {
       rzp.off?.("payment.failed", onFailed);
-      alert("Payment failed. Please try another method.");
+      toastError("Payment failed. Please try another method.");
       if (alive.current) setPlacing(false);
     };
     rzp.on("payment.failed", onFailed);
@@ -611,19 +612,19 @@ export default function CheckoutPage() {
                   if (step === 0) {
                     const missing = !addr.name.trim() || !addr.phone.trim() || !addr.email.trim() || !addr.line1.trim() || !addr.city.trim() || !addr.pincode.trim();
                     if (missing) {
-                      alert("Please fill in name, phone, email, and full address before continuing — we need the email to send your order confirmation.");
+                      toastError("Please fill in name, phone, email, and full address before continuing — we need the email to send your order confirmation.");
                       return;
                     }
                     if (!/^\d{10}$/.test(addr.phone)) {
-                      alert("Please enter a valid 10-digit mobile number.");
+                      toastError("Please enter a valid 10-digit mobile number.");
                       return;
                     }
                     if (!/^\d{6}$/.test(addr.pincode)) {
-                      alert("Please enter a valid 6-digit PIN code.");
+                      toastError("Please enter a valid 6-digit PIN code.");
                       return;
                     }
                     if (!/^\S+@\S+\.\S+$/.test(addr.email.trim())) {
-                      alert("That email doesn't look right — please double-check it.");
+                      toastError("That email doesn't look right — please double-check it.");
                       return;
                     }
                     // Keep it for next time, if asked. Never blocks the order.

@@ -15,6 +15,8 @@ import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/Tax
 import { useBranchScope } from "@/lib/store/branch";
 import { AdminStat } from "@/components/admin/AdminStat";
 import { downloadXlsx, rupeesNum } from "@/lib/reports/excel";
+import { paidViaText, paidModesText } from "@/lib/paymentSplit";
+import { invoicePaymentSummary } from "@/lib/billing/invoicePayment";
 
 /** yyyy-mm-dd of an invoice's timestamp in the viewer's local time (so an evening bill stays on its day). */
 function localDay(iso: string): string {
@@ -168,7 +170,7 @@ export default function InvoicesLedgerPage() {
             branchLabel(v.branch),
             SOURCE_LABEL[v.source ?? "manual"] ?? "Manual",
             v.status,
-            v.paymentMode,
+            paidViaText(v.payments, v.paymentMode, formatINR),
             (v.items ?? []).map((l) => `${l.name} x ${l.qty}`).join("; "),
             rupeesNum(v.subtotal),
             rupeesNum(v.cgst ?? 0),
@@ -350,7 +352,9 @@ export default function InvoicesLedgerPage() {
                       {v.source === "web" ? "Online" : v.source === "pos" ? "In-store" : v.source === "service" ? "Service" : "Manual"}
                     </span>
                   </td>
-                  <td className="max-w-[10rem] truncate uppercase text-ink-600">{v.paymentMode}</td>
+                  {/* Modes only — "Cash + Card" — so the column reads at a glance. The amounts of a
+                      split are on the hover title, on the invoice itself and in the Excel export. */}
+                  <td className="max-w-[10rem] truncate uppercase text-ink-600" title={paidViaText(v.payments, v.paymentMode, formatINR)}>{paidModesText(v.payments, v.paymentMode)}</td>
                   <td className="max-w-[12rem]">
                     {v.deliveryMethod ? (
                       <>
@@ -370,10 +374,10 @@ export default function InvoicesLedgerPage() {
                       {/* LED-01: thermal / A4 / PDF print right here; WhatsApp sends from here. */}
                       <RowOutputMenu
                         href={`/admin/invoices/${v.id}`}
-                        doc={invoiceToDoc(v)}
+                        doc={invoiceToDoc(v, invoicePaymentSummary(v))}
                         phone={v.customerPhone}
                         shareLink={v.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(v.refId)}` : undefined}
-                        sheet={{ node: <TaxInvoiceSheet invoice={v} />, css: TAX_INVOICE_PRINT_CSS, id: "invoice-sheet" }}
+                        sheet={{ node: <TaxInvoiceSheet invoice={v} payment={invoicePaymentSummary(v)} />, css: TAX_INVOICE_PRINT_CSS, id: "invoice-sheet" }}
                         pdfName={`Invoice-${v.number}`}
                       />
                       {navPending && opening === v.id ? (

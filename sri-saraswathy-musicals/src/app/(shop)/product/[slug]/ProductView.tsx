@@ -246,7 +246,7 @@ export function ProductView({ params }: { params: Promise<{ slug: string }> }) {
             <div className="flex items-center gap-2 text-sm">
               <span className={`inline-block h-2 w-2 rounded-full ${variantStock > 0 ? "bg-success" : "bg-danger"}`} />
               {variantStock > 0 ? (
-                <span className="font-medium text-ink-800">In stock · ships in 2–3 days</span>
+                <span className="font-medium text-ink-800">In stock · ships in a few days</span>
               ) : (
                 <span className="font-medium text-danger">Currently unavailable</span>
               )}

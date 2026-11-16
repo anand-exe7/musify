@@ -8,6 +8,7 @@ import type { BranchProfile } from "@/lib/db/queries/branches";
 import { cn } from "@/lib/utils";
 import { toWhatsAppNumber } from "@/lib/data/business";
 import { invalidateBranchContacts } from "@/lib/client/branchContacts";
+import { toastError } from "@/lib/store/toast";
 
 export default function BranchesPage() {
   const isAdmin = useAuth((s) => s.isAdmin);
@@ -54,7 +55,7 @@ export default function BranchesPage() {
       setSavedId(b.id);
       setTimeout(() => setSavedId((s) => (s === b.id ? null : s)), 1800);
     } catch {
-      alert("Couldn't save the branch. Try again.");
+      toastError("Couldn't save the branch. Try again.");
     }
   };
 

@@ -9,7 +9,9 @@ import { formatPhone } from "@/lib/customers/phone";
 import { branchLabel } from "@/lib/stock";
 import { useAuth } from "@/lib/store/auth";
 import { formatINR, cn } from "@/lib/utils";
+import { paidViaText } from "@/lib/paymentSplit";
 import type { Invoice } from "@/types";
+import { toastError } from "@/lib/store/toast";
 
 interface CustomerRow {
   id: string;
@@ -80,7 +82,7 @@ function CustomerDetail({ id, fullAdmin }: { id: string; fullAdmin: boolean }) {
       ["Date", "Reference", "Tax invoice no.", "Branch", "Source", "Items", "Payment", "Status", "Total"],
       ...d.invoices.map((i) => [
         fmtDate(i.date), i.reference ?? "", i.number, branchLabel(i.branch), sourceLabel(i.source),
-        i.items.map((l) => `${l.name} × ${l.qty}`).join("; "), i.paymentMode, i.status, rupees(i.total),
+        i.items.map((l) => `${l.name} × ${l.qty}`).join("; "), paidViaText(i.payments, i.paymentMode, formatINR), i.status, rupees(i.total),
       ]),
     ]);
 
@@ -137,7 +139,7 @@ function CustomerDetail({ id, fullAdmin }: { id: string; fullAdmin: boolean }) {
                       {i.items.slice(0, 3).map((l, k) => <p key={k}>{l.name} <span className="font-semibold text-ink-500">× {l.qty}</span></p>)}
                       {i.items.length > 3 && <p className="text-ink-400">+ {i.items.length - 3} more</p>}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-xs uppercase text-ink-600">{i.paymentMode}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs uppercase text-ink-600">{paidViaText(i.payments, i.paymentMode, formatINR)}</td>
                     <td className="px-3 py-2.5"><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase", STATUS_TONE[i.status] ?? "bg-ink-100 text-ink-500")}>{i.status}</span></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink-900">{formatINR(i.total)}</td>
                     <td className="px-3 py-2.5 text-right">
@@ -195,7 +197,7 @@ export default function CustomersPage() {
         ...all.items.map((c) => [c.name, c.phone, c.gstin ?? "", fmtDate(c.createdAt), c.bills, rupees(c.total), fmtDate(c.lastPurchase)]),
       ]);
     } catch (e) {
-      alert(`Couldn't export: ${errMsg(e)}`);
+      toastError(`Couldn't export: ${errMsg(e)}`);
     } finally {
       setExporting(false);
     }

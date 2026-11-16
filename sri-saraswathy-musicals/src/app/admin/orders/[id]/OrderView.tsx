@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Ban, Check, Clock, ExternalLink, Loader2, Mail, MapPin, Package, Phone, Truck, Undo2 } from "lucide-react";
 import type { Order } from "@/types";
 import { cn, formatINR } from "@/lib/utils";
+import { modeText } from "@/lib/paymentSplit";
 import { branchLabel } from "@/lib/stock";
 import { daysUntil, formatWeight } from "@/lib/delivery/types";
 
@@ -160,7 +161,7 @@ export function OrderView({ order: initial, names, invoice }: {
               {(order.discount ?? 0) > 0 && <div className="flex justify-between text-success"><dt>Discount{order.couponCode ? ` (${order.couponCode})` : ""}</dt><dd className="tabular-nums">− {formatINR(order.discount ?? 0)}</dd></div>}
               <div className="flex justify-between text-ink-600"><dt>Shipping</dt><dd className="tabular-nums">{order.shipping === 0 ? "Free" : formatINR(order.shipping)}</dd></div>
               <div className="flex justify-between text-base font-bold text-ink-900"><dt>Total paid</dt><dd className="tabular-nums">{formatINR(order.total)}</dd></div>
-              <p className="text-[11px] text-ink-400">Includes {formatINR(order.gst)} GST · {order.paymentMethod || "Online payment"}{order.paymentId ? ` · ${order.paymentId}` : ""}</p>
+              <p className="text-[11px] text-ink-400">Includes {formatINR(order.gst)} GST · {modeText(order.paymentMethod) === "—" ? "Online payment" : modeText(order.paymentMethod)}{order.paymentId ? ` · ${order.paymentId}` : ""}</p>
             </dl>
           </section>
 

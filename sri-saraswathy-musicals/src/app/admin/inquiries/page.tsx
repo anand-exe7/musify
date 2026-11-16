@@ -21,6 +21,7 @@ import { PERIODS, periodBounds, type ReportPeriod } from "@/components/admin/Ser
 import { useBranchContacts } from "@/lib/client/branchContacts";
 import { useAuth } from "@/lib/store/auth";
 import Link from "next/link";
+import { toastError } from "@/lib/store/toast";
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -187,8 +188,8 @@ export default function InquiriesPage() {
             <div className="flex gap-2 border-t border-ink-100 px-5 py-4">
               <button onClick={() => setShowAdd(false)} className="flex-1 rounded-xl border border-ink-200 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
               <button onClick={() => {
-                if (!addForm.name.trim()) return alert("Enter the customer's name.");
-                if (!/^\d{10}$/.test(addForm.phone)) return alert("Enter a 10-digit mobile number.");
+                if (!addForm.name.trim()) return toastError("Enter the customer's name.");
+                if (!/^\d{10}$/.test(addForm.phone)) return toastError("Enter a 10-digit mobile number.");
                 addInquiry({
                   id: genInquiryId(),
                   createdAt: new Date().toISOString(),

@@ -22,6 +22,8 @@ import { AdminStat, StatModal } from "@/components/admin/AdminStat";
 import { Pager } from "@/components/ui/Pager";
 import { usePaged } from "@/lib/client/usePaged";
 import type { Invoice } from "@/types";
+import { REPORT_MODES, reportMode, paidViaText, modeSplit, type ReportMode } from "@/lib/paymentSplit";
+import { toastError } from "@/lib/store/toast";
 
 /** A sale is "GST" when it actually carried tax: POS bills honour their saved
  *  `gstEnabled` snapshot; web + service sales are always taxed. */
@@ -65,23 +67,18 @@ const TREND_SERIES = [
 ];
 const BRANCH_COLOR = ["#0A0908", "#C9A24B", "#2563EB", "#16A34A"];
 
-/** The only payment modes reported on, in the order they are always shown. */
-const REPORT_PAY_MODES = ["Cash", "Card", "UPI"] as const;
-type ReportPayMode = (typeof REPORT_PAY_MODES)[number];
+/** The payment modes reported on, in the order they are always shown: the counter's three, then the website's. */
+const REPORT_PAY_MODES = REPORT_MODES;
+type ReportPayMode = ReportMode;
 
 /**
- * ANA-01: bucket a free-text payment label into one of Cash / Card / UPI.
- * Anything else (a retired bank-transfer row, an online Razorpay collection) is not one of the three
- * modes the shop reports on, so it is left out of this split rather than shown as "Other".
+ * ANA-01: bucket a sale's payment label into one of Cash / Card / UPI / Online. Everything collected
+ * through the website reads as one "Online" mode — never the gateway's own word for it ("netbanking").
  */
 function paymentModeOf(label: string | undefined | null): ReportPayMode | null {
-  const s = (label || "").toLowerCase();
-  if (s.includes("cash")) return "Cash";
-  if (s.includes("card")) return "Card";
-  if (s.includes("upi") || s.includes("gpay") || s.includes("google pay") || s.includes("phonepe") || s.includes("paytm")) return "UPI";
-  return null;
+  return reportMode(label);
 }
-const PAYMODE_COLOR: Record<string, string> = { Cash: "#16A34A", Card: "#C9A24B", UPI: "#2563EB" };
+const PAYMODE_COLOR: Record<string, string> = { Cash: "#16A34A", Card: "#C9A24B", UPI: "#2563EB", Online: "#8B5CF6" };
 
 /** Re-export the shared stat tile under the local name used in this file. */
 const Stat = AdminStat;
@@ -168,21 +165,9 @@ export default function AnalyticsPage() {
       qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
     }));
     const topItems = [...revByItem.entries()].sort((a, b) => b[1] - a[1]);
-    // ANA-01: billed total split across Cash / Card / UPI, always in that order.
-    const payModeMap = new Map<string, number>(REPORT_PAY_MODES.map((k) => [k, 0]));
-    scoped.forEach((b) => {
-      // A split bill (cash + card…) is counted under each mode for its own amount.
-      if (b.payments && b.payments.length > 0) {
-        for (const p of b.payments) {
-          const k = paymentModeOf(p.method);
-          if (k) payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, p.amount));
-        }
-        return;
-      }
-      const k = paymentModeOf(b.payment);
-      if (k) payModeMap.set(k, (payModeMap.get(k) || 0) + Math.max(0, b.total));
-    });
-    const paymentModes: [string, number][] = REPORT_PAY_MODES.map((k) => [k, payModeMap.get(k) ?? 0]);
+    // ANA-01: billed total split across Cash / Card / UPI / Online, always in that order. A split
+    // bill counts under each of its modes; see `modeSplit`.
+    const paymentModes: [string, number][] = [...modeSplit(scoped).entries()];
     return {
       totalRevenue,
       paymentModes,
@@ -348,7 +333,7 @@ export default function AnalyticsPage() {
             ...scoped.map((b) => [
               new Date(b.createdAt).toLocaleDateString("en-IN"), b.id, b.customerName || "", b.phone || "", branchLabel(b.branch), b.source,
               b.items.map((i) => `${i.name} × ${i.qty}`).join("; "), b.items.reduce((n, i) => n + i.qty, 0),
-              rupeesNum(b.subtotal), rupeesNum(b.discount), rupeesNum(billGst(b)), rupeesNum(b.delivery || 0), rupeesNum(b.total), b.payment ?? "",
+              rupeesNum(b.subtotal), rupeesNum(b.discount), rupeesNum(billGst(b)), rupeesNum(b.delivery || 0), rupeesNum(b.total), paidViaText(b.payments, b.payment, formatINR),
             ]),
           ],
         },
@@ -362,7 +347,7 @@ export default function AnalyticsPage() {
         },
       ]);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't create the Excel file");
+      toastError(e instanceof Error ? e.message : "Couldn't create the Excel file");
     } finally {
       setExporting(false);
     }
@@ -657,7 +642,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* ── TODAY'S SALES ── */}
-      {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} rate={gstRate} />}
+      {tab === "today" && <TodayTab bills={bills} branch={branch} channel={channel} query={txnQuery} setQuery={setTxnQuery} rate={gstRate} billNet={billNet} billGst={billGst} />}
 
       {/* ── SALES REPORT ── */}
       {tab === "sales" && <SalesTab scoped={scoped} query={salesQuery} setQuery={setSalesQuery} billGst={billGst} rate={gstRate} />}
@@ -703,13 +688,29 @@ export default function AnalyticsPage() {
 }
 
 /* ── Today tab ── */
-function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: ReturnType<typeof usePOS.getState>["bills"]; branch: BranchFilter; channel: Source | "all"; query: string; setQuery: (v: string) => void; rate: number; }) {
+function TodayTab({ bills, branch, channel, query, setQuery, rate, billNet, billGst }: { bills: Bill[]; branch: BranchFilter; channel: Source | "all"; query: string; setQuery: (v: string) => void; rate: number; billNet: (b: Bill) => number; billGst: (b: Bill) => number; }) {
   const today = useMemo(() => filterBills(bills, { period: "today", branch, source: channel }), [bills, branch, channel]);
-  const goods = (b: (typeof today)[number]) => Math.max(0, b.subtotal - b.discount);
-  const rev = today.reduce((n, b) => n + extractGst(goods(b), rate).net, 0);
-  const gstColl = today.reduce((n, b) => n + extractGst(goods(b), rate).gst, 0);
+  // Same maths as the Revenue tab: a counter bill raised in Non-GST mode carries no tax, so it must
+  // not have the standard slab backed out of it here.
+  const rev = today.reduce((n, b) => n + billNet(b), 0);
+  const gstColl = today.reduce((n, b) => n + billGst(b), 0);
   const items = today.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
   const filtered = today.filter((b) => b.phone.includes(query.trim()));
+  // Today's best sellers, by the money they brought in (net of the bill's own tax).
+  const topToday = useMemo(() => {
+    const byItem = new Map<string, { qty: number; rev: number }>();
+    for (const b of today) {
+      const taxFactor = b.total > 0 ? Math.max(0, b.total - billGst(b)) / b.total : 1;
+      for (const i of b.items) {
+        const cur = byItem.get(i.name) ?? { qty: 0, rev: 0 };
+        cur.qty += i.qty;
+        cur.rev += Math.round(Math.max(0, i.price * i.qty - (i.discount ?? 0)) * taxFactor);
+        byItem.set(i.name, cur);
+      }
+    }
+    return [...byItem.entries()].sort((a, b) => b[1].rev - a[1].rev).slice(0, 5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -740,8 +741,25 @@ function TodayTab({ bills, branch, channel, query, setQuery, rate }: { bills: Re
           )}
         </Card>
         <div className="space-y-4">
-          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split <span className="font-normal text-ink-400">(net)</span></p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online", "service"] as const).map((s) => { const r = today.filter((b) => b.source === s).reduce((n, b) => n + extractGst(goods(b), rate).net, 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s}</span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
-          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Top Items</p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No items sold today.</p> : <p className="text-sm text-ink-500">{items} pcs across {today.length} bills</p>}</Card>
+          <Card><p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Channel Split <span className="font-normal text-ink-400">(net)</span></p>{today.length === 0 ? <p className="py-6 text-center text-sm text-ink-400">No sales today.</p> : (["offline", "online", "service"] as const).map((s) => { const list = today.filter((b) => b.source === s); const r = list.reduce((n, b) => n + billNet(b), 0); return <div key={s} className="mb-3 flex items-center justify-between text-xs"><span className="uppercase text-ink-500">{s === "offline" ? "In-store" : s} <span className="normal-case text-ink-400">· {list.length}</span></span><span className="font-bold tabular-nums">{formatINR(r)}</span></div>; })}</Card>
+          <Card>
+            <p className="mb-3 text-sm font-bold text-ink-900">Today&apos;s Top Items</p>
+            {today.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-400">No items sold today.</p>
+            ) : (
+              <>
+                <ol className="space-y-2 text-sm">
+                  {topToday.map(([name, v], i) => (
+                    <li key={name} className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-2 text-ink-700"><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-gold-100 text-[10px] font-bold text-gold-800">{i + 1}</span><span className="truncate">{name} <span className="text-ink-400">× {v.qty}</span></span></span>
+                      <span className="shrink-0 font-bold tabular-nums text-ink-900">{formatINR(v.rev)}</span>
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-3 border-t border-ink-100 pt-2 text-[11px] text-ink-400">{items} pcs across {today.length} bill{today.length === 1 ? "" : "s"}</p>
+              </>
+            )}
+          </Card>
         </div>
       </div>
     </div>
@@ -818,7 +836,7 @@ function SalesTab({ scoped, query, setQuery, billGst, rate }: { scoped: Bill[]; 
     const body = rows.map((b) => [
       fmtDate(b.createdAt), refOf(b), gstNoOf(b), b.customerName || "", b.phone || "", b.customerGstin || "", branchLabel(b.branch), b.source,
       b.items.map((i) => `${i.name} × ${i.qty}`).join("; "), String(b.items.reduce((n, i) => n + i.qty, 0)),
-      r2(b.subtotal), r2(b.discount), r2(billGst(b)), r2(b.delivery), r2(b.total), b.payment ?? "", b.status,
+      r2(b.subtotal), r2(b.discount), r2(billGst(b)), r2(b.delivery), r2(b.total), paidViaText(b.payments, b.payment, formatINR), b.status,
     ]);
     downloadCsv(`sales-report-bills-${Date.now()}.csv`, [head, ...body]);
   };
@@ -829,7 +847,7 @@ function SalesTab({ scoped, query, setQuery, billGst, rate }: { scoped: Bill[]; 
       b.items.map((i) => {
         const a = lineAmounts(b, i);
         return [fmtDate(b.createdAt), refOf(b), gstNoOf(b), b.customerName || "", b.phone || "", b.customerGstin || "", branchLabel(b.branch), b.source,
-          i.name, i.hsn ?? "", String(i.qty), r2(i.price), i.mrp ? r2(i.mrp) : "", r2(i.discount ?? 0), String(a.lineRate), r2(a.gst), r2(a.gross), b.payment ?? "", b.status];
+          i.name, i.hsn ?? "", String(i.qty), r2(i.price), i.mrp ? r2(i.mrp) : "", r2(i.discount ?? 0), String(a.lineRate), r2(a.gst), r2(a.gross), paidViaText(b.payments, b.payment, formatINR), b.status];
       }),
     );
     downloadCsv(`sales-report-products-${Date.now()}.csv`, [head, ...body]);
@@ -862,7 +880,7 @@ function SalesTab({ scoped, query, setQuery, billGst, rate }: { scoped: Bill[]; 
             ...(openBill.delivery ? [{ label: "Delivery", value: `+ ${formatINR(openBill.delivery)}` }] : []),
             { label: "Total", value: formatINR(openBill.total), tone: "total" as const },
           ]}
-          note={<>Paid by <b className="text-ink-700">{openBill.payments?.length ? openBill.payments.map((p) => `${p.method.charAt(0) + p.method.slice(1).toLowerCase()} ${formatINR(p.amount)}`).join(" + ") : openBill.payment || "—"}</b>{openBill.customerGstin ? <> · Customer GSTIN <span className="font-mono">{openBill.customerGstin}</span></> : null}</>}
+          note={<>Paid by <b className="text-ink-700">{paidViaText(openBill.payments, openBill.payment, formatINR)}</b>{openBill.customerGstin ? <> · Customer GSTIN <span className="font-mono">{openBill.customerGstin}</span></> : null}</>}
           onClose={() => setOpenBill(null)}
         />
       )}
@@ -949,7 +967,7 @@ function SalesTab({ scoped, query, setQuery, billGst, rate }: { scoped: Bill[]; 
                           <p className="text-[12px] text-ink-700">{branchLabel(b.branch)}</p>
                           <span className={cn("mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider", src.tone)}>{src.label}</span>
                         </td>
-                        <td className="whitespace-nowrap"><span className="rounded-md bg-ink-900/[0.05] px-2 py-0.5 text-[11px] font-semibold capitalize text-ink-600">{(b.payment || "—").toLowerCase()}</span></td>
+                        <td className="whitespace-nowrap"><span className="rounded-md bg-ink-900/[0.05] px-2 py-0.5 text-[11px] font-semibold text-ink-600">{paidViaText(b.payments, b.payment, formatINR)}</span></td>
                         <td className="whitespace-nowrap text-right tabular-nums">{b.discount ? <span className="text-danger">− {formatINR(b.discount)}</span> : <span className="text-ink-300">—</span>}</td>
                         <td className="whitespace-nowrap text-right tabular-nums text-ink-600">{billGst(b) ? formatINR(billGst(b)) : <span className="text-ink-300">—</span>}</td>
                         <td className="whitespace-nowrap !pr-4 text-right text-base font-bold tabular-nums text-ink-900">{formatINR(b.total)}</td>
