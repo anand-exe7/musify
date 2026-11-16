@@ -24,7 +24,17 @@ export function addDays(from: string, days: number): string {
   return d.toISOString();
 }
 
-export type QuoteTotals = { subtotal: number; cgst: number; sgst: number; igst: number; total: number };
+export type QuoteTotals = {
+  /** What the lines come to before the quotation-level discount (GST-inclusive). */
+  gross: number;
+  /** The discount actually applied — never more than `gross`. */
+  discount: number;
+  subtotal: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  total: number;
+};
 
 /** Each line's `amount` plus the totals after the quotation-level discount. */
 export function computeQuote(
@@ -37,5 +47,16 @@ export function computeQuote(
     discount,
     true,
   );
-  return { amounts, totals: { subtotal: totals.taxable, cgst: totals.cgst, sgst: totals.sgst, igst: totals.igst, total: totals.net } };
+  return {
+    amounts,
+    totals: {
+      gross: totals.gross,
+      discount: totals.discount,
+      subtotal: totals.taxable,
+      cgst: totals.cgst,
+      sgst: totals.sgst,
+      igst: totals.igst,
+      total: totals.net,
+    },
+  };
 }

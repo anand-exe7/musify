@@ -7,6 +7,7 @@ import type { BranchBill } from "@/lib/billShares";
 import type { BillPayment } from "@/lib/db/queries/purchaseBills";
 import type { PurchaseRow } from "./types";
 import { LoadingInline } from "@/components/admin/LoadState";
+import { toastError } from "@/lib/store/toast";
 
 export type BillDetail = PurchaseRow & { branches: BranchBill[]; payments: BillPayment[] };
 
@@ -49,7 +50,7 @@ export function BillDetailPanel({
     try {
       const res = await fetch(`/api/purchases/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inAnalytics: !d.inAnalytics }) });
       if (res.ok) { setD({ ...d, inAnalytics: !d.inAnalytics }); onLinkChange?.(!d.inAnalytics); }
-      else alert("Couldn't change the analytics link.");
+      else toastError("Couldn't change the analytics link.");
     } finally {
       setLinking(false);
     }

@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/store/auth";
 import type { PickedLine } from "@/components/quotation/LineProductPicker";
 import { ProductCatalogModal } from "@/components/quotation/ProductCatalogModal";
 import { isValidGstin } from "@/lib/gst/gstin";
+import { toastOk, toastError } from "@/lib/store/toast";
 
 const GST_RATES = [0, 5, 12, 18, 28];
 const emptyLine = (): QuotationLine => ({ name: "", hsn: "", qty: 1, rate: 0, gst: 18, amount: 0 });
@@ -56,6 +57,12 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Every refusal is shown twice on purpose: inline next to the form, and as a toast that
+   *  reaches the user even when they are looking at the bottom of a long quotation. */
+  const fail = (message: string) => {
+    setError(message);
+    toastError(message);
+  };
 
   const { amounts, totals } = useMemo(() => computeQuote(draft.items, draft.discount ?? 0), [draft.items, draft.discount]);
   const set = <K extends keyof Quotation>(k: K, v: Quotation[K]) => setDraft((d) => ({ ...d, [k]: v }));
@@ -87,17 +94,17 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
 
   async function save() {
     if (draft.items.length === 0) {
-      setError("Add at least one product — use “Add products”.");
+      fail("Add at least one product — use “Add products”.");
       return;
     }
     const loose = draft.items.findIndex((l) => !l.productId || !l.variantKey);
     if (loose >= 0) {
-      setError(`Line ${loose + 1}: pick a product from the catalogue, so this quotation can become a real order later.`);
+      fail(`Line ${loose + 1}: pick a product from the catalogue, so this quotation can become a real order later.`);
       return;
     }
     // QUO-03: reject a malformed GSTIN before hitting the server.
     if ((draft.customerGstin ?? "").trim() && !isValidGstin(draft.customerGstin)) {
-      setError("Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5), or leave it blank.");
+      fail("Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5), or leave it blank.");
       return;
     }
     setSaving(true);
@@ -122,15 +129,16 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(typeof data?.error === "string" ? data.error : `Save failed (${res.status})`);
+        fail(typeof data?.error === "string" ? data.error : `Save failed (${res.status})`);
         return;
       }
       const saved = data as Quotation;
+      toastOk(quotation ? `Quotation ${saved.number || ""} updated`.trim() : `Quotation ${saved.number || ""} created`.trim());
       if (onSaved) onSaved(saved);
       else router.push(`/admin/quotations/${encodeURIComponent(saved.id)}`);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      fail(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
@@ -327,23 +335,37 @@ export function QuotationEditor({ quotation, onCancel, onSaved }: {
             <textarea className={cn(inp, "min-h-[72px]")} value={draft.notes ?? ""} onChange={(e) => set("notes", e.target.value)} placeholder="Delivery time, warranty, anything the customer should know" />
           </div>
         </div>
+        {/* The discount has to be visible here: without its own line the total just drops and the
+            quote reads as if nothing was taken off. Items → discount → tax → total, in that order. */}
         <div className="space-y-2 self-start rounded-xl border border-ink-100 bg-ivory-50 p-4 text-sm">
+          <Row label={`Items${draft.items.length ? ` (${draft.items.length})` : ""}`} value={totals.gross} />
+          {totals.discount > 0 && <Row label="Discount" value={-totals.discount} tone="minus" />}
+          {totals.discount > 0 && <Row label="After discount" value={totals.total} />}
           <Row label="Taxable value" value={totals.subtotal} />
           <Row label="CGST" value={totals.cgst} />
           <Row label="SGST" value={totals.sgst} />
+          {totals.igst > 0 && <Row label="IGST" value={totals.igst} />}
           <Row label="Total" value={totals.total} strong />
-          {(draft.advance ?? 0) > 0 && <Row label="Balance after advance" value={Math.max(0, totals.total - (draft.advance ?? 0))} />}
+          {(draft.advance ?? 0) > 0 && (
+            <>
+              <Row label="Advance to pay" value={-Math.min(draft.advance ?? 0, totals.total)} tone="minus" />
+              <Row label="Balance after advance" value={Math.max(0, totals.total - (draft.advance ?? 0))} />
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function Row({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+function Row({ label, value, strong, tone }: { label: string; value: number; strong?: boolean; tone?: "minus" }) {
+  const minus = tone === "minus";
   return (
     <div className={cn("flex justify-between text-ink-600", strong && "border-t border-ink-200 pt-2 text-base font-bold text-ink-900")}>
-      <span>{label}</span>
-      <span className="tabular-nums">{formatINR(value)}</span>
+      <span className={cn(minus && "text-danger")}>{label}</span>
+      <span className={cn("tabular-nums", minus && "font-semibold text-danger")}>
+        {minus ? `− ${formatINR(Math.abs(value))}` : formatINR(value)}
+      </span>
     </div>
   );
 }

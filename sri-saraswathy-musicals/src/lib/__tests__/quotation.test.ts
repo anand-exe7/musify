@@ -40,7 +40,7 @@ describe("quotation maths", () => {
   it("extracts GST from GST-inclusive prices", () => {
     const { amounts, totals } = computeQuote([{ qty: 1, rate: 118000, gst: 18 }]);
     expect(amounts).toEqual([118000]);
-    expect(totals).toEqual({ subtotal: 100000, cgst: 9000, sgst: 9000, igst: 0, total: 118000 });
+    expect(totals).toEqual({ gross: 118000, discount: 0, subtotal: 100000, cgst: 9000, sgst: 9000, igst: 0, total: 118000 });
   });
 
   it("applies a discount before tax and keeps the parts adding up", () => {
@@ -48,6 +48,17 @@ describe("quotation maths", () => {
     const { totals } = computeQuote([{ qty: 2, rate: 59000, gst: 18 }, { qty: 1, rate: 50000, gst: 0 }], 18000);
     expect(totals.total).toBe(118000 + 50000 - 18000);
     expect(totals.subtotal + totals.cgst + totals.sgst).toBe(totals.total);
+    // The editor shows these two, so a discount is visible on the quotation instead of the total
+    // silently dropping: what the items come to, and what was taken off.
+    expect(totals.gross).toBe(118000 + 50000);
+    expect(totals.discount).toBe(18000);
+    expect(totals.gross - totals.discount).toBe(totals.total);
+  });
+
+  it("never takes off more discount than the items come to", () => {
+    const { totals } = computeQuote([{ qty: 1, rate: 50000, gst: 18 }], 90000);
+    expect(totals.discount).toBe(50000);
+    expect(totals.total).toBe(0);
   });
 
   it("is valid for 30 days from the issue date", () => {

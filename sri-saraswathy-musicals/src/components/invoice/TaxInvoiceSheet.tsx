@@ -1,7 +1,7 @@
 import type { Invoice } from "@/types";
 import { BUSINESS, branchInfo } from "@/lib/data/business";
 import { amountInWords, formatINR, cn } from "@/lib/utils";
-import { paymentText } from "@/lib/paymentSplit";
+import { paidViaText, modeText } from "@/lib/paymentSplit";
 import { PrintFit } from "@/components/invoice/PrintFit";
 import { gstSummary, taxLabel, halfRate } from "@/lib/print/doc";
 
@@ -14,7 +14,17 @@ export const TAX_INVOICE_PRINT_CSS = `
 @media print {
   body * { visibility: hidden !important; }
   #invoice-sheet, #invoice-sheet * { visibility: visible !important; }
-  #invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; min-height: 281mm; margin: 0; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+  /* A4 is 297mm; 8mm of page margin each side leaves 281mm, and 279mm keeps a sliver of slack so a
+     rounded-up sub-pixel can't tip the sheet onto a second page.
+     The sheet FILLS that height, so the terms and the signature sit on the bottom edge of the paper
+     instead of stopping two thirds down with a band of blank page under them.
+     \`--fit-zoom\` (set on the element, from the number of lines) shrinks a long bill so it still
+     prints as one page; the height is divided by the same factor, so the scaled sheet still reaches
+     the bottom. */
+  #invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; margin: 0; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+  /* The page-filling and the scale are for the tax invoice itself. A payment receipt shares this id
+     (so print and PDF work the same) but keeps its own, shorter, natural height. */
+  #invoice-sheet[data-sheet="tax-invoice"] { zoom: var(--fit-zoom, 1); min-height: calc(279mm / var(--fit-zoom, 1)); }
   @page { size: A4; margin: 8mm; }
 }
 `;
@@ -53,7 +63,12 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
   const intra = (invoice.igst ?? 0) === 0;
   const branch = branchInfo(invoice.branch);
   const overall = invoice.discount ?? 0;
-  const status = payment ? (payment.balance > 0 ? (payment.paid > 0 ? "part paid" : "pending") : "paid") : invoice.status;
+  // A cancelled invoice stays cancelled, whatever was paid against it.
+  const status = invoice.status === "cancelled"
+    ? "cancelled"
+    : payment
+      ? (payment.balance > 0 ? (payment.paid > 0 ? "part paid" : "pending") : "paid")
+      : invoice.status;
   /**
    * Discounts are never itemised on the bill — a customer should not have to read a per-line
    * discount column to see what they saved. The gross before any discount, the line discounts and
@@ -66,6 +81,18 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
   const docTitle = isBillOfSupply ? "Bill of Supply" : "Tax Invoice";
   // BIL-01: GST split-up — rate, CGST / SGST (or IGST) and total tax.
   const gs = gstSummary(invoice.items, invoice.cgst ?? 0, invoice.sgst ?? 0, invoice.igst ?? 0);
+  /**
+   * How much has to go on the page: item lines, the tax-rate rows and each payment in the history.
+   *
+   * Measured off real A4 output: the fixed furniture (letterhead, parties, totals, terms, signature)
+   * comes to about 0.74 of a page and every further line adds about 0.031 of one. While that fits,
+   * the invoice prints at full size; past it the sheet is scaled by just enough to come back onto a
+   * single page (0.96 keeps a margin for a long product name wrapping to a second line). Nothing is
+   * shrunk below 0.6 — past that the print is too small to read, and such a bill may run to a second
+   * page instead.
+   */
+  const rows = invoice.items.length + gs.rows.length + (payment?.history?.length ?? 0);
+  const fitZoom = Math.min(1, Math.max(0.6, 0.96 / (0.74 + 0.031 * rows)));
 
   return (
     <>
@@ -76,6 +103,8 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
       <div className="-mx-5 overflow-x-auto px-5 py-2 md:mx-0 md:px-0 print:m-0 print:overflow-visible print:p-0">
     <div
       id="invoice-sheet"
+      data-sheet="tax-invoice"
+      style={{ "--fit-zoom": String(Math.round(fitZoom * 1000) / 1000) } as React.CSSProperties}
       className="relative mx-auto flex w-full min-w-[720px] max-w-3xl flex-col overflow-hidden rounded-sm border border-ink-200 bg-white shadow-[0_2px_6px_rgba(10,9,8,0.06),_0_30px_60px_-30px_rgba(10,9,8,0.25)]"
     >
       {/* Decorative double-rule top band — reads formal, like a notarised doc. */}
@@ -93,14 +122,14 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
       </div>
 
       <PrintFit />
-      <div className="relative flex-1 p-7 md:p-11 print:p-6">
+      <div className="relative flex-1 p-7 md:p-11 print:flex print:flex-col print:p-5">
         {/* ─────────────────────────────────────────────────────────────
             Letterhead — logo + name on left, GSTIN block on right.
             ───────────────────────────────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-6 border-b border-ink-900 pb-5 print:pb-3">
+        <div className="flex items-start justify-between gap-6 border-b border-ink-900 pb-5 print:gap-4 print:pb-2">
           <div className="flex items-start gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/LOGO2.png" alt="" className="h-16 w-16 shrink-0 object-contain" />
+            <img src="/LOGO2.png" alt="" className="h-16 w-16 shrink-0 object-contain print:h-12 print:w-12" />
             <div>
               <p className="font-display text-[26px] font-bold leading-none tracking-tight text-ink-900">
                 {BUSINESS.name}
@@ -138,9 +167,9 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
           />
           {invoice.reference && <MetaCell label="Reference" value={invoice.reference} />}
           {invoice.refId && <MetaCell label="Order Ref" value={invoice.refId} mono />}
-          <MetaCell label="Payment" value={invoice.paymentMode.toUpperCase()} />
+          <MetaCell label="Payment" value={modeText(invoice.paymentMode).toUpperCase()} />
           {(invoice.payments?.length ?? 0) > 1 && (
-            <MetaCell label="Paid via" value={paymentText(invoice.payments ?? [], formatINR)} />
+            <MetaCell label="Paid via" value={paidViaText(invoice.payments ?? [], invoice.paymentMode, formatINR)} />
           )}
         </div>
 
@@ -148,7 +177,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             Parties — Billed To / Seller, side by side, like a GST form.
             ───────────────────────────────────────────────────────────── */}
         <div className="mt-5 grid grid-cols-1 overflow-hidden rounded border border-ink-200 sm:grid-cols-2 sm:divide-x sm:divide-ink-200 print:mt-3 print:grid-cols-2">
-          <div className="p-4 print:p-3">
+          <div className="p-4 print:p-2.5">
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-gold-700">Billed To</p>
             <p className="mt-2 text-[15px] font-bold text-ink-900">{invoice.customer || "Customer"}</p>
             {invoice.customerPhone && (
@@ -162,7 +191,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
               </p>
             )}
           </div>
-          <div className="border-t border-ink-200 p-4 sm:border-t-0 print:border-t-0 print:p-3">
+          <div className="border-t border-ink-200 p-4 sm:border-t-0 print:border-t-0 print:p-2.5">
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-gold-700">Supplied By</p>
             <p className="mt-2 text-[15px] font-bold text-ink-900">{BUSINESS.name}</p>
             <p className="text-[12px] font-semibold text-gold-700">{branch.area} Branch</p>
@@ -251,7 +280,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
             ───────────────────────────────────────────────────────────── */}
         <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-5 print:mt-3 print:grid-cols-5 print:break-inside-avoid">
           <div className="sm:col-span-3">
-            <div className="rounded border border-dashed border-ink-200 p-4">
+            <div className="rounded border border-dashed border-ink-200 p-4 print:p-2.5">
               <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">Amount Chargeable (in words)</p>
               <p className="mt-1.5 font-serif text-[13px] italic leading-relaxed text-ink-900">
                 {amountInWords(invoice.total)}
@@ -284,7 +313,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                 )
               )}
               {(invoice.delivery ?? 0) > 0 && <Row dt="Delivery" dd={formatINR(invoice.delivery ?? 0)} />}
-              <div className="flex items-center justify-between gap-3 bg-ink-900 px-3 py-3 text-ivory-50">
+              <div className="flex items-center justify-between gap-3 bg-ink-900 px-3 py-3 text-ivory-50 print:py-2">
                 <dt className="text-[11px] font-bold uppercase tracking-[0.14em]">
                   {payment ? "Total Invoice Amount" : "Grand Total"}
                 </dt>
@@ -294,7 +323,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                 <>
                   <Row dt="Amount paid" dd={formatINR(payment.paid)} ddClassName="text-success" />
                   <div className={cn(
-                    "flex items-center justify-between gap-3 px-3 py-2.5 text-[13px] font-bold",
+                    "flex items-center justify-between gap-3 px-3 py-2.5 text-[13px] font-bold print:py-1.5",
                     payment.balance > 0 ? "bg-danger/10 text-danger" : "bg-success/10 text-success",
                   )}>
                     <dt>Balance due</dt>
@@ -302,7 +331,7 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
                   </div>
                   {/* Each payment against the job, with how it was paid (e.g. cash at intake, GPay on pickup). */}
                   {(payment.history?.length ?? 0) > 0 && (
-                    <div className="px-3 py-2.5">
+                    <div className="px-3 py-2.5 print:py-1.5">
                       <dt className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">Payment history</dt>
                       {payment.history!.map((h, i) => (
                         <div key={i} className="flex items-baseline justify-between gap-3 py-0.5 text-[12px] text-ink-700">
@@ -318,10 +347,14 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
           </div>
         </div>
 
+        {/* On paper the leftover room opens up here, so the terms and the signature line sit on the
+            bottom of the sheet the way they do on a printed invoice — never a blank band at the end. */}
+        <div aria-hidden className="hidden print:block print:grow" />
+
         {/* ─────────────────────────────────────────────────────────────
             Declaration + signatory — formal footer.
             ───────────────────────────────────────────────────────────── */}
-        <div className="mt-7 grid grid-cols-1 gap-6 border-t border-dashed border-ink-200 pt-5 sm:grid-cols-2 print:mt-3 print:grid-cols-2 print:gap-4 print:break-inside-avoid print:pt-3">
+        <div className="mt-7 grid grid-cols-1 gap-6 border-t border-dashed border-ink-200 pt-5 sm:grid-cols-2 print:mt-3 print:grid-cols-2 print:gap-4 print:break-inside-avoid print:pt-2">
           <div>
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-ink-400">Terms &amp; Conditions</p>
             <ol className="mt-1.5 list-inside list-decimal space-y-0.5 text-[11px] leading-relaxed text-ink-600">
@@ -331,14 +364,14 @@ export function TaxInvoiceSheet({ invoice, payment }: { invoice: Invoice; paymen
           </div>
           <div className="text-right">
             <p className="text-[11px] text-ink-500">For <span className="font-serif font-bold italic text-ink-900">{BUSINESS.name}</span></p>
-            <div className="ml-auto mt-14 w-48 print:mt-9 border-t-2 border-ink-900 pt-1.5 text-right text-[10px] font-bold uppercase tracking-[0.22em] text-ink-600">
+            <div className="ml-auto mt-14 w-48 border-t-2 border-ink-900 pt-1.5 text-right text-[10px] font-bold uppercase tracking-[0.22em] text-ink-600 print:mt-6">
               Authorised Signatory
             </div>
           </div>
         </div>
 
         {/* Footer strap. */}
-        <div className="mt-6 flex items-center justify-between border-t border-ink-100 pt-3 text-[10px] text-ink-400 print:mt-3 print:break-inside-avoid">
+        <div className="mt-6 flex items-center justify-between border-t border-ink-100 pt-3 text-[10px] text-ink-400 print:mt-2 print:pt-2 print:break-inside-avoid">
           <span className="font-semibold">
             {isBillOfSupply ? "Computer-generated bill of supply." : "Computer-generated tax invoice."}
           </span>
@@ -380,7 +413,7 @@ function MetaCell({
 /** One row inside the totals block. */
 function Row({ dt, dd, ddClassName }: { dt: string; dd: string; ddClassName?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2 text-ink-700">
+    <div className="flex items-center justify-between gap-3 px-3 py-2 text-ink-700 print:py-1">
       <dt>{dt}</dt>
       <dd className={cn("font-semibold tabular-nums", ddClassName)}>{dd}</dd>
     </div>

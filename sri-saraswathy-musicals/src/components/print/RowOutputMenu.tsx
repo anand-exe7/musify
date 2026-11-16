@@ -7,6 +7,7 @@ import { docWhatsAppText, type PrintDoc } from "@/lib/print/doc";
 import { waUrl } from "@/lib/whatsapp";
 import { ThermalReceipt, type ThermalWidth } from "@/components/print/ThermalReceipt";
 import { printThermal, printIsolated, downloadSheetPdf } from "@/components/print/OutputActions";
+import { toastError } from "@/lib/store/toast";
 
 const ROW_THERMAL_ROOT = "row-thermal-root";
 const ROW_A4_ROOT = "row-a4-root";
@@ -56,7 +57,7 @@ export function RowOutputMenu({
           const { sheet: sh, pdfName: pn, name } = latest.current;
           if (sh) await downloadSheetPdf(sh.id, pn || name || "document");
         } catch (e) {
-          alert(e instanceof Error ? e.message : "Couldn't create the PDF");
+          toastError(e instanceof Error ? e.message : "Couldn't create the PDF");
         } finally {
           setJob(null);
         }
