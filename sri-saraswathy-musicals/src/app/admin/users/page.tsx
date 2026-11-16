@@ -7,6 +7,7 @@ import type { User } from "@/types";
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/data/business";
 import { isBranch, branchManagerRole, branchLabel, DEFAULT_BRANCH } from "@/lib/stock";
+import { toastError } from "@/lib/store/toast";
 
 /** The four access levels an admin can assign. Each maps to a concrete
  *  (isAdmin, branch, role) combination on the user record. */
@@ -88,7 +89,7 @@ export default function UsersPage() {
       });
       if (!res.ok) throw new Error("save failed");
     } catch {
-      alert("Couldn't save the change. Reverting.");
+      toastError("Couldn't save the change. Reverting.");
       setUsers(prev);
     }
   };

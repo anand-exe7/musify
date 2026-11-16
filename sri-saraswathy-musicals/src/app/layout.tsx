@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SmoothScroll } from "@/components/SmoothScroll";
 import { Splash } from "@/components/Splash";
+import { Toaster } from "@/components/admin/Toaster";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, SITE_KEYWORDS, organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 
@@ -57,6 +58,8 @@ export default function RootLayout({
         <SmoothScroll />
         <Splash />
         {children}
+        {/* One toaster for the whole app: any save, delete or failure shows up here. */}
+        <Toaster />
       </body>
     </html>
   );

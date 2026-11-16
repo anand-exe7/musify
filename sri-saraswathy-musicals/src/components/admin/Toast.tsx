@@ -12,20 +12,24 @@ export function Toast({
   onClose,
   tone = "ok",
   ms = 4000,
+  offset = 0,
 }: {
   message: string;
   onClose: () => void;
   tone?: "ok" | "bad";
   ms?: number;
+  /** Pixels to lift this one by, so stacked toasts don't cover each other. */
+  offset?: number;
 }) {
   useEffect(() => {
     const t = setTimeout(onClose, ms);
     return () => clearTimeout(t);
   }, [message, ms, onClose]);
 
+
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[120] flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[120] flex justify-center px-4" style={{ transform: `translateY(-${offset}px)` }}>
       <div
         role="status"
         className={`pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl px-4 py-3 text-sm shadow-[0_20px_50px_-20px_rgba(10,9,8,0.6)] ${

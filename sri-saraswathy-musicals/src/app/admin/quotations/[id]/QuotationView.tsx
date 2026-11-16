@@ -14,6 +14,7 @@ import { branchLabel } from "@/lib/stock";
 import { PaymentBox } from "@/components/ui/PaymentBox";
 import { freshPayBox, resolvePayBox, type PayBox } from "@/lib/paymentSplit";
 import { E } from "@/lib/whatsapp";
+import { toastOk, toastError } from "@/lib/store/toast";
 
 const btn = "flex items-center gap-2 rounded-xl border border-ink-200 bg-ivory-50 px-4 py-2.5 text-sm font-semibold text-ink-900 hover:bg-ivory-100";
 
@@ -43,14 +44,20 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setConvertError(typeof data?.error === "string" ? data.error : `Couldn't convert (${res.status})`);
+        const msg = typeof data?.error === "string" ? data.error : `Couldn't convert (${res.status})`;
+        setConvertError(msg);
+        toastError(msg);
         return;
       }
-      setCurrent((data as { quotation: Quotation }).quotation);
+      const q = (data as { quotation: Quotation }).quotation;
+      setCurrent(q);
       setConverting(false);
+      toastOk(`${q.number} converted — invoice raised and stock taken`);
       router.refresh();
     } catch (e) {
-      setConvertError(e instanceof Error ? e.message : "Couldn't convert");
+      const msg = e instanceof Error ? e.message : "Couldn't convert";
+      setConvertError(msg);
+      toastError(msg);
     } finally {
       setConvertBusy(false);
     }
@@ -61,6 +68,7 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(shareUrl());
+      toastOk("Share link copied");
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -88,13 +96,16 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
     setDeleting(true);
     try {
       const res = await fetch(`/api/quotations/${encodeURIComponent(current.id)}`, { method: "DELETE" });
-      if (res.ok) router.push("/admin/quotations");
+      if (res.ok) {
+        toastOk(`Quotation ${current.number} deleted`);
+        router.push("/admin/quotations");
+      }
       else {
-        alert(`Delete failed (${res.status})`);
+        toastError(`Delete failed (${res.status})`);
         setDeleting(false);
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed");
+      toastError(e instanceof Error ? e.message : "Delete failed");
       setDeleting(false);
     }
   }

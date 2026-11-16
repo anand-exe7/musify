@@ -9,6 +9,8 @@ import { FulfilmentPanel } from "@/components/admin/FulfilmentPanel";
 import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { usePOS } from "@/lib/store/pos";
+import { invoicePaymentSummary, type PaymentSummary } from "@/lib/billing/invoicePayment";
+import { toastOk, toastError } from "@/lib/store/toast";
 
 /** A cancelled counter bill leaves the bills list and its stock comes back — re-read both so every open screen agrees. */
 function refreshAfterCancel(inv: Invoice) {
@@ -20,8 +22,11 @@ function refreshAfterCancel(inv: Invoice) {
  * customer sees at `/invoice/[id]`, plus the admin toolbar (back to ledger,
  * admin-only badge, print, edit, cancel).
  */
-export function TaxInvoiceView({ invoice }: { invoice: Invoice }) {
+export function TaxInvoiceView({ invoice, payment }: { invoice: Invoice; payment?: PaymentSummary }) {
   const [current, setCurrent] = useState<Invoice>(invoice);
+  // The summary is computed on the server for the invoice as it was loaded; once it is edited
+  // here (lines, totals, payment split) it is re-read from the row in the browser.
+  const [paid, setPaid] = useState<PaymentSummary | undefined>(payment);
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const cancelled = current.status === "cancelled";
@@ -36,10 +41,12 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
       if (res.ok) {
         const next = (await res.json()) as Invoice;
         setCurrent(next);
+        setPaid(undefined); // a cancelled invoice shows no paid / balance block
         refreshAfterCancel(next);
-      } else alert(`Couldn't cancel the invoice (${res.status})`);
+        toastOk(`Invoice ${next.number} cancelled`);
+      } else toastError(`Couldn't cancel the invoice (${res.status})`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't cancel the invoice");
+      toastError(e instanceof Error ? e.message : "Couldn't cancel the invoice");
     } finally {
       setCancelling(false);
     }
@@ -84,7 +91,7 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
             <span className="hidden h-8 w-px shrink-0 bg-ink-100 sm:block" />
             {/* LED-01: WhatsApp, print (thermal / A4) and download, per the customer's need. */}
             <OutputActions
-              doc={invoiceToDoc(current)}
+              doc={invoiceToDoc(current, paid)}
               a4TargetId="invoice-sheet"
               phone={current.customerPhone}
               shareLink={current.refId && typeof window !== "undefined" ? `${window.location.origin}/invoice/${encodeURIComponent(current.refId)}` : undefined}
@@ -108,13 +115,18 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
           onSaved={(next) => {
             if (current.status !== "cancelled") refreshAfterCancel(next);
             setCurrent(next);
+            // A repair's receipts stay as they are (they live on the ticket); only the balance moves.
+            toastOk(`Invoice ${next.number} saved`);
+            setPaid(next.source === "service" && payment
+              ? { ...payment, balance: Math.max(0, next.total - payment.paid) }
+              : invoicePaymentSummary(next));
             setEditing(false);
           }}
         />
       ) : (
         <>
           <FulfilmentPanel invoice={current} />
-          <TaxInvoiceSheet invoice={current} />
+          <TaxInvoiceSheet invoice={current} payment={paid} />
         </>
       )}
     </div>

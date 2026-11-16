@@ -11,12 +11,12 @@ import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { ticketReceiptDoc } from "@/lib/billing/repairReceipt";
 import { E } from "@/lib/whatsapp";
-import { ticketPayments, paymentLines, modesLabel } from "@/lib/billing/repairPayments";
+import { ticketPayments, modesLabel } from "@/lib/billing/repairPayments";
+import { repairPaymentSummary } from "@/lib/billing/invoicePayment";
 
+/** What has been paid on this repair — the same summary the Invoices ledger shows for it. */
 export function ticketPayment(t: RepairTicket) {
-  const total = grossTotal(t);
-  const paid = Math.min(total, t.advance || 0);
-  return { paid, balance: Math.max(0, total - paid), history: paymentLines(ticketPayments(t)) };
+  return repairPaymentSummary(t);
 }
 
 function invoiceMessage(t: RepairTicket, number: string | null, link: string): string {

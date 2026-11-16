@@ -41,7 +41,6 @@ function blankProduct(name = ""): InvProduct {
     active: true,
     featured: false,
     bestSeller: false,
-    discountLabel: "",
     newArrival: false,
     lowStockAt: 4,
     gstRate: 18,
@@ -316,10 +315,6 @@ export function ProductModal({
                         aria-invalid={!(Number(draft.baseWeight) > 0)}
                         className={cn(field, !(Number(draft.baseWeight) > 0) && "border-danger bg-danger/5")}
                       />
-                    </div>
-                    <div>
-                      <label className={label}>Discount label</label>
-                      <input value={draft.discountLabel ?? ""} onChange={(e) => set({ discountLabel: e.target.value })} className={field} placeholder="e.g. Festive Offer" />
                     </div>
                   </div>
                   <p className="-mt-1 text-[11px] text-ink-400">

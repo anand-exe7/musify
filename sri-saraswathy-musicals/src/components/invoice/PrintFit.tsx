@@ -1,16 +1,18 @@
 "use client";
 import { useEffect } from "react";
 
-/** A4 printable height with the sheet's 8mm page margins, in CSS px (96 dpi). */
-const PAGE_PX = ((297 - 16) / 25.4) * 96;
-
 /**
- * Makes the invoice print on exactly one page.
+ * Keeps the rest of the admin screen out of the printed page.
  *
- * Two things push an invoice onto extra pages: the rest of the admin screen (sidebar, header) still takes up
- * room while it is only hidden, and a long bill is simply taller than a page. Just before printing, this
- * removes everything around the sheet from the layout and, if the sheet is still taller than a page, shrinks it
- * to fit. Both are undone as soon as printing ends.
+ * The print stylesheet only makes the sidebar, header and toolbar invisible — they still take up room, which
+ * pushes the sheet down the paper (and sometimes onto a second page). Just before printing, everything that is
+ * not the sheet or one of its ancestors leaves the layout; it all comes back as soon as printing ends.
+ *
+ * Fitting a long bill onto one page is NOT done here: this hook can only measure the sheet as it looks on
+ * SCREEN, which is much taller than the printed layout (the print rules use smaller padding throughout), so
+ * scaling from that measurement shrank every invoice to about three quarters of the page and left a band of
+ * blank paper under it. The sheet scales itself instead, from its own line count — see `data-fit` in
+ * `TAX_INVOICE_PRINT_CSS`.
  */
 export function PrintFit({ target = "invoice-sheet" }: { target?: string }) {
   useEffect(() => {
@@ -32,8 +34,6 @@ export function PrintFit({ target = "invoice-sheet" }: { target?: string }) {
           }
         }
       }
-      const h = sheet.getBoundingClientRect().height;
-      if (h > PAGE_PX * 0.985) sheet.style.setProperty("zoom", String(Math.max(0.5, (PAGE_PX * 0.96) / h)));
     };
     const after = () => {
       for (const el of hidden) {
@@ -41,7 +41,6 @@ export function PrintFit({ target = "invoice-sheet" }: { target?: string }) {
         el.removeAttribute("data-print-hidden");
       }
       hidden = [];
-      sheet?.style.removeProperty("zoom");
     };
 
     window.addEventListener("beforeprint", before);

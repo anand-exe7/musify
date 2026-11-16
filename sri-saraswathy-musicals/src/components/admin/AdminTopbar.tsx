@@ -11,6 +11,10 @@ import { useBranchScope, BRANCHES, type BranchScope } from "@/lib/store/branch";
 import { cn, formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 
+/** Rows shown per section in the bell. Anything beyond this is one "+N more" line into Activity —
+ *  the popup is a glance, not a list: it must never grow past the window. */
+const TOP_N = 3;
+
 export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
   const router = useRouter();
   const tickets = useRepair((s) => s.tickets);
@@ -102,8 +106,8 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
           </button>
 
           {open && (
-            <div className="absolute right-0 top-11 z-50 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
+            <div className="absolute right-0 top-11 z-50 flex max-h-[calc(100dvh-5rem)] w-[min(92vw,21rem)] flex-col overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 shadow-2xl">
+              <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-2.5">
                 <p className="text-sm font-bold text-ink-900">Alerts</p>
                 <button
                   onClick={() => setMuted(!muted)}
@@ -118,7 +122,7 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
                 </button>
               </div>
 
-              <div className="max-h-[70dvh] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 {count === 0 && (
                   <p className="px-4 py-10 text-center text-sm text-ink-400">You&apos;re all caught up 🎵</p>
                 )}
@@ -129,23 +133,23 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
                     label={`Dispatch due · ${dispatchDue.length}`}
                     tone={dispatchDue.some((d) => d.days < 0) ? "text-danger" : "text-[#8a6a1f]"}
                   >
-                    {dispatchDue.map(({ order: o, days }) => (
+                    {dispatchDue.slice(0, TOP_N).map(({ order: o, days }) => (
                       <AlertRow
                         key={`d-${o.id}`}
                         onClick={() => go(`/admin/orders/${encodeURIComponent(o.id)}`)}
                         title={o.customerName || "Online customer"}
-                        sub={`${o.id} · ${o.deliveryMethod || branchLabel(o.branch)}`}
+                        sub={`${o.id} · ship by ${o.dispatchBy}`}
                         badge={days < 0 ? `${Math.abs(days)}d late` : days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days}d`}
                         badgeTone={days < 0 ? "bg-danger/15 text-danger" : "bg-warning/20 text-[#8a6a1f]"}
-                        note={`Ship by ${o.dispatchBy}`}
                       />
                     ))}
+                    <MoreLink extra={dispatchDue.length - TOP_N} onClick={() => go("/admin/activity")} />
                   </Section>
                 )}
 
                 {orderCount > 0 && (
                   <Section icon={<ShoppingBag className="h-3.5 w-3.5" />} label={`Online orders to ship · ${orderCount}`} tone="text-danger">
-                    {orderLatest.map((o) => (
+                    {orderLatest.slice(0, TOP_N).map((o) => (
                       <AlertRow
                         key={o.id}
                         onClick={() => go(`/admin/orders/${encodeURIComponent(o.id)}`)}
@@ -153,78 +157,80 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
                         sub={`${o.id} · ${branchLabel(o.branch)}`}
                         badge={formatINR(o.total)}
                         badgeTone="bg-gold-100 text-gold-700"
-                        note="Processing"
                       />
                     ))}
+                    <MoreLink extra={Math.max(orderCount, orderLatest.length) - TOP_N} onClick={() => go("/admin/orders")} />
                   </Section>
                 )}
 
                 {overdue.length > 0 && (
                   <Section icon={<AlertTriangle className="h-3.5 w-3.5" />} label={`Overdue repairs · ${overdue.length}`} tone="text-danger">
-                    {overdue.map((t) => (
+                    {overdue.slice(0, TOP_N).map((t) => (
                       <AlertRow
                         key={t.id}
                         onClick={() => go(`/admin/service/${t.id}`)}
                         title={t.productName}
-                        sub={`${t.id} · ${t.customerName}`}
+                        sub={`${t.customerName} · ${statusLabel(t.status)}`}
                         badge={`${Math.abs(daysUntil(t.deadline))}d late`}
                         badgeTone="bg-danger/15 text-danger"
-                        note={statusLabel(t.status)}
                       />
                     ))}
+                    <MoreLink extra={overdue.length - TOP_N} onClick={() => go("/admin/service")} />
                   </Section>
                 )}
 
                 {dueSoon.length > 0 && (
                   <Section icon={<Clock className="h-3.5 w-3.5" />} label={`Due soon · ${dueSoon.length}`} tone="text-[#8a6a1f]">
-                    {dueSoon.map((t) => {
+                    {dueSoon.slice(0, TOP_N).map((t) => {
                       const d = daysUntil(t.deadline);
                       return (
                         <AlertRow
                           key={t.id}
                           onClick={() => go(`/admin/service/${t.id}`)}
                           title={t.productName}
-                          sub={`${t.id} · ${t.customerName}`}
+                          sub={`${t.customerName} · ${statusLabel(t.status)}`}
                           badge={d === 0 ? "Today" : d === 1 ? "Tomorrow" : `${d}d`}
                           badgeTone="bg-warning/20 text-[#8a6a1f]"
-                          note={statusLabel(t.status)}
                         />
                       );
                     })}
+                    <MoreLink extra={dueSoon.length - TOP_N} onClick={() => go("/admin/service")} />
                   </Section>
                 )}
 
                 {newInq.length > 0 && (
                   <Section icon={<MessageSquare className="h-3.5 w-3.5" />} label={`New inquiries · ${newInq.length}`} tone="text-gold-700">
-                    {newInq.slice(0, 6).map((i) => (
+                    {newInq.slice(0, TOP_N).map((i) => (
                       <AlertRow
                         key={i.id}
                         onClick={() => go("/admin/inquiries")}
                         title={i.name}
-                        sub={i.topic}
+                        sub={[i.topic, i.productInterest].filter(Boolean).join(" · ")}
                         badge="New"
                         badgeTone="bg-gold-100 text-gold-700"
-                        note={i.productInterest || ""}
                       />
                     ))}
+                    <MoreLink extra={newInq.length - TOP_N} onClick={() => go("/admin/inquiries")} />
                   </Section>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2 border-t border-ink-100 bg-[#FAF7EF] px-3 py-2.5">
-                {/* The bell is the short version; the Activity page is the whole picture, stock included. */}
-                <Link href="/admin/activity" onClick={() => setOpen(false)} className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 py-2 text-[11px] font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
-                  <Activity className="h-3.5 w-3.5" /> See everything
+              {/* The bell is only the short version — the Activity page is the whole picture, stock included. */}
+              <div className="shrink-0 border-t border-ink-100 bg-[#FAF7EF] px-3 py-2.5">
+                <Link href="/admin/activity" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 py-2 text-[11px] font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
+                  <Activity className="h-3.5 w-3.5" /> See everything in Activity
                 </Link>
-                <Link href="/admin/orders" onClick={() => setOpen(false)} className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-gold-500/40 bg-gold-50 py-2 text-[11px] font-bold uppercase tracking-wider text-gold-800 hover:bg-gold-100">
-                  <ShoppingBag className="h-3.5 w-3.5" /> Orders
-                </Link>
-                <Link href="/admin/service" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 py-2 text-[11px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
-                  <Wrench className="h-3.5 w-3.5" /> Repairs
-                </Link>
-                <Link href="/admin/inquiries" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 py-2 text-[11px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
-                  <MessageSquare className="h-3.5 w-3.5" /> Inquiries
-                </Link>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  <Link href="/admin/orders" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1 rounded-lg border border-ink-200 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
+                    <ShoppingBag className="h-3 w-3" /> Orders
+                  </Link>
+                  <Link href="/admin/service" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1 rounded-lg border border-ink-200 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
+                    <Wrench className="h-3 w-3" /> Repairs
+                  </Link>
+                  <Link href="/admin/inquiries" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1 rounded-lg border border-ink-200 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
+                    <MessageSquare className="h-3 w-3" /> Inquiries
+                  </Link>
+                </div>
               </div>
             </div>
           )}
@@ -294,16 +300,25 @@ function Section({ icon, label, tone, children }: { icon: React.ReactNode; label
 }
 
 function AlertRow({
-  onClick, title, sub, badge, badgeTone, note,
-}: { onClick: () => void; title: string; sub: string; badge: string; badgeTone: string; note?: string }) {
+  onClick, title, sub, badge, badgeTone,
+}: { onClick: () => void; title: string; sub: string; badge: string; badgeTone: string }) {
   return (
-    <button onClick={onClick} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-ink-900/[0.04]">
+    <button onClick={onClick} className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-ink-900/[0.04]">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-ink-900">{title}</p>
-        <p className="truncate text-xs text-ink-500">{sub}</p>
-        {note && <p className="truncate text-[11px] text-ink-400">{note}</p>}
+        <p className="truncate text-[13px] font-semibold leading-tight text-ink-900">{title}</p>
+        <p className="truncate text-[11px] leading-tight text-ink-500">{sub}</p>
       </div>
       <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", badgeTone)}>{badge}</span>
+    </button>
+  );
+}
+
+/** "+4 more" under a section — the rest of that list lives on the page it belongs to. */
+function MoreLink({ extra, onClick }: { extra: number; onClick: () => void }) {
+  if (extra <= 0) return null;
+  return (
+    <button onClick={onClick} className="w-full px-4 pb-2 pt-0.5 text-left text-[11px] font-bold uppercase tracking-wider text-gold-700 hover:text-gold-800">
+      + {extra} more →
     </button>
   );
 }
