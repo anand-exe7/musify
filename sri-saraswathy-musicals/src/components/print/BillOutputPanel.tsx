@@ -8,6 +8,7 @@ import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/Tax
 import { printThermal, printIsolated, downloadSheetPdf } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { cn } from "@/lib/utils";
+import { toastError } from "@/lib/store/toast";
 
 const BILL_THERMAL_ROOT = "bill-thermal-root";
 const BILL_A4_ROOT = "bill-a4-root";
@@ -91,7 +92,7 @@ export function BillOutputPanel({
     try {
       await downloadSheetPdf("invoice-sheet", `Invoice-${invoice.number}`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't create the PDF");
+      toastError(e instanceof Error ? e.message : "Couldn't create the PDF");
     } finally {
       setBusy(null);
     }

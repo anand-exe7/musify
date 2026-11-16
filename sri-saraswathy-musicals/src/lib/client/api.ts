@@ -1,3 +1,5 @@
+import { toastError } from "@/lib/store/toast";
+
 /**
  * Shared client-side fetch helpers for the Zustand stores. They exist so every
  * store handles failure the same way: a non-2xx response is an ERROR carrying
@@ -44,7 +46,7 @@ export function makeSender(what: string) {
       if (!res.ok) throw new Error(await readError(res, "Save failed"));
       return true;
     } catch (err) {
-      alert(`Couldn't save ${what}: ${errMsg(err)}. Reverting to the saved values.`);
+      toastError(`Couldn't save ${what}: ${errMsg(err)}. Reverting to the saved values.`);
       let resynced: boolean | void = false;
       try {
         resynced = await resync();

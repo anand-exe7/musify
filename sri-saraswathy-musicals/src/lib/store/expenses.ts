@@ -1,6 +1,7 @@
 "use client";
 import { create } from "zustand";
 import { fetchJson, errMsg, readError } from "@/lib/client/api";
+import { toastError } from "@/lib/store/toast";
 
 export type PaymentMode = "CASH" | "CARD" | "UPI";
 export const PAYMENT_MODES: PaymentMode[] = ["CASH", "CARD", "UPI"];
@@ -77,7 +78,7 @@ export const useExpenses = create<ExpenseState>()((set, get) => ({
       return true;
     } catch (err) {
       set((s) => ({ expenses: s.expenses.filter((x) => x.id !== e.id) }));
-      alert(`Couldn't save the expense: ${errMsg(err)}`);
+      toastError(`Couldn't save the expense: ${errMsg(err)}`);
       return false;
     }
   },
@@ -93,7 +94,7 @@ export const useExpenses = create<ExpenseState>()((set, get) => ({
       return true;
     } catch (err) {
       set((s) => ({ expenses: s.expenses.map((x) => (x.id === id ? before : x)) }));
-      alert(`Couldn't update the expense: ${errMsg(err)}`);
+      toastError(`Couldn't update the expense: ${errMsg(err)}`);
       return false;
     }
   },
@@ -104,7 +105,7 @@ export const useExpenses = create<ExpenseState>()((set, get) => ({
       set((s) => ({ expenses: s.expenses.map((x) => (x.category === from ? { ...x, category: to } : x)) }));
       return true;
     } catch (err) {
-      alert(`Couldn't rename the category: ${errMsg(err)}`);
+      toastError(`Couldn't rename the category: ${errMsg(err)}`);
       return false;
     }
   },
@@ -118,7 +119,7 @@ export const useExpenses = create<ExpenseState>()((set, get) => ({
       if (!res.ok) throw new Error(await readError(res, "Delete failed"));
     } catch (err) {
       if (removed) set((s) => ({ expenses: s.expenses.some((x) => x.id === id) ? s.expenses : [removed, ...s.expenses] }));
-      alert(`Couldn't delete the expense: ${errMsg(err)}. It has been put back.`);
+      toastError(`Couldn't delete the expense: ${errMsg(err)}. It has been put back.`);
     }
   },
 }));

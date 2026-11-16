@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ticketPayments, dominantMode } from "@/lib/billing/repairPayments";
+import { ticketPayments, modesLabel, PAY_MODE_LABEL } from "@/lib/billing/repairPayments";
+import { isPayMethod, type PayMethod } from "@/lib/paymentSplit";
 import { usePOS, type Bill } from "@/lib/store/pos";
 import { useRepair } from "@/lib/store/repair";
 import { fetchJson, errMsg } from "@/lib/client/api";
@@ -43,7 +44,9 @@ export function orderToBill(order: Order, names?: Record<string, string>): Unifi
     total: order.total,
     status: order.status === "cancelled" ? "pending" : "completed",
     fulfilment: order.status,
-    payment: order.paymentMethod || "razorpay",
+    // Every web sale is collected through the gateway: it reports as one "Online" mode, never as
+    // the instrument Razorpay happened to use (netbanking, wallet…).
+    payment: "Online",
   };
 }
 
@@ -80,6 +83,13 @@ export function serviceEarnedAt(t: RepairTicket): string {
  */
 export function ticketToBill(t: RepairTicket): UnifiedBill {
   const gross = grossTotal(t);
+  // ANA-01: a repair paid in two modes (cash at intake, card on pickup) splits across both —
+  // each mode carries its own amount, so the payment-mode report never lumps it under one.
+  const byMode = new Map<PayMethod, number>();
+  for (const p of ticketPayments(t)) {
+    if (p.amount > 0 && isPayMethod(p.mode)) byMode.set(p.mode, (byMode.get(p.mode) ?? 0) + p.amount);
+  }
+  const payments = [...byMode.entries()].map(([method, amount]) => ({ method, amount }));
   return {
     id: t.id,
     createdAt: t.completedAt || t.updatedAt || t.createdAt,
@@ -93,8 +103,9 @@ export function ticketToBill(t: RepairTicket): UnifiedBill {
     delivery: 0,
     total: gross,
     status: "completed",
-    // ANA-01: the mode most of the money came in by, so the payment-mode split can bucket it.
-    payment: `${dominantMode(ticketPayments(t), t.paymentMode || "CASH")}${balanceDue(t) <= 0 ? "" : " · balance due"}`,
+    // Every mode the money came in by, e.g. "Cash + UPI".
+    payment: `${modesLabel(ticketPayments(t)) || t.paymentMode || "Cash"}${balanceDue(t) <= 0 ? "" : " · balance due"}`,
+    ...(payments.length > 0 ? { payments } : {}),
   };
 }
 
@@ -121,7 +132,8 @@ export function ticketPartPaymentBills(t: RepairTicket): UnifiedBill[] {
       delivery: 0,
       total: p.amount,
       status: "completed" as const,
-      payment: `${p.mode} · part payment`,
+      payment: `${PAY_MODE_LABEL[p.mode] ?? p.mode} · part payment`,
+      ...(isPayMethod(p.mode) ? { payments: [{ method: p.mode, amount: p.amount }] } : {}),
     }));
 }
 

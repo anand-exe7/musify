@@ -5,6 +5,7 @@ import { genDocId } from "@/lib/ids";
 import { fetchJson, errMsg, makeSender } from "@/lib/client/api";
 import { partsTotal, type ServicePart } from "@/lib/billing/serviceInvoice";
 import { withPayment, withoutPayment, PAY_MODE_LABEL, type RepairPayment } from "@/lib/billing/repairPayments";
+import { toastOk } from "@/lib/store/toast";
 
 export type { ServicePart as RepairPart };
 
@@ -219,6 +220,7 @@ export const useRepair = create<RepairState>()((set, get) => ({
   addTicket: (t) => {
     const prev = get().tickets;
     set((s) => ({ tickets: [t, ...s.tickets] }));
+    toastOk(`Repair ${t.id} booked in`);
     void track(send("/api/repair", "POST", t, get().hydrate, () => set({ tickets: prev })));
   },
   updateTicket: (id, patch, eventLabel) => {
@@ -240,6 +242,7 @@ export const useRepair = create<RepairState>()((set, get) => ({
   deleteTicket: (id) => {
     const prev = get().tickets;
     set((s) => ({ tickets: s.tickets.filter((t) => t.id !== id) }));
+    toastOk(`Repair ${id} deleted`);
     void send(`/api/repair/${id}`, "DELETE", null, get().hydrate, () => set({ tickets: prev }));
   },
   logEvent: (id, label) => {
@@ -257,12 +260,14 @@ export const useRepair = create<RepairState>()((set, get) => ({
     const next = withPayment(t, p);
     const label = `Payment ${formatPaise(p.amount)} received (${PAY_MODE_LABEL[p.mode] ?? p.mode})${p.note?.trim() ? ` · ${p.note.trim()}` : ""}`;
     get().updateTicket(id, next, label);
+    toastOk(label);
   },
   removePayment: (id, paymentId) => {
     const t = get().tickets.find((x) => x.id === id);
     if (!t) return;
     const gone = (t.payments ?? []).find((p) => p.id === paymentId);
     get().updateTicket(id, withoutPayment(t, paymentId), gone ? `Payment ${formatPaise(gone.amount)} removed` : "Payment removed");
+    toastOk(gone ? `Payment ${formatPaise(gone.amount)} removed` : "Payment removed");
   },
   // Ask the server for the next service-invoice number — it checks the DB for
   // a free `SER-<year>-XXXXX` code, which an in-memory scan of loaded tickets

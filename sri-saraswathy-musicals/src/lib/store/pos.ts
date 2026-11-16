@@ -5,6 +5,8 @@ import { genDocId } from "@/lib/ids";
 import { fetchJson, errMsg, readError, makeSender } from "@/lib/client/api";
 import { invalidateCatalog } from "@/lib/client/catalog";
 import { lineTax, allocateDiscount } from "@/lib/gst/inclusive";
+import { toastOk, toastError } from "@/lib/store/toast";
+import { formatINR } from "@/lib/utils";
 import {
   type Branch,
   type BranchFilter,
@@ -273,6 +275,7 @@ export const usePOS = create<POSState>()((set, get) => ({
       const res = await fetch("/api/pos/bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
       if (!res.ok) throw new Error(await readError(res, "Save failed"));
       const { invoice, ...saved } = (await res.json()) as Bill & { invoice?: import("@/types").Invoice | null };
+      toastOk(`Bill ${invoice?.reference || saved.id} saved · ${formatINR(saved.total ?? b.total)}`);
       // The sale took stock on the server; take the same units off the catalogue here instead of re-downloading
       // the whole catalogue (the slow part of saving a bill).
       const taken = new Map<string, number>();
@@ -306,7 +309,7 @@ export const usePOS = create<POSState>()((set, get) => ({
       return { ok: true, invoice: invoice ?? null };
     } catch (err) {
       set({ bills: prev });
-      alert(`Couldn't save the bill: ${errMsg(err)}`);
+      toastError(`Couldn't save the bill: ${errMsg(err)}`);
       return { ok: false, invoice: null };
     }
   },
@@ -399,7 +402,7 @@ export const usePOS = create<POSState>()((set, get) => ({
         await must(await fetch(`/api/pos/departments/${encodeURIComponent(from)}`, { method: "DELETE" }));
         invalidateCatalog();
       } catch (err) {
-        alert(`Couldn't rename the department: ${errMsg(err)}. Reverting to the saved values.`);
+        toastError(`Couldn't rename the department: ${errMsg(err)}. Reverting to the saved values.`);
         if (!(await get().hydrate())) set({ departments: prevDepartments, invProducts: prevProducts });
       }
     })();
@@ -429,7 +432,7 @@ export const usePOS = create<POSState>()((set, get) => ({
         await must(await fetch(`/api/pos/categories/${encodeURIComponent(from)}`, { method: "DELETE" }));
         invalidateCatalog();
       } catch (err) {
-        alert(`Couldn't rename the category: ${errMsg(err)}. Reverting to the saved values.`);
+        toastError(`Couldn't rename the category: ${errMsg(err)}. Reverting to the saved values.`);
         if (!(await get().hydrate())) set({ categories: prevCategories, invProducts: prevProducts });
       }
     })();

@@ -96,7 +96,7 @@ describe("parts leave the branch's stock", () => {
 describe("part payments count as revenue", () => {
   it("counts a part payment on an unfinished repair on the day it was taken", () => {
     const [b] = ticketPartPaymentBills(ticket({ advance: 50000 }));
-    expect(b).toMatchObject({ id: "REP-1-P1", total: 50000, source: "service", payment: "CASH · part payment", createdAt: "2026-10-01T10:00:00.000Z" });
+    expect(b).toMatchObject({ id: "REP-1-P1", total: 50000, source: "service", payment: "Cash · part payment", createdAt: "2026-10-01T10:00:00.000Z" });
   });
 
   it("gives each payment its own row with its own mode and date", () => {
@@ -108,7 +108,7 @@ describe("part payments count as revenue", () => {
       ],
     }));
     expect(rows.map((r) => [r.id, r.total, r.payment, r.createdAt])).toEqual([
-      ["REP-1-P1", 50000, "CASH · part payment", "2026-10-01T10:00:00.000Z"],
+      ["REP-1-P1", 50000, "Cash · part payment", "2026-10-01T10:00:00.000Z"],
       ["REP-1-P2", 30000, "UPI · part payment", "2026-10-05T12:00:00.000Z"],
     ]);
     expect(ticketIdOfSaleRow("REP-1-P2")).toBe("REP-1");
