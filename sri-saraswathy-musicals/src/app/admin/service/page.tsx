@@ -261,10 +261,10 @@ export default function ServicePage() {
       )}
 
       {/* Tabs */}
-      <div className="mb-6 flex gap-6 border-b border-ink-100">
+      <div className="mb-6 flex gap-5 overflow-x-auto border-b border-ink-100 sm:gap-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(["tickets", "report"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={cn("relative -mb-px border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors",
+            className={cn("relative -mb-px shrink-0 whitespace-nowrap border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors",
               tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
             {t === "tickets" ? "Tickets" : "Report"}
           </button>

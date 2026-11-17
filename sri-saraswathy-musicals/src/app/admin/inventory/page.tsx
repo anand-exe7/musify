@@ -356,7 +356,7 @@ export default function InventoryPage() {
             {alertMenu && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setAlertMenu(false)} />
-                <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl border border-ink-100 bg-ivory-50 p-2 shadow-xl">
+                <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl max-sm:fixed max-sm:inset-x-4 max-sm:w-auto border border-ink-100 bg-ivory-50 p-2 shadow-xl">
                   {([
                     { on: true, sound: true, icon: <Volume2 className="h-4 w-4" />, title: "On, with sound", hint: "Pop-up when something runs low, and it rings." },
                     { on: true, sound: false, icon: <VolumeX className="h-4 w-4" />, title: "On, muted", hint: "Pop-up still opens — no sound." },
@@ -395,7 +395,7 @@ export default function InventoryPage() {
             {exportOpen && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
-                <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl border border-ink-100 bg-ivory-50 p-3 shadow-xl">
+                <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl max-sm:fixed max-sm:inset-x-4 max-sm:w-auto border border-ink-100 bg-ivory-50 p-3 shadow-xl">
                   <button onClick={() => void exportStock()} className="w-full rounded-lg px-3 py-2 text-left hover:bg-ink-900/5"><p className="text-sm font-semibold text-ink-900">Stock &amp; inventory</p><p className="text-xs text-ink-500">Per-variant, per-branch on-hand · {data?.total ?? 0} filtered products</p></button>
                   <div className="my-2 border-t border-ink-100" />
                   <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-ink-400">History period (optional)</p>

@@ -59,6 +59,8 @@ export default function PurchasesPage() {
   const [vendorTerm, setVendorTerm] = useState("");
   const [productTerm, setProductTerm] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+  /** Text being typed in a Bill qty box, so it can be emptied while editing. */
+  const [billDraft, setBillDraft] = useState<{ key: string; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const isAdmin = useAuth((s) => s.isAdmin);
@@ -467,7 +469,7 @@ export default function PurchasesPage() {
                         </div>
                         <div>
                           <span className={cellLabel} title="Total on the vendor's bill (optional) — the branch boxes are compared with it">Bill qty <span className="font-normal normal-case tracking-normal">(opt.)</span></span>
-                          <input type="number" min={0} step={1} value={(l.target ?? qtyOf(l)) || ""} onChange={(e) => setTotal(l, toInt(e.target.value))} className={cn(num, l.target !== null && "border-gold-400 bg-gold-50/50")} />
+                          <input type="number" min={0} step={1} value={billDraft?.key === l.key ? billDraft.text : (l.target ?? qtyOf(l)) || ""} onFocus={() => setBillDraft({ key: l.key, text: String((l.target ?? qtyOf(l)) || "") })} onBlur={() => setBillDraft(null)} onChange={(e) => { setBillDraft({ key: l.key, text: e.target.value }); setTotal(l, toInt(e.target.value)); }} className={cn(num, l.target !== null && "border-gold-400 bg-gold-50/50")} />
                         </div>
                         {BRANCH_KEYS.map((b) => (
                           <div key={b}>

@@ -353,10 +353,10 @@ export default function TicketDetailPage() {
 
 
             {/* totals summary */}
-            <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-[#FAF7EF] p-4 text-center">
-              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Total Invoice Amount</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(grossTotal(t))}</p></div>
-              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Amount Paid</p><p className="mt-1 text-lg font-bold tabular-nums text-ink-900">{formatINR(t.advance)}</p></div>
-              <div><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Balance Due</p><p className={cn("mt-1 text-lg font-bold tabular-nums", balanceDue(t) > 0 ? "text-danger" : "text-success")}>{formatINR(balanceDue(t))}</p></div>
+            <div className="mt-4 grid gap-3 rounded-xl bg-[#FAF7EF] p-4 text-left sm:grid-cols-3 sm:text-center">
+              <div className="flex items-baseline justify-between gap-3 sm:block"><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Total Invoice Amount</p><p className="text-lg font-bold tabular-nums text-ink-900 sm:mt-1">{formatINR(grossTotal(t))}</p></div>
+              <div className="flex items-baseline justify-between gap-3 sm:block"><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Amount Paid</p><p className="text-lg font-bold tabular-nums text-ink-900 sm:mt-1">{formatINR(t.advance)}</p></div>
+              <div className="flex items-baseline justify-between gap-3 sm:block"><p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Balance Due</p><p className={cn("text-lg font-bold tabular-nums sm:mt-1", balanceDue(t) > 0 ? "text-danger" : "text-success")}>{formatINR(balanceDue(t))}</p></div>
             </div>
           </section>
 

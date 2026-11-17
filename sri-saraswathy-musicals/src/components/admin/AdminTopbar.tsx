@@ -1,76 +1,14 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { PanelLeft, ArrowLeft, Bell, Wrench, MessageSquare, AlertTriangle, Clock, X, MapPin, Lock, ShoppingBag, Volume2, VolumeX, Activity, Truck } from "lucide-react";
-import { useRepair, alertLevel, daysUntil, statusLabel } from "@/lib/store/repair";
-import { useInquiry } from "@/lib/store/inquiry";
-import { useOrderAlerts } from "@/lib/store/orderAlerts";
-import { daysUntil as daysToDispatch } from "@/lib/delivery/types";
+import { PanelLeft, ArrowLeft, MapPin, Lock } from "lucide-react";
 import { useBranchScope, BRANCHES, type BranchScope } from "@/lib/store/branch";
-import { cn, formatINR } from "@/lib/utils";
 import { branchLabel } from "@/lib/stock";
 
-/** Rows shown per section in the bell. Anything beyond this is one "+N more" line into Activity —
- *  the popup is a glance, not a list: it must never grow past the window. */
-const TOP_N = 3;
-
 export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
-  const router = useRouter();
-  const tickets = useRepair((s) => s.tickets);
-  const inquiries = useInquiry((s) => s.inquiries);
-  const orderCount = useOrderAlerts((s) => s.count);
-  const orderLatest = useOrderAlerts((s) => s.latest);
-  const toDispatch = useOrderAlerts((s) => s.dispatch);
-  const muted = useOrderAlerts((s) => s.muted);
-  const setMuted = useOrderAlerts((s) => s.setMuted);
-  const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", onClick);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onClick);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  // Orders whose dispatch deadline is today, tomorrow or already past — the ones that
-  // get buried once a few orders stack up.
-  const dispatchDue = useMemo(
-    () =>
-      toDispatch
-        .map((o) => ({ order: o, days: daysToDispatch(o.dispatchBy) }))
-        .filter((x): x is { order: (typeof toDispatch)[number]; days: number } => x.days !== null && x.days <= 2),
-    [toDispatch],
-  );
-
-  const { overdue, dueSoon, newInq } = useMemo(() => {
-    const overdue = tickets
-      .filter((t) => alertLevel(t) === "overdue")
-      .sort((a, b) => daysUntil(a.deadline) - daysUntil(b.deadline));
-    const dueSoon = tickets
-      .filter((t) => alertLevel(t) === "due-soon")
-      .sort((a, b) => daysUntil(a.deadline) - daysUntil(b.deadline));
-    const newInq = inquiries.filter((i) => i.status === "new");
-    return { overdue, dueSoon, newInq };
-  }, [tickets, inquiries]);
-
-  const count = mounted ? overdue.length + dueSoon.length + newInq.length + orderCount : 0;
-
-  const go = (href: string) => {
-    setOpen(false);
-    router.push(href);
-  };
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between border-b border-ink-100 bg-ivory-50/85 px-4 py-3 backdrop-blur-md md:px-6">
@@ -87,155 +25,6 @@ export function AdminTopbar({ onMenu }: { onMenu: () => void }) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Notification bell */}
-        <div className="relative" ref={ref}>
-          <button
-            onClick={() => setOpen((o) => !o)}
-            aria-label="Notifications"
-            className={cn(
-              "relative grid h-9 w-9 place-items-center rounded-xl text-ink-700 transition-colors hover:bg-ink-900/[0.06]",
-              open && "bg-ink-900/[0.06]",
-            )}
-          >
-            <Bell className="h-5 w-5" />
-            {count > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 text-[9px] font-bold text-white ring-2 ring-ivory-50">
-                {count > 9 ? "9+" : count}
-              </span>
-            )}
-          </button>
-
-          {open && (
-            <div className="absolute right-0 top-11 z-50 flex max-h-[calc(100dvh-5rem)] w-[min(92vw,21rem)] flex-col overflow-hidden rounded-2xl border border-ink-100 bg-ivory-50 shadow-2xl">
-              <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-2.5">
-                <p className="text-sm font-bold text-ink-900">Alerts</p>
-                <button
-                  onClick={() => setMuted(!muted)}
-                  aria-label={muted ? "Turn the new-order sound on" : "Turn the new-order sound off"}
-                  title={muted ? "New-order sound is off" : "New-order sound is on"}
-                  className="ml-auto mr-1 grid h-7 w-7 place-items-center rounded-lg text-ink-400 hover:bg-ink-900/5 hover:text-ink-900"
-                >
-                  {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                </button>
-                <button onClick={() => setOpen(false)} className="grid h-7 w-7 place-items-center rounded-lg text-ink-400 hover:bg-ink-900/5 hover:text-ink-900">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                {count === 0 && (
-                  <p className="px-4 py-10 text-center text-sm text-ink-400">You&apos;re all caught up 🎵</p>
-                )}
-
-                {dispatchDue.length > 0 && (
-                  <Section
-                    icon={<Truck className="h-3.5 w-3.5" />}
-                    label={`Dispatch due · ${dispatchDue.length}`}
-                    tone={dispatchDue.some((d) => d.days < 0) ? "text-danger" : "text-[#8a6a1f]"}
-                  >
-                    {dispatchDue.slice(0, TOP_N).map(({ order: o, days }) => (
-                      <AlertRow
-                        key={`d-${o.id}`}
-                        onClick={() => go(`/admin/orders/${encodeURIComponent(o.id)}`)}
-                        title={o.customerName || "Online customer"}
-                        sub={`${o.id} · ship by ${o.dispatchBy}`}
-                        badge={days < 0 ? `${Math.abs(days)}d late` : days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days}d`}
-                        badgeTone={days < 0 ? "bg-danger/15 text-danger" : "bg-warning/20 text-[#8a6a1f]"}
-                      />
-                    ))}
-                    <MoreLink extra={dispatchDue.length - TOP_N} onClick={() => go("/admin/activity")} />
-                  </Section>
-                )}
-
-                {orderCount > 0 && (
-                  <Section icon={<ShoppingBag className="h-3.5 w-3.5" />} label={`Online orders to ship · ${orderCount}`} tone="text-danger">
-                    {orderLatest.slice(0, TOP_N).map((o) => (
-                      <AlertRow
-                        key={o.id}
-                        onClick={() => go(`/admin/orders/${encodeURIComponent(o.id)}`)}
-                        title={o.customerName || "Online customer"}
-                        sub={`${o.id} · ${branchLabel(o.branch)}`}
-                        badge={formatINR(o.total)}
-                        badgeTone="bg-gold-100 text-gold-700"
-                      />
-                    ))}
-                    <MoreLink extra={Math.max(orderCount, orderLatest.length) - TOP_N} onClick={() => go("/admin/orders")} />
-                  </Section>
-                )}
-
-                {overdue.length > 0 && (
-                  <Section icon={<AlertTriangle className="h-3.5 w-3.5" />} label={`Overdue repairs · ${overdue.length}`} tone="text-danger">
-                    {overdue.slice(0, TOP_N).map((t) => (
-                      <AlertRow
-                        key={t.id}
-                        onClick={() => go(`/admin/service/${t.id}`)}
-                        title={t.productName}
-                        sub={`${t.customerName} · ${statusLabel(t.status)}`}
-                        badge={`${Math.abs(daysUntil(t.deadline))}d late`}
-                        badgeTone="bg-danger/15 text-danger"
-                      />
-                    ))}
-                    <MoreLink extra={overdue.length - TOP_N} onClick={() => go("/admin/service")} />
-                  </Section>
-                )}
-
-                {dueSoon.length > 0 && (
-                  <Section icon={<Clock className="h-3.5 w-3.5" />} label={`Due soon · ${dueSoon.length}`} tone="text-[#8a6a1f]">
-                    {dueSoon.slice(0, TOP_N).map((t) => {
-                      const d = daysUntil(t.deadline);
-                      return (
-                        <AlertRow
-                          key={t.id}
-                          onClick={() => go(`/admin/service/${t.id}`)}
-                          title={t.productName}
-                          sub={`${t.customerName} · ${statusLabel(t.status)}`}
-                          badge={d === 0 ? "Today" : d === 1 ? "Tomorrow" : `${d}d`}
-                          badgeTone="bg-warning/20 text-[#8a6a1f]"
-                        />
-                      );
-                    })}
-                    <MoreLink extra={dueSoon.length - TOP_N} onClick={() => go("/admin/service")} />
-                  </Section>
-                )}
-
-                {newInq.length > 0 && (
-                  <Section icon={<MessageSquare className="h-3.5 w-3.5" />} label={`New inquiries · ${newInq.length}`} tone="text-gold-700">
-                    {newInq.slice(0, TOP_N).map((i) => (
-                      <AlertRow
-                        key={i.id}
-                        onClick={() => go("/admin/inquiries")}
-                        title={i.name}
-                        sub={[i.topic, i.productInterest].filter(Boolean).join(" · ")}
-                        badge="New"
-                        badgeTone="bg-gold-100 text-gold-700"
-                      />
-                    ))}
-                    <MoreLink extra={newInq.length - TOP_N} onClick={() => go("/admin/inquiries")} />
-                  </Section>
-                )}
-              </div>
-
-              {/* The bell is only the short version — the Activity page is the whole picture, stock included. */}
-              <div className="shrink-0 border-t border-ink-100 bg-[#FAF7EF] px-3 py-2.5">
-                <Link href="/admin/activity" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1.5 rounded-lg bg-ink-900 py-2 text-[11px] font-bold uppercase tracking-wider text-ivory-50 hover:bg-ink-800">
-                  <Activity className="h-3.5 w-3.5" /> See everything in Activity
-                </Link>
-                <div className="mt-2 grid grid-cols-3 gap-1.5">
-                  <Link href="/admin/orders" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1 rounded-lg border border-ink-200 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
-                    <ShoppingBag className="h-3 w-3" /> Orders
-                  </Link>
-                  <Link href="/admin/service" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1 rounded-lg border border-ink-200 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
-                    <Wrench className="h-3 w-3" /> Repairs
-                  </Link>
-                  <Link href="/admin/inquiries" onClick={() => setOpen(false)} className="flex items-center justify-center gap-1 rounded-lg border border-ink-200 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-700 hover:border-gold-500 hover:text-gold-600">
-                    <MessageSquare className="h-3 w-3" /> Inquiries
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
         <Link
           href="/"
           className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500 transition-colors hover:bg-ink-900/[0.04] hover:text-gold-700"
@@ -285,40 +74,5 @@ function BranchSwitcher() {
         ))}
       </select>
     </label>
-  );
-}
-
-function Section({ icon, label, tone, children }: { icon: React.ReactNode; label: string; tone: string; children: React.ReactNode }) {
-  return (
-    <div className="border-b border-ink-50 last:border-0">
-      <div className={cn("flex items-center gap-1.5 px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em]", tone)}>
-        {icon} {label}
-      </div>
-      <div>{children}</div>
-    </div>
-  );
-}
-
-function AlertRow({
-  onClick, title, sub, badge, badgeTone,
-}: { onClick: () => void; title: string; sub: string; badge: string; badgeTone: string }) {
-  return (
-    <button onClick={onClick} className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-ink-900/[0.04]">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-semibold leading-tight text-ink-900">{title}</p>
-        <p className="truncate text-[11px] leading-tight text-ink-500">{sub}</p>
-      </div>
-      <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", badgeTone)}>{badge}</span>
-    </button>
-  );
-}
-
-/** "+4 more" under a section — the rest of that list lives on the page it belongs to. */
-function MoreLink({ extra, onClick }: { extra: number; onClick: () => void }) {
-  if (extra <= 0) return null;
-  return (
-    <button onClick={onClick} className="w-full px-4 pb-2 pt-0.5 text-left text-[11px] font-bold uppercase tracking-wider text-gold-700 hover:text-gold-800">
-      + {extra} more →
-    </button>
   );
 }

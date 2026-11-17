@@ -53,7 +53,7 @@ export function MonthBars({
         <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-ink-100" />
         <span className="absolute right-0 top-0 -translate-y-full pb-0.5 text-[9px] tabular-nums text-ink-300">{format(max)}</span>
       </div>
-      <div className="relative flex items-end gap-1 sm:gap-1.5" style={{ height }}>
+      <div className="relative flex items-end gap-0.5 sm:gap-1.5" style={{ height }}>
         {totals.map((v, i) => {
           const h = v > 0 ? Math.max(3, (v / max) * 100) : 0;
           const active = hover === i;
@@ -65,7 +65,7 @@ export function MonthBars({
               onFocus={() => setHover(i)}
               onClick={() => setHover(active ? null : i)}
               aria-label={`${MONTHS[i]} ${year}: ${format(v)}`}
-              className="group relative flex h-full flex-1 items-end focus:outline-none"
+              className="group relative flex h-full min-w-0 flex-1 items-end focus:outline-none"
             >
               <span className={cn("absolute inset-0 rounded-md transition-colors", active ? "bg-gold-500/10" : "group-hover:bg-ink-900/[0.03]")} />
               {v > 0 ? (
@@ -83,14 +83,14 @@ export function MonthBars({
           );
         })}
       </div>
-      <div className="mt-2 flex gap-1 sm:gap-1.5">
+      <div className="mt-2 flex gap-0.5 sm:gap-1.5">
         {MONTHS.map((m, i) => (
-          <span key={m} className={cn("flex-1 text-center text-[9px] uppercase tracking-wide sm:text-[10px]", hover === i ? "font-bold text-ink-900" : i === thisMonth ? "font-semibold text-gold-700" : "text-ink-400")}>{m}</span>
+          <span key={m} className={cn("min-w-0 flex-1 overflow-hidden text-center text-[9px] uppercase tracking-wide sm:text-[10px]", hover === i ? "font-bold text-ink-900" : i === thisMonth ? "font-semibold text-gold-700" : "text-ink-400")}><span className="hidden min-[400px]:inline">{m}</span><span className="min-[400px]:hidden">{m[0]}</span></span>
         ))}
       </div>
       {hover !== null && (
         <div
-          className="pointer-events-none absolute top-0 z-10 w-48 rounded-xl border border-ink-100 bg-white p-3 text-xs shadow-xl"
+          className="pointer-events-none absolute top-0 z-10 w-48 max-w-[75%] rounded-xl border border-ink-100 bg-white p-3 text-xs shadow-xl"
           style={hover < 6 ? { left: `calc(${((hover + 1) / 12) * 100}% + 4px)` } : { right: `calc(${((12 - hover) / 12) * 100}% + 4px)` }}
         >
           <p className="font-bold text-ink-900">{MONTHS[hover]} {year}</p>

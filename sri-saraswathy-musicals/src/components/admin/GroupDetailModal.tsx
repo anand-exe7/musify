@@ -171,7 +171,7 @@ export function GroupDetailModal({
                 const isOpen = open === p.id;
                 return (
                   <li key={p.id}>
-                    <div className={cn("flex items-center gap-2 px-3 py-2.5", isOpen && "bg-ink-900/[0.03]")}>
+                    <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2.5 sm:flex-nowrap", isOpen && "bg-ink-900/[0.03]")}>
                       <button
                         onClick={() => setOpen(isOpen ? null : p.id)}
                         aria-expanded={isOpen}
@@ -180,7 +180,7 @@ export function GroupDetailModal({
                       >
                         {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </button>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 basis-24">
                         <p className="truncate text-sm font-semibold text-ink-900" title={p.name}>{p.name}</p>
                         <p className="truncate text-[11px] text-ink-500">
                           {kind === "department" ? `${p.category} · ` : ""}{p.variants.length} variant{p.variants.length === 1 ? "" : "s"}
@@ -191,11 +191,11 @@ export function GroupDetailModal({
                         <p className="text-sm font-semibold tabular-nums text-ink-900">{money(p.basePrice)}</p>
                         <p className="text-[10px] text-ink-400">price</p>
                       </div>
-                      <div className="w-16 shrink-0 text-right">
+                      <div className="w-16 shrink-0 text-right max-sm:order-2 max-sm:ml-9 max-sm:flex max-sm:w-auto max-sm:items-baseline max-sm:gap-1">
                         <p className={cn("text-sm font-bold tabular-nums", units <= 0 ? "text-danger" : "text-ink-900")}>{units}</p>
                         <p className="text-[10px] text-ink-400">units</p>
                       </div>
-                      <div className="w-24 shrink-0 text-right">
+                      <div className="w-24 shrink-0 text-right max-sm:order-2 max-sm:ml-auto max-sm:flex max-sm:w-auto max-sm:items-baseline max-sm:gap-1">
                         <p className="whitespace-nowrap text-sm font-bold tabular-nums text-ink-900">{money(units * p.basePrice)}</p>
                         <p className="text-[10px] text-ink-400">value</p>
                       </div>
@@ -203,7 +203,7 @@ export function GroupDetailModal({
                         onClick={() => onEditProduct(p)}
                         title={`Edit ${p.name}`}
                         aria-label={`Edit ${p.name}`}
-                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-ink-200 text-ink-600 hover:border-gold-500 hover:text-gold-600"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-ink-200 text-ink-600 hover:border-gold-500 hover:text-gold-600 max-sm:order-1"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
