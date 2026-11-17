@@ -176,16 +176,16 @@ export default function OrdersPage() {
       </div>
 
       {/* Result bar */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-ink-500">{loading ? "Loading orders…" : `${rows.length} result(s)`}</p>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="rounded-lg border border-ink-200 bg-ivory-50 px-3 py-2 text-sm focus:outline-none">
             <option value="new">Newest First</option>
             <option value="old">Oldest First</option>
             <option value="high">Highest Total</option>
             <option value="low">Lowest Total</option>
           </select>
-          <button onClick={exportCSV} className="flex items-center gap-2 text-sm font-semibold text-ink-700 hover:text-gold-600">
+          <button onClick={exportCSV} className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-ink-700 hover:text-gold-600">
             <Download className="h-4 w-4" /> Export CSV
           </button>
         </div>

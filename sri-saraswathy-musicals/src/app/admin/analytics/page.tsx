@@ -407,7 +407,7 @@ export default function AnalyticsPage() {
       {/* Tabs */}
       <div className="mb-4 flex gap-6 overflow-x-auto border-b border-ink-100">
         {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={cn("relative -mb-px whitespace-nowrap border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors", tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
+          <button key={t} onClick={() => setTab(t)} className={cn("relative -mb-px shrink-0 whitespace-nowrap border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors", tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
             {TAB_LABEL[t]}
           </button>
         ))}

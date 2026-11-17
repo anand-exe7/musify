@@ -577,7 +577,7 @@ function ZoneCard({
             </p>
           ) : (
             <div className="overflow-hidden rounded-xl border border-ink-100 bg-white">
-              <div className="grid grid-cols-[1fr_1fr_1fr_2.5rem] gap-2 border-b border-ink-100 bg-ivory-100/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_2.5rem] gap-2 border-b border-ink-100 bg-ivory-100/60 sm:grid px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
                 <span>From (g)</span>
                 <span>To (g)</span>
                 <span className="text-right">Price</span>
@@ -586,12 +586,17 @@ function ZoneCard({
               {ladder.map((r) => {
                 const problem = bandProblem(r);
                 return (
-                <div key={r.id} className="grid grid-cols-[1fr_1fr_1fr_2.5rem] items-center gap-2 border-b border-ink-50 px-3 py-2 last:border-b-0">
+                <div key={r.id} className="grid grid-cols-2 items-end gap-x-3 gap-y-2 border-b border-ink-50 px-3 py-3 last:border-b-0 sm:grid-cols-[1fr_1fr_1fr_2.5rem] sm:items-center sm:gap-2 sm:py-2">
+                  <label className="block min-w-0">
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 sm:hidden">From (g)</span>
                   <DebouncedNumber
                     value={r.minG}
                     onCommit={(v) => onPatchRate(r.id, { minG: v ?? 0 })}
                     className="h-9 w-full rounded-lg border border-ink-200 bg-ivory-50 px-2.5 text-sm tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none"
                   />
+                  </label>
+                  <label className="block min-w-0">
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 sm:hidden">To (g)</span>
                   <DebouncedNumber
                     value={r.maxG}
                     onCommit={(v) => onPatchRate(r.id, { maxG: v ?? 0 })}
@@ -601,6 +606,9 @@ function ZoneCard({
                       problem ? "border-danger bg-danger/5 focus:border-danger" : "border-ink-200 focus:border-gold-500",
                     )}
                   />
+                  </label>
+                  <label className="block min-w-0">
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 sm:hidden">Price</span>
                   <span className="relative block">
                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
                     <DebouncedMoney
@@ -609,14 +617,15 @@ function ZoneCard({
                       className="h-9 w-full rounded-lg border border-ink-200 bg-ivory-50 pl-6 pr-2.5 text-right text-sm font-semibold tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none"
                     />
                   </span>
+                  </label>
                   <button
                     onClick={() => onDeleteRate(r.id)}
                     aria-label={`Delete the ${bandLabel(r)} band`}
-                    className="grid h-9 w-9 place-items-center rounded-lg text-ink-400 hover:bg-danger/10 hover:text-danger"
+                    className="grid h-9 w-9 place-items-center justify-self-end rounded-lg text-ink-400 hover:bg-danger/10 hover:text-danger sm:justify-self-auto"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
-                  {problem && <p className="col-span-4 -mt-1 text-[11px] font-semibold text-danger">{problem}</p>}
+                  {problem && <p className="col-span-2 -mt-1 sm:col-span-4 text-[11px] font-semibold text-danger">{problem}</p>}
                 </div>
                 );
               })}

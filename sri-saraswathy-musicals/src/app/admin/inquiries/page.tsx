@@ -263,12 +263,12 @@ export default function InquiriesPage() {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, topic…" className="w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-9 pr-3 text-sm focus:border-gold-500 focus:outline-none" />
           </div>
           <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-sm ring-1 ring-ink-100">
-            <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
+            <span className="shrink-0 px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
             {lockedBranch ? (
               <span className={cn(pill, "bg-gold-500 text-ink-900")}>{branchLabel(lockedBranch)}</span>
             ) : (
               ([["all", "All"], ...BRANCH_KEYS.map((b) => [b, branchLabel(b)] as const)] as const).map(([k, label]) => (
-                <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, "whitespace-nowrap", branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
+                <button key={k} onClick={() => setBranch(k as BranchScope)} className={cn(pill, "shrink-0 whitespace-nowrap", branch === k ? "bg-gold-500 text-ink-900" : "text-ink-500 hover:text-ink-900")}>
                   {label}
                 </button>
               ))

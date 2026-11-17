@@ -94,10 +94,10 @@ export default function GstPage() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-6 flex gap-6 border-b border-ink-100">
+      <div className="mb-6 flex gap-5 overflow-x-auto border-b border-ink-100 sm:gap-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(["rules", "collections", "returns"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={cn("relative -mb-px border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors",
+            className={cn("relative -mb-px shrink-0 whitespace-nowrap border-b-2 pb-3 text-sm font-semibold uppercase tracking-wider transition-colors",
               tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700")}>
             {t === "rules" ? "Tax Rules" : t === "collections" ? "GST Collections" : "Returns"}
           </button>
@@ -160,17 +160,17 @@ export default function GstPage() {
                 <div className="flex items-center gap-2 text-gold-700"><Building2 className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-wider">In-state</p></div>
                 <p className="mt-2 text-sm font-semibold text-ink-900">{draft.homeState}</p>
                 <div className="mt-3 space-y-1 text-sm">
-                  <div className="flex justify-between text-ink-600"><span>{draft.cgstLabel}</span><span className="font-semibold tabular-nums">{half}%</span></div>
-                  <div className="flex justify-between text-ink-600"><span>{draft.sgstLabel}</span><span className="font-semibold tabular-nums">{half}%</span></div>
-                  <div className="flex justify-between border-t border-gold-200 pt-1 font-bold text-ink-900"><span>Total</span><span className="tabular-nums">{draft.standardRate}%</span></div>
+                  <div className="flex justify-between gap-2 text-ink-600"><span>{draft.cgstLabel}</span><span className="font-semibold tabular-nums">{half}%</span></div>
+                  <div className="flex justify-between gap-2 text-ink-600"><span>{draft.sgstLabel}</span><span className="font-semibold tabular-nums">{half}%</span></div>
+                  <div className="flex justify-between gap-2 border-t border-gold-200 pt-1 font-bold text-ink-900"><span>Total</span><span className="tabular-nums">{draft.standardRate}%</span></div>
                 </div>
               </div>
               <div className="rounded-2xl border border-info/30 bg-info/5 p-5">
                 <div className="flex items-center gap-2 text-info"><ArrowLeftRight className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-wider">Inter-state</p></div>
                 <p className="mt-2 text-sm font-semibold text-ink-900">All other states</p>
                 <div className="mt-3 space-y-1 text-sm">
-                  <div className="flex justify-between text-ink-600"><span>{draft.igstLabel}</span><span className="font-semibold tabular-nums">{draft.standardRate}%</span></div>
-                  <div className="flex justify-between border-t border-info/20 pt-1 font-bold text-ink-900"><span>Total</span><span className="tabular-nums">{draft.standardRate}%</span></div>
+                  <div className="flex justify-between gap-2 text-ink-600"><span>{draft.igstLabel}</span><span className="font-semibold tabular-nums">{draft.standardRate}%</span></div>
+                  <div className="flex justify-between gap-2 border-t border-info/20 pt-1 font-bold text-ink-900"><span>Total</span><span className="tabular-nums">{draft.standardRate}%</span></div>
                 </div>
               </div>
             </div>
@@ -198,18 +198,18 @@ function PreviewTable({ rate, labels }: { rate: number; labels: { cgstLabel: str
   const base = 1000000; // ₹10,000 in paise — illustrative base for the preview
   const gst = (base * rate) / 100;
   return (
-    <div className="grid grid-cols-2 gap-3 text-sm">
-      <div className="rounded-lg bg-gold-50/60 p-3">
+    <div className="grid gap-3 text-sm min-[400px]:grid-cols-2">
+      <div className="min-w-0 rounded-lg bg-gold-50/60 p-3">
         <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gold-700">In-state buyer</p>
-        <div className="flex justify-between text-ink-600"><span>{labels.cgstLabel}</span><span className="tabular-nums">{formatINR(gst / 2)}</span></div>
-        <div className="flex justify-between text-ink-600"><span>{labels.sgstLabel}</span><span className="tabular-nums">{formatINR(gst / 2)}</span></div>
-        <div className="mt-1 flex justify-between border-t border-gold-200 pt-1 font-bold text-ink-900"><span>Payable</span><span className="tabular-nums">{formatINR(base + gst)}</span></div>
+        <div className="flex justify-between gap-2 text-ink-600"><span>{labels.cgstLabel}</span><span className="tabular-nums">{formatINR(gst / 2)}</span></div>
+        <div className="flex justify-between gap-2 text-ink-600"><span>{labels.sgstLabel}</span><span className="tabular-nums">{formatINR(gst / 2)}</span></div>
+        <div className="mt-1 flex justify-between gap-2 border-t border-gold-200 pt-1 font-bold text-ink-900"><span>Payable</span><span className="tabular-nums">{formatINR(base + gst)}</span></div>
       </div>
-      <div className="rounded-lg bg-info/5 p-3">
+      <div className="min-w-0 rounded-lg bg-info/5 p-3">
         <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-info">Other-state buyer</p>
-        <div className="flex justify-between text-ink-600"><span>{labels.igstLabel}</span><span className="tabular-nums">{formatINR(gst)}</span></div>
-        <div className="flex justify-between text-ink-600"><span>&nbsp;</span><span>&nbsp;</span></div>
-        <div className="mt-1 flex justify-between border-t border-info/20 pt-1 font-bold text-ink-900"><span>Payable</span><span className="tabular-nums">{formatINR(base + gst)}</span></div>
+        <div className="flex justify-between gap-2 text-ink-600"><span>{labels.igstLabel}</span><span className="tabular-nums">{formatINR(gst)}</span></div>
+        <div className="flex justify-between gap-2 text-ink-600"><span>&nbsp;</span><span>&nbsp;</span></div>
+        <div className="mt-1 flex justify-between gap-2 border-t border-info/20 pt-1 font-bold text-ink-900"><span>Payable</span><span className="tabular-nums">{formatINR(base + gst)}</span></div>
       </div>
     </div>
   );
@@ -281,20 +281,20 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
     URL.revokeObjectURL(url);
   };
 
-  const pill = "rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
+  const pill = "whitespace-nowrap rounded-full px-3 sm:px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all";
 
   if (status === "loading") return <LoadingPanel label="Loading GST collections…" />;
   return (
     <div className="space-y-6">
       {/* filters + export */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+        <div className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Period</span>
           {PERIODS.map((p) => (
             <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>{p.label}</button>
           ))}
         </div>
-        <div className="flex items-center gap-1 rounded-full bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
+        <div className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
           {lockedBranch ? (
             <span className={cn(pill, "bg-gold-500 text-ink-900")}>{lockedBranch}</span>

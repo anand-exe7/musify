@@ -508,26 +508,26 @@ export default function BillingPage() {
           </section>
 
           {/* Order items */}
-          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-5 md:p-6">
+          <section className="rounded-2xl border border-ink-100 bg-ivory-50 p-3.5 sm:p-5 md:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4 text-gold-600" />
                 <h2 className="text-sm font-bold uppercase tracking-wider text-ink-900">Order Items</h2>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={clearOrder} className="rounded-lg px-3 py-2 text-xs font-semibold text-ink-500 hover:bg-ink-900/5 hover:text-ink-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={clearOrder} className="whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold text-ink-500 hover:bg-ink-900/5 hover:text-ink-900">
                   Clear Order
                 </button>
                 <button
                   onClick={() => setCatalogOpen((o) => !o)}
                   className={cn(
-                    "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all",
+                    "flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-all",
                     catalogOpen ? "bg-ink-900 text-ivory-50" : "bg-ink-900 text-ivory-50 hover:bg-ink-800",
                   )}
                 >
                   <List className="h-3.5 w-3.5" /> Catalog
                 </button>
-                {fullAdmin && <button onClick={addRow} className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
+                {fullAdmin && <button onClick={addRow} className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 hover:border-gold-500 hover:text-gold-600">
                   <Plus className="h-3.5 w-3.5" /> Add Item
                 </button>}
               </div>
@@ -539,7 +539,8 @@ export default function BillingPage() {
                 const lbl = "mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500";
                 return (
                   <div key={r.id} className="rounded-xl border border-ink-100 bg-white p-3 md:p-4">
-                    <div className="flex items-center gap-3">
+                    {/* Phone: number · amount · delete on the first line, the name gets a full-width line of its own. */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:flex-nowrap">
                       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink-900/5 text-xs font-semibold text-ink-500">{i + 1}</span>
                       <input
                         value={r.name}
@@ -547,9 +548,9 @@ export default function BillingPage() {
                         readOnly={!fullAdmin}
                         placeholder={fullAdmin ? "Item name / description…" : "Choose a product from the Catalog"}
                         aria-label="Item name"
-                        className={cn(cell, "min-w-0 flex-1 py-2.5 text-left font-medium")}
+                        className={cn(cell, "order-last w-full min-w-0 py-2.5 text-left font-medium sm:order-none sm:w-auto sm:flex-1")}
                       />
-                      <span className="w-28 shrink-0 text-right text-base font-bold tabular-nums text-ink-900">{formatINR(Math.max(0, r.price * r.qty - lineDiscount(r)))}</span>
+                      <span className="ml-auto w-28 shrink-0 text-right text-base font-bold tabular-nums text-ink-900 sm:ml-0">{formatINR(Math.max(0, r.price * r.qty - lineDiscount(r)))}</span>
                       <button onClick={() => removeRow(r.id)} aria-label="Remove item" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-danger hover:bg-danger/10">
                         <Trash2 className="h-4 w-4" />
                       </button>
