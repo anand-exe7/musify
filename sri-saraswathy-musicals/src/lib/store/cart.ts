@@ -74,6 +74,9 @@ export const useCart = create<CartStore>()(
     {
       name: "ssm-cart",
       version: 3,
+      // The delivery state is deliberately not remembered — the cart always opens on Tamil Nadu.
+      partialize: (s) => ({ items: s.items, delivery: s.delivery, couponCode: s.couponCode }) as CartStore,
+      merge: (persisted, current) => ({ ...current, ...(persisted as object), shipState: "Tamil Nadu" }),
       // v1 items lacked variantKey — drop any stale lines rather than guess.
       // v2 held a built-in delivery name ("standard" / "white-glove" / "express"); methods are
       // admin-defined now, so clear it and let the server pick the first one offered.

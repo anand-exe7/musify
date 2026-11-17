@@ -116,7 +116,7 @@ export function ProductCatalogModal({
                 const isOpen = openId === p.id;
                 return (
                   <div key={p.id} className={cn("rounded-xl border bg-white transition-colors", added > 0 ? "border-gold-500/60" : "border-ink-100")}>
-                    <div className="flex items-center gap-3 p-2.5">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-2.5 sm:flex-nowrap">
                       <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-lg bg-ivory-100">
                         {p.photo ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -125,16 +125,16 @@ export function ProductCatalogModal({
                           <Package className="h-5 w-5 text-ink-300" />
                         )}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-ink-900">{p.name}</p>
-                        <p className="truncate text-[11px] text-ink-500">{[p.brand, p.category].filter(Boolean).join(" · ")}</p>
-                        <p className="mt-0.5 flex items-center gap-2 text-[11px]">
+                      <div className="min-w-0 flex-1 basis-32">
+                        <p className="break-words text-sm font-semibold text-ink-900 sm:truncate">{p.name}</p>
+                        <p className="break-words text-[11px] text-ink-500 sm:truncate">{[p.brand, p.category].filter(Boolean).join(" · ")}</p>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px]">
                           <span className="font-semibold text-ink-800">{lo === hi ? formatINR(lo) : `${formatINR(lo)} – ${formatINR(hi)}`}</span>
                           <span className={onHand > 0 ? "text-success" : "text-danger"}>{onHand > 0 ? `${onHand} in stock` : "Out of stock here"}</span>
                         </p>
                       </div>
                       {multi ? (
-                        <button onClick={() => setOpenId(isOpen ? null : p.id)} className={cn("flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider", added > 0 ? "border-gold-500 bg-gold-50 text-gold-800" : "border-ink-200 text-ink-700 hover:border-gold-500")}>
+                        <button onClick={() => setOpenId(isOpen ? null : p.id)} className={cn("ml-auto flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider", added > 0 ? "border-gold-500 bg-gold-50 text-gold-800" : "border-ink-200 text-ink-700 hover:border-gold-500")}>
                           {added > 0 ? <><Check className="h-3.5 w-3.5" /> {added}</> : `${vars.length} options`}
                           <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-180")} />
                         </button>
@@ -147,9 +147,9 @@ export function ProductCatalogModal({
                         {vars.map(({ v, i }) => {
                           const stock = variantStockAt(v, branch as Branch);
                           return (
-                            <li key={i} className="flex items-center gap-3 px-3 py-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-[13px] font-medium text-ink-800">{variantLabel(v) || "Standard"}</p>
+                            <li key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2">
+                              <div className="min-w-0 flex-1 basis-28">
+                                <p className="break-words text-[13px] font-medium text-ink-800">{variantLabel(v) || "Standard"}</p>
                                 <p className="text-[11px]">
                                   <span className="font-semibold text-ink-700">{formatINR(v.price > 0 ? v.price : p.basePrice)}</span>
                                   <span className={cn("ml-2", stock > 0 ? "text-success" : "text-danger")}>{stock > 0 ? `${stock} in stock` : "None here"}</span>
@@ -184,13 +184,13 @@ export function ProductCatalogModal({
 function Stepper({ qty, onSet }: { qty: number; onSet: (n: number) => void }) {
   if (qty <= 0) {
     return (
-      <button onClick={() => onSet(1)} aria-label="Add" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-ink-900 text-ivory-50 hover:bg-gold-500 hover:text-ink-900">
+      <button onClick={() => onSet(1)} aria-label="Add" className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-ink-900 text-ivory-50 hover:bg-gold-500 hover:text-ink-900">
         <Plus className="h-4 w-4" />
       </button>
     );
   }
   return (
-    <div className="flex shrink-0 items-center rounded-lg border border-gold-500/60 bg-gold-50">
+    <div className="ml-auto flex shrink-0 items-center rounded-lg border border-gold-500/60 bg-gold-50">
       <button onClick={() => onSet(qty - 1)} aria-label={qty === 1 ? "Remove" : "One less"} className="grid h-8 w-8 place-items-center text-ink-700 hover:text-danger">
         {qty === 1 ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
       </button>

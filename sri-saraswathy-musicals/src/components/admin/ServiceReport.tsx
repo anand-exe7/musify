@@ -140,22 +140,22 @@ export function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) 
     <div className="space-y-6">
       {/* REP-06: date-wise report filters */}
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-ink-100 bg-ivory-50 p-4">
-        <div className="flex items-center gap-1 rounded-full bg-white p-1 ring-1 ring-ink-100">
+        <div className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl bg-white p-1 ring-1 ring-ink-100">
           {periods.map((p) => (
             <button
               key={p.key}
               onClick={() => { setPeriod(p.key); setFrom(""); setTo(""); }}
-              className={cn("rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all", period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}
+              className={cn("whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all", period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}
             >
               {p.label}
             </button>
           ))}
         </div>
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">From
-          <input type="date" value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPeriod("custom"); }} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        <label className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 sm:flex-none">From
+          <input type="date" value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPeriod("custom"); }} className="mt-1 block w-full min-w-0 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
         </label>
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">To
-          <input type="date" value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPeriod("custom"); }} className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
+        <label className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 sm:flex-none">To
+          <input type="date" value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPeriod("custom"); }} className="mt-1 block w-full min-w-0 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-gold-500 focus:outline-none" />
         </label>
         <span className="pb-2 text-xs text-ink-400">{tickets.length} ticket{tickets.length === 1 ? "" : "s"} in range</span>
       </div>
@@ -171,7 +171,7 @@ export function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         {/* Monthly intake */}
         <Card>
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-sm font-bold text-ink-900">Ticket Intake · {chartYear}</p>
               <p className="mt-1 text-xl font-bold tabular-nums text-ink-900">{tickets.length} total</p>
@@ -181,7 +181,7 @@ export function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) 
           {/* Bars sit in a fixed-height track so their % heights always resolve. Hovering (or tapping) a month shows
               its numbers in a tooltip kept inside the card: it opens to the right on the left half, to the left on the right. */}
           <div className="relative" onMouseLeave={() => setHoverMonth(null)}>
-            <div className="flex h-48 gap-1.5">
+            <div className="flex h-48 gap-0.5 sm:gap-1.5">
               {m.months.map((v, i) => {
                 const h = v.raised > 0 ? Math.max(4, (v.raised / maxMonth) * 100) : 0;
                 const active = hoverMonth === i;
@@ -193,7 +193,7 @@ export function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) 
                     onFocus={() => setHoverMonth(i)}
                     onClick={() => setHoverMonth(active ? null : i)}
                     aria-label={`${MONTHS[i]}: ${v.raised} tickets raised, ${formatINR(v.rev)} revenue`}
-                    className="relative flex h-full flex-1 flex-col justify-end rounded-t focus:outline-none"
+                    className="relative flex h-full min-w-0 flex-1 flex-col justify-end rounded-t focus:outline-none"
                   >
                     {v.raised > 0 && (
                       <span className="mb-1 block text-center text-[10px] font-bold tabular-nums text-ink-600">{v.raised}</span>
@@ -206,14 +206,14 @@ export function ReportTab({ tickets: allTickets }: { tickets: RepairTicket[] }) 
                 );
               })}
             </div>
-            <div className="mt-1.5 flex gap-1.5">
+            <div className="mt-1.5 flex gap-0.5 sm:gap-1.5">
               {MONTHS.map((mo, i) => (
-                <span key={mo} className={cn("flex-1 text-center text-[9px] uppercase", hoverMonth === i ? "font-bold text-ink-900" : "text-ink-400")}>{mo}</span>
+                <span key={mo} className={cn("min-w-0 flex-1 overflow-hidden text-center text-[9px] uppercase", hoverMonth === i ? "font-bold text-ink-900" : "text-ink-400")}><span className="hidden min-[400px]:inline">{mo}</span><span className="min-[400px]:hidden">{mo[0]}</span></span>
               ))}
             </div>
             {hoverMonth !== null && (
               <div
-                className="pointer-events-none absolute top-0 z-10 w-44 rounded-xl border border-ink-100 bg-white p-3 text-xs shadow-lg"
+                className="pointer-events-none absolute top-0 z-10 w-44 max-w-[75%] rounded-xl border border-ink-100 bg-white p-3 text-xs shadow-lg"
                 style={hoverMonth < 6 ? { left: `calc(${((hoverMonth + 1) / 12) * 100}% + 4px)` } : { right: `calc(${((12 - hoverMonth) / 12) * 100}% + 4px)` }}
               >
                 <p className="font-bold text-ink-900">{MONTHS[hoverMonth]} {chartYear}</p>

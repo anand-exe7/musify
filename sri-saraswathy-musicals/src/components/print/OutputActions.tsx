@@ -246,7 +246,7 @@ export function OutputActions({
           {menu && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setMenu(false)} />
-              <div role="menu" className="absolute right-0 z-40 mt-2 w-64 rounded-2xl border border-ink-100 bg-ivory-50 p-2 shadow-xl">
+              <div role="menu" className="absolute right-0 z-40 mt-2 w-64 rounded-2xl max-sm:fixed max-sm:inset-x-4 max-sm:w-auto border border-ink-100 bg-ivory-50 p-2 shadow-xl">
                 <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Choose print size</p>
                 <button role="menuitem" onClick={() => run("thermal80")} className="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left hover:bg-ink-900/5">
                   <Receipt className="mt-0.5 h-4 w-4 text-gold-600" />

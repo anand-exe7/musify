@@ -13,10 +13,10 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { VariantPhoto } from "./VariantPhoto";
 
 type TabKey = "details" | "storefront" | "variants";
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "details", label: "Details" },
-  { key: "storefront", label: "Photos & storefront" },
-  { key: "variants", label: "Variants & stock" },
+const TABS: { key: TabKey; label: string; short: string }[] = [
+  { key: "details", label: "Details", short: "Details" },
+  { key: "storefront", label: "Photos & storefront", short: "Photos" },
+  { key: "variants", label: "Variants & stock", short: "Variants" },
 ];
 
 function blankProduct(name = ""): InvProduct {
@@ -217,28 +217,28 @@ export function ProductModal({
   const label = "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink-950/50 p-2 backdrop-blur-sm sm:p-4" onClick={onClose}>
       <div className="my-4 flex max-h-[92dvh] w-full max-w-5xl flex-col rounded-2xl bg-ivory-50 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* header + tabs */}
         <div className="shrink-0 border-b border-ink-100">
-          <div className="flex items-center justify-between px-6 pt-5">
-            <div>
+          <div className="flex items-start justify-between gap-3 px-4 pt-4 sm:items-center sm:px-6 sm:pt-5">
+            <div className="min-w-0">
               <h2 className="text-lg font-bold text-ink-900">{isNew ? "Add product" : "Edit product"}</h2>
               <p className="text-xs text-ink-500">{isNew ? "Three short steps — details, how it looks in the shop, and what is in stock." : draft.name || "Untitled product"}</p>
             </div>
-            <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
+            <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-500 hover:bg-ink-900/5"><X className="h-4 w-4" /></button>
           </div>
-          <div className="mt-4 flex gap-1 px-4">
+          <div className="mt-3 flex gap-1 overflow-x-auto px-3 sm:mt-4 sm:px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "relative rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+                  "relative shrink-0 whitespace-nowrap rounded-t-lg px-3 py-2.5 text-[13px] font-semibold transition-colors sm:px-4 sm:text-sm",
                   tab === t.key ? "bg-[#FAF7EF] text-ink-900" : "text-ink-500 hover:text-ink-800",
                 )}
               >
-                {t.label}
+                <span className="sm:hidden">{t.short}</span><span className="hidden sm:inline">{t.label}</span>
                 {t.key === "variants" && <span className="ml-2 rounded-full bg-ink-900/10 px-1.5 py-0.5 text-[10px] font-bold text-ink-600">{draft.variants.length}</span>}
                 {tab === t.key && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-gold-500" />}
               </button>
@@ -246,7 +246,7 @@ export function ProductModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FAF7EF] px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FAF7EF] px-3.5 py-4 sm:px-6 sm:py-5">
           {/* ── Details ─────────────────────────────────────────────── */}
           {tab === "details" && (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -546,10 +546,10 @@ export function ProductModal({
         </div>
 
         {/* footer */}
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-ink-100 px-6 py-4">
-          {error && <p className="mr-auto text-sm font-medium text-danger">{error}</p>}
-          <button onClick={onClose} className="rounded-xl border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5">Cancel</button>
-          <button onClick={save} className="rounded-xl bg-ink-900 px-5 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800">{isNew ? "Create product" : "Save changes"}</button>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-ink-100 px-3.5 py-3 sm:px-6 sm:py-4">
+          {error && <p className="mr-auto w-full text-sm sm:w-auto font-medium text-danger">{error}</p>}
+          <button onClick={onClose} className="whitespace-nowrap rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-900/5 sm:px-5">Cancel</button>
+          <button onClick={save} className="whitespace-nowrap rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-ivory-50 hover:bg-ink-800 sm:px-5">{isNew ? "Create product" : "Save changes"}</button>
         </div>
       </div>
     </div>
