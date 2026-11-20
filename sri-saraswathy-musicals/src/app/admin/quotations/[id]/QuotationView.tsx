@@ -6,7 +6,7 @@ import { ArrowLeft, Pencil, Trash2, Link2, Check, FileCheck2, X } from "lucide-r
 import { OutputActions } from "@/components/print/OutputActions";
 import { quotationToDoc } from "@/lib/print/doc";
 import type { Quotation } from "@/types";
-import { QuotationSheet, QUOTATION_PRINT_CSS } from "@/components/quotation/QuotationSheet";
+import { QuotationSheet, QuotationPrintStyles } from "@/components/quotation/QuotationSheet";
 import { QuotationEditor } from "@/components/quotation/QuotationEditor";
 import { BUSINESS } from "@/lib/data/business";
 import { formatINR } from "@/lib/utils";
@@ -112,7 +112,7 @@ export function QuotationView({ quotation, isAdmin }: { quotation: Quotation; is
 
   return (
     <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
-      <style>{QUOTATION_PRINT_CSS}</style>
+      <QuotationPrintStyles />
 
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
         <Link href="/admin/quotations" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">

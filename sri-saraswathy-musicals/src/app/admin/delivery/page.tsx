@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useSettings } from "@/lib/store/settings";
 import type { Zone, RateBand, DeliveryMethod } from "@/lib/delivery/types";
-import { bandLabel, bandProblem, fallbackZone, formatWeight } from "@/lib/delivery/types";
+import { bandLabel, bandProblem, fallbackZone, formatWeight, priceForWeight, ADDL_STEP_G, ADDL_STEP_LIMIT_G, PER_KG_TIER_2_G } from "@/lib/delivery/types";
 import { IN_STATES } from "@/lib/store/gst";
 import { cn, formatINR } from "@/lib/utils";
 import { DebouncedText, DebouncedMoney, DebouncedNumber } from "@/components/admin/DebouncedField";
@@ -10,6 +10,9 @@ import { LoadErrorBanner, LoadingPanel } from "@/components/admin/LoadState";
 import { Plus, Trash2, Truck, MapPin, Clock, X, Search, Globe2, Check, Scale, Pencil, AlertTriangle, Lock } from "lucide-react";
 
 const uid = () => crypto.randomUUID();
+
+/** The weights the per-zone preview prices, chosen to straddle every rule on a courier's card. */
+const PREVIEW_WEIGHTS = [250, 500, 1_000, 2_500, 5_000, 7_000, 12_000];
 
 /** The next band to add: starts where the heaviest one ends and is the same width again. */
 function nextBand(rates: RateBand[]): RateBand {
@@ -115,7 +118,7 @@ export default function DeliveryPage() {
         <p className="flex gap-2">
           <Truck className="h-4 w-4 shrink-0 text-gold-600" />
           <span>
-            <b className="text-ink-900">4.</b> That zone&rsquo;s band for the weight sets the price.
+            <b className="text-ink-900">4.</b> That zone&rsquo;s band sets the price; past the bands, the add-on rates do.
           </span>
         </p>
       </div>
@@ -452,6 +455,17 @@ function ZoneCard({
 }) {
   const [showStates, setShowStates] = useState(false);
   const ladder = [...z.rates].sort((a, b) => a.minG - b.minG || a.position - b.position);
+  const step = z.perAddl500 ?? 0;
+  const over5 = z.above5kgPerKg ?? 0;
+  const over10 = z.above10kgPerKg ?? 0;
+  const heaviest = ladder[ladder.length - 1];
+  /**
+   * A band that runs to 5 kg or beyond leaves the per-500 g step nothing to do, because the band
+   * covers every weight the step would have charged for. Zones carried over from the old fixed
+   * slabs look exactly like this — one wide "501 g and up" band at a single flat price — so the
+   * step would be set and silently ignored.
+   */
+  const stepShadowed = step > 0 && !!heaviest && heaviest.maxG >= ADDL_STEP_LIMIT_G;
 
   // Holes and overlaps in the ladder are what make a cart come back unpriced.
   const gaps: string[] = [];
@@ -634,13 +648,107 @@ function ZoneCard({
 
           {ladder.length > 0 && (
             <p className="mt-2 text-[11px] text-ink-500">
-              Heaviest band: {bandLabel(ladder[ladder.length - 1])}. A parcel over that is charged this same rate,
-              so there is no need for an open-ended band.
+              Heaviest band: {bandLabel(ladder[ladder.length - 1])}.{" "}
+              {step > 0
+                ? `Past that, every extra ${formatWeight(ADDL_STEP_G)} adds ₹${(step / 100).toFixed(2)} on top — set below.`
+                : "A parcel over that is charged this same rate, unless you set an add-on rate below."}
             </p>
           )}
           {gaps.map((g, i) => (
             <p key={i} className="mt-1 text-[11px] text-amber-700">{g}</p>
           ))}
+        </div>
+
+        {/* Heavier parcels — the rest of the courier's rate card. These ADD UP; they are not a cap. */}
+        <div className="mt-5">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500">
+            Heavier parcels <span className="normal-case tracking-normal text-ink-400">· past the bands above</span>
+          </p>
+          <div className="grid gap-3 rounded-xl border border-ink-100 bg-white p-3 sm:grid-cols-3">
+            <label className="block min-w-0">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                Every extra {formatWeight(ADDL_STEP_G)}
+              </span>
+              <span className="relative block">
+                <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-ink-400">+₹</span>
+                <DebouncedMoney
+                  value={step}
+                  onCommit={(perAddl500) => onPatch({ perAddl500 })}
+                  className="h-9 w-full rounded-lg border border-ink-200 bg-ivory-50 pl-8 pr-2.5 text-right text-sm font-semibold tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none"
+                />
+              </span>
+              <span className="mt-1 block text-[10px] text-ink-400">
+                Added for each started {formatWeight(ADDL_STEP_G)} past the heaviest band, up to {formatWeight(ADDL_STEP_LIMIT_G)}.
+              </span>
+            </label>
+            <label className="block min-w-0">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                Above {formatWeight(ADDL_STEP_LIMIT_G)} · per kg
+              </span>
+              <span className="relative block">
+                <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
+                <DebouncedMoney
+                  value={over5}
+                  onCommit={(above5kgPerKg) => onPatch({ above5kgPerKg })}
+                  className="h-9 w-full rounded-lg border border-ink-200 bg-ivory-50 pl-6 pr-2.5 text-right text-sm font-semibold tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none"
+                />
+              </span>
+              <span className="mt-1 block text-[10px] text-ink-400">Replaces the step. Every started kg is charged.</span>
+            </label>
+            <label className="block min-w-0">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                Above {formatWeight(PER_KG_TIER_2_G)} · per kg
+              </span>
+              <span className="relative block">
+                <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-ink-400">₹</span>
+                <DebouncedMoney
+                  value={over10}
+                  onCommit={(above10kgPerKg) => onPatch({ above10kgPerKg })}
+                  className="h-9 w-full rounded-lg border border-ink-200 bg-ivory-50 pl-6 pr-2.5 text-right text-sm font-semibold tabular-nums text-ink-900 focus:border-gold-500 focus:outline-none"
+                />
+              </span>
+              <span className="mt-1 block text-[10px] text-ink-400">Leave at ₹0 to carry on at the rate beside it.</span>
+            </label>
+          </div>
+          <p className="mt-2 text-[11px] text-ink-500">
+            The extra {formatWeight(ADDL_STEP_G)} lots <b className="text-ink-700">add up</b> — they are not a ceiling. Leave a
+            box at ₹0 to switch that rule off.
+          </p>
+          {stepShadowed && (
+            <p className="mt-2 flex gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>
+                The heaviest band runs to {formatWeight(heaviest.maxG)}, so it already covers everything the
+                per-{formatWeight(ADDL_STEP_G)} rate would charge for and that rate never applies. End the band where the
+                step should start — usually {formatWeight(ADDL_STEP_G)} — and let the add-on price the rest.
+              </span>
+            </p>
+          )}
+
+          {/* What the rules above actually charge, so the admin never has to do the sums. */}
+          <div className="mt-3 overflow-x-auto rounded-xl border border-ink-100 bg-ivory-100/50">
+            <table className="w-full min-w-[26rem] text-xs">
+              <tbody>
+                <tr className="border-b border-ink-100 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                  <td className="px-3 py-2">Parcel</td>
+                  {PREVIEW_WEIGHTS.map((w) => (
+                    <td key={w} className="px-2 py-2 text-right">{formatWeight(w)}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="px-3 py-2 font-semibold text-ink-700">Charge</td>
+                  {PREVIEW_WEIGHTS.map((w) => {
+                    const q = priceForWeight(z, w);
+                    return (
+                      <td key={w} className={cn("px-2 py-2 text-right font-bold tabular-nums", q.priced ? "text-ink-900" : "text-danger")}>
+                        {q.priced ? formatINR(q.price) : "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>

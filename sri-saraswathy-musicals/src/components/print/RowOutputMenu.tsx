@@ -6,19 +6,19 @@ import { BUSINESS } from "@/lib/data/business";
 import { docWhatsAppText, type PrintDoc } from "@/lib/print/doc";
 import { waUrl } from "@/lib/whatsapp";
 import { ThermalReceipt, type ThermalWidth } from "@/components/print/ThermalReceipt";
-import { printThermal, printIsolated, downloadSheetPdf } from "@/components/print/OutputActions";
+import { printThermal, printIsolated, printA5, downloadSheetPdf } from "@/components/print/OutputActions";
 import { toastError } from "@/lib/store/toast";
 
 const ROW_THERMAL_ROOT = "row-thermal-root";
 const ROW_A4_ROOT = "row-a4-root";
 
-type Job = "thermal80" | "thermal58" | "a4" | "pdf";
+type Job = "thermal80" | "thermal58" | "a4" | "a5" | "pdf";
 
 /**
- * LED-01 / QUO-04: per-row output menu for list screens. Thermal, A4 and PDF all run right here on the list — the
+ * LED-01 / QUO-04: per-row output menu for list screens. Thermal, A4, A5 and PDF all run right here on the list — the
  * document is rendered off-screen and printed / captured in place, so no other page opens. WhatsApp sends from here.
  *
- * `sheet` is the full A4 document (and the id of its sheet element, for the PDF). Without it, A4 / PDF fall back to
+ * `sheet` is the full A4 document (and the id of its sheet element, for the PDF). Without it, A4 / A5 / PDF fall back to
  * opening `href` with `?output=`.
  */
 export function RowOutputMenu({
@@ -66,6 +66,7 @@ export function RowOutputMenu({
       window.addEventListener("afterprint", finished, { once: true });
       fallback = setTimeout(finished, 60_000);
       if (job === "a4") printIsolated(ROW_A4_ROOT, "size: A4; margin: 8mm;", "a4");
+      else if (job === "a5") printA5(ROW_A4_ROOT);
       else printThermal(job === "thermal80" ? 80 : 58, ROW_THERMAL_ROOT);
     }, 80);
     return () => {
@@ -77,7 +78,7 @@ export function RowOutputMenu({
 
   const run = (j: Job) => {
     setOpen(null);
-    if ((j === "a4" || j === "pdf") && !sheet) {
+    if ((j === "a4" || j === "a5" || j === "pdf") && !sheet) {
       window.open(`${href}${href.includes("?") ? "&" : "?"}output=${j}`, "_blank", "noopener");
       return;
     }
@@ -114,6 +115,7 @@ export function RowOutputMenu({
             <button role="menuitem" onClick={() => run("thermal80")} className={item}><Receipt className="h-4 w-4 text-gold-600" /> Thermal · 80 mm</button>
             <button role="menuitem" onClick={() => run("thermal58")} className={item}><Receipt className="h-4 w-4 text-gold-600" /> Thermal · 58 mm</button>
             <button role="menuitem" onClick={() => run("a4")} className={item}><FileText className="h-4 w-4 text-gold-600" /> A4 sheet</button>
+            <button role="menuitem" onClick={() => run("a5")} className={item}><FileText className="h-4 w-4 text-gold-600" /> A5 sheet</button>
             <button role="menuitem" onClick={() => run("pdf")} className={item}><Download className="h-4 w-4 text-gold-600" /> Download PDF</button>
             <button role="menuitem" onClick={whatsapp} className={item}><MessageCircle className="h-4 w-4 text-[#128C4B]" /> Send on WhatsApp</button>
           </div>

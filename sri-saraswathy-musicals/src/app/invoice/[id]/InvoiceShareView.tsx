@@ -5,7 +5,7 @@ import { ArrowLeft, Link2, Check } from "lucide-react";
 import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc, type PrintDoc } from "@/lib/print/doc";
 import type { Invoice } from "@/types";
-import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
+import { TaxInvoiceSheet, InvoicePrintStyles } from "@/components/invoice/TaxInvoiceSheet";
 
 /**
  * Public share wrapper for the tax invoice. Anyone with the link (opaque ref
@@ -27,7 +27,7 @@ export function InvoiceShareView({ invoice, payment, receipt }: { invoice: Invoi
 
   return (
     <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
-      <style>{TAX_INVOICE_PRINT_CSS}</style>
+      <InvoicePrintStyles />
 
       {/* Toolbar (hidden on print) */}
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">

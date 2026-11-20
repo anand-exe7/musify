@@ -2,14 +2,14 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { Quotation } from "@/types";
-import { QuotationSheet, QUOTATION_PRINT_CSS } from "@/components/quotation/QuotationSheet";
+import { QuotationSheet, QuotationPrintStyles } from "@/components/quotation/QuotationSheet";
 import { OutputActions } from "@/components/print/OutputActions";
 import { quotationToDoc } from "@/lib/print/doc";
 
 export function QuotationShareView({ quotation }: { quotation: Quotation }) {
   return (
     <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
-      <style>{QUOTATION_PRINT_CSS}</style>
+      <QuotationPrintStyles />
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-gold-600">
           <ArrowLeft className="h-4 w-4" /> Back to shop

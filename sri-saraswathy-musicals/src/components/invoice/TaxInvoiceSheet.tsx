@@ -25,9 +25,29 @@ export const TAX_INVOICE_PRINT_CSS = `
   /* The page-filling and the scale are for the tax invoice itself. A payment receipt shares this id
      (so print and PDF work the same) but keeps its own, shorter, natural height. */
   #invoice-sheet[data-sheet="tax-invoice"] { zoom: var(--fit-zoom, 1); min-height: calc(279mm / var(--fit-zoom, 1)); }
-  @page { size: A4; margin: 8mm; }
 }
 `;
+
+/**
+ * The `@page` size, kept in a style element of its own.
+ *
+ * `printElement` (see `@/lib/print/isolate`) switches off every OTHER style element carrying an `@page` rule, so
+ * that its own paper size wins — an A5 print must not be overruled by an A4 rule left on the page. While the size
+ * and the layout above lived in one element, printing an invoice from a list or straight off the billing screen
+ * muted the lot: the sheet lost its fit-zoom and its 279mm page fill, and came out floating on the paper instead
+ * of filling it. Keeping them apart means the layout always applies and only the paper size is ever overridden.
+ */
+export const TAX_INVOICE_PAGE_CSS = `@media print { @page { size: A4; margin: 8mm; } }`;
+
+/** Both print stylesheets for a page whose own Ctrl+P should produce an A4 invoice. */
+export function InvoicePrintStyles() {
+  return (
+    <>
+      <style>{TAX_INVOICE_PRINT_CSS}</style>
+      <style>{TAX_INVOICE_PAGE_CSS}</style>
+    </>
+  );
+}
 
 function fmtDate(d: string) {
   const date = new Date(d);

@@ -5,7 +5,7 @@ import type { Invoice } from "@/types";
 import { grossTotal, balanceDue, type RepairTicket } from "@/lib/store/repair";
 import { BUSINESS, serviceInvoiceUrl } from "@/lib/data/business";
 import { formatINR } from "@/lib/utils";
-import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
+import { TaxInvoiceSheet, InvoicePrintStyles } from "@/components/invoice/TaxInvoiceSheet";
 import { ReceiptSheet } from "@/components/print/ReceiptSheet";
 import { OutputActions } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
@@ -50,7 +50,7 @@ export function AdminServiceInvoiceView({ invoice, ticket }: { invoice: Invoice 
 
   return (
     <div className="p-5 md:p-8">
-      <style>{TAX_INVOICE_PRINT_CSS}</style>
+      <InvoicePrintStyles />
 
       {/* Toolbar (hidden on print) */}
       <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">

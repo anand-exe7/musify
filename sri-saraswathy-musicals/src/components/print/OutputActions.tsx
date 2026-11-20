@@ -5,11 +5,11 @@ import { Printer, Download, MessageCircle, ChevronDown, Receipt, FileText, Loade
 import { ThermalReceipt, type ThermalWidth } from "@/components/print/ThermalReceipt";
 import { BUSINESS } from "@/lib/data/business";
 import { docWhatsAppText, type PrintDoc } from "@/lib/print/doc";
-import { printElement } from "@/lib/print/isolate";
+import { printElement, type PrintMode } from "@/lib/print/isolate";
 import { cn } from "@/lib/utils";
 import { waUrl } from "@/lib/whatsapp";
 
-export type OutputFormat = "thermal80" | "thermal58" | "a4" | "pdf";
+export type OutputFormat = "thermal80" | "thermal58" | "a4" | "a5" | "pdf";
 
 export const THERMAL_ROOT = "thermal-print-root";
 const noopSubscribe = () => () => {};
@@ -19,8 +19,13 @@ const noopSubscribe = () => () => {};
  * sheet leaves the print layout, and any other `@page` rule on the page is switched off for the duration
  * (otherwise an 80 mm receipt prints in the middle of an A4 sheet).
  */
-export function printIsolated(rootId: string, page: string, mode: "thermal" | "a4") {
+export function printIsolated(rootId: string, page: string, mode: PrintMode) {
   printElement(rootId, page, mode);
+}
+
+/** PRN-01: the same sheet on half-size paper — A5 portrait, scaled so it still reads as one page. */
+export function printA5(rootId: string) {
+  printElement(rootId, "size: A5; margin: 6mm;", "a5");
 }
 
 /** Thermal: roll width × the receipt's own height, no margins, so the printer cuts right after the receipt. */
@@ -130,7 +135,7 @@ export async function downloadSheetPdf(targetId: string, fileName: string): Prom
 
 /**
  * The one output bar for invoices, quotations and repair documents (BIL-05/06/07, LED-01, QUO-01/04, REP-05):
- *  • Print → choose Thermal receipt (80 mm / 58 mm, Bluetooth or USB printer) or A4 sheet
+ *  • Print → choose Thermal receipt (80 mm / 58 mm, Bluetooth or USB printer), A4 sheet or A5 sheet
  *  • Download PDF (A4)
  *  • WhatsApp (message with the GST split-up and the share link)
  *
@@ -176,10 +181,14 @@ export function OutputActions({
   // `?output=thermal80|thermal58|a4|pdf` on the page URL runs that action once (billing → "Print" opens here).
   const queryParam = useSyncExternalStore(noopSubscribe, () => new URLSearchParams(window.location.search).get("output") ?? "", () => "");
   const queryFormat: OutputFormat | null =
-    queryParam === "thermal80" || queryParam === "thermal58" || queryParam === "a4" || queryParam === "pdf" ? queryParam : null;
+    queryParam === "thermal80" || queryParam === "thermal58" || queryParam === "a4" || queryParam === "a5" || queryParam === "pdf" ? queryParam : null;
 
   const printA4 = useCallback(() => {
     printElement(a4TargetId, "size: A4; margin: 8mm;", "a4");
+  }, [a4TargetId]);
+
+  const printA5Sheet = useCallback(() => {
+    printA5(a4TargetId);
   }, [a4TargetId]);
 
   const pdf = useCallback(async () => {
@@ -214,6 +223,7 @@ export function OutputActions({
     (f: OutputFormat) => {
       setMenu(false);
       if (f === "a4") printA4();
+      else if (f === "a5") printA5Sheet();
       else if (f === "pdf") void pdf();
       else {
         const w: ThermalWidth = f === "thermal58" ? 58 : 80;
@@ -222,7 +232,7 @@ export function OutputActions({
         setTimeout(() => setThermal(w), 0);
       }
     },
-    [printA4, pdf],
+    [printA4, printA5Sheet, pdf],
   );
 
   const auto = autoFormat ?? queryFormat;
@@ -259,6 +269,10 @@ export function OutputActions({
                 <button role="menuitem" onClick={() => run("a4")} className="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left hover:bg-ink-900/5">
                   <FileText className="mt-0.5 h-4 w-4 text-gold-600" />
                   <span><span className="block text-sm font-semibold text-ink-900">A4 sheet</span><span className="block text-xs text-ink-500">Full-page invoice</span></span>
+                </button>
+                <button role="menuitem" onClick={() => run("a5")} className="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left hover:bg-ink-900/5">
+                  <FileText className="mt-0.5 h-4 w-4 text-gold-600" />
+                  <span><span className="block text-sm font-semibold text-ink-900">A5 sheet</span><span className="block text-xs text-ink-500">Half-page · same invoice, smaller paper</span></span>
                 </button>
               </div>
             </>
