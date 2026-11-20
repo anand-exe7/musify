@@ -141,7 +141,6 @@ export default function AnalyticsPage() {
   // Net-of-GST helpers. Sale values are GST-inclusive: a POS bill contributes
   // its saved tax snapshot (0 on a non-GST bill); web/service extract at the
   // standard slab. Revenue is the taxable value (sale − GST).
-  const netOf = (gross: number) => extractGst(Math.max(0, gross), gstRate).net;
   const gstOf = (gross: number) => extractGst(Math.max(0, gross), gstRate).gst;
   const billGoods = (b: Bill) => Math.max(0, b.subtotal - b.discount);
   const billGst = (b: Bill): number => (b.source === "offline" ? (b.gstEnabled ? Math.max(0, b.gst ?? 0) : 0) : gstOf(billGoods(b)));
@@ -158,12 +157,32 @@ export default function AnalyticsPage() {
     const online = scoped.filter((b) => b.source === "online");
     const service = scoped.filter((b) => b.source === "service");
     const items = scoped.reduce((n, b) => n + b.items.reduce((q, i) => q + i.qty, 0), 0);
+    // Per-item units & net revenue. Bill lines carry the name as it was sold ("Harmonium — Single Reed"),
+    // which is NOT the catalogue name, so the Products tab has to look its rows up by product id — matching
+    // on the name alone left every catalogue row reading 0 sold / ₹0.00. Lines keep their id when they were
+    // picked from the catalogue; freeform and web lines fall back to the name, then to the part before the
+    // variant dash.
     const revByItem = new Map<string, number>();
     const qtyByItem = new Map<string, number>();
-    scoped.forEach((b) => b.items.forEach((i) => {
-      revByItem.set(i.name, (revByItem.get(i.name) || 0) + netOf(i.price * i.qty));
-      qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
-    }));
+    const revByProduct = new Map<string, number>();
+    const qtyByProduct = new Map<string, number>();
+    const idByName = new Map<string, string>();
+    for (const p of invProducts) idByName.set(p.name.trim().toLowerCase(), p.id);
+    const baseName = (n: string) => n.split(/\s+[—–-]\s+/)[0].trim().toLowerCase();
+    scoped.forEach((b) => {
+      // Strip the bill's own tax off its lines, so a non-GST bill isn't taxed and a GST bill is taxed once.
+      const factor = b.total > 0 ? Math.max(0, b.total - billGst(b)) / b.total : 1;
+      b.items.forEach((i) => {
+        const gross = Math.max(0, i.price * i.qty - (i.discount || 0));
+        const net = Math.round(gross * factor);
+        revByItem.set(i.name, (revByItem.get(i.name) || 0) + net);
+        qtyByItem.set(i.name, (qtyByItem.get(i.name) || 0) + i.qty);
+        const pid = i.productId ?? idByName.get(i.name.trim().toLowerCase()) ?? idByName.get(baseName(i.name));
+        if (!pid) return;
+        revByProduct.set(pid, (revByProduct.get(pid) || 0) + net);
+        qtyByProduct.set(pid, (qtyByProduct.get(pid) || 0) + i.qty);
+      });
+    });
     const topItems = [...revByItem.entries()].sort((a, b) => b[1] - a[1]);
     // ANA-01: billed total split across Cash / Card / UPI / Online, always in that order. A split
     // bill counts under each of its modes; see `modeSplit`.
@@ -187,8 +206,11 @@ export default function AnalyticsPage() {
       topItems,
       qtyByItem,
       revByItem,
+      qtyByProduct,
+      revByProduct,
     };
-  }, [scoped, gstRate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, gstRate, invProducts]);
 
   // Net revenue trend by month (respects branch + channel, ignores the period
   // filter so a whole year reads at once). Buckets are for ONE calendar year —
@@ -208,22 +230,31 @@ export default function AnalyticsPage() {
   const [trendYearPick, setTrendYearPick] = useState<number | null>(null);
   // Default to the latest year that has sales (else the current year).
   const trendYear = trendYearPick ?? new Date().getFullYear();
-  const { monthly, monthlyCount, monthlyByChannel } = useMemo(() => {
+  // ANA-06: two charts off the same twelve buckets — net sales (ex-GST) and gross sales (billed, incl. GST
+  // + delivery). Both are built in one pass so the year's bills are only walked once.
+  const { monthly, monthlyGross, monthlyCount, monthlyByChannel, monthlyGrossByChannel } = useMemo(() => {
     const totals = new Array(12).fill(0);
+    const gross = new Array(12).fill(0);
     const counts = new Array(12).fill(0);
     const byChannel = Array.from({ length: 12 }, () => ({ offline: 0, online: 0, service: 0 }) as Record<string, number>);
+    const grossByChannel = Array.from({ length: 12 }, () => ({ offline: 0, online: 0, service: 0 }) as Record<string, number>);
     trendBase.forEach((b) => {
       const d = new Date(b.createdAt);
       if (d.getFullYear() !== trendYear) return;
       const net = billNet(b);
-      totals[d.getMonth()] += net;
-      counts[d.getMonth()] += 1;
-      byChannel[d.getMonth()][b.source] = (byChannel[d.getMonth()][b.source] ?? 0) + net;
+      const billed = Math.max(0, b.total);
+      const mo = d.getMonth();
+      totals[mo] += net;
+      gross[mo] += billed;
+      counts[mo] += 1;
+      byChannel[mo][b.source] = (byChannel[mo][b.source] ?? 0) + net;
+      grossByChannel[mo][b.source] = (grossByChannel[mo][b.source] ?? 0) + billed;
     });
-    return { monthly: totals, monthlyCount: counts, monthlyByChannel: byChannel };
+    return { monthly: totals, monthlyGross: gross, monthlyCount: counts, monthlyByChannel: byChannel, monthlyGrossByChannel: grossByChannel };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trendBase, trendYear, gstRate]);
   const yearTotal = monthly.reduce((a, b) => a + b, 0);
+  const yearGrossTotal = monthlyGross.reduce((a, b) => a + b, 0);
 
   // Expenses for the current period + branch → true net profit.
   const expensesInView = useMemo(
@@ -540,7 +571,7 @@ export default function AnalyticsPage() {
             </section>
           )}
 
-          {/* Trend — compact, full width */}
+          {/* Trends — net and gross, one card each, same twelve months */}
           <Card>
             <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -548,7 +579,7 @@ export default function AnalyticsPage() {
                 <p className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{formatINR(yearTotal)}</p>
                 <p className="text-xs text-ink-500">Avg {formatINR(Math.round(yearTotal / 12))} a month · hover or tap a month</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="hidden items-center gap-3 text-[11px] text-ink-500 sm:flex">
                   {TREND_SERIES.map((x) => <span key={x.key} className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: x.color }} />{x.label}</span>)}
                 </div>
@@ -558,6 +589,20 @@ export default function AnalyticsPage() {
               </div>
             </div>
             <MonthBars totals={monthly} parts={monthlyByChannel} series={TREND_SERIES} year={trendYear} format={formatINR} height={170} unit={(i) => `${monthlyCount[i]} bill${monthlyCount[i] === 1 ? "" : "s"}`} />
+          </Card>
+
+          <Card>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-ink-900">Gross Sales Trend <span className="font-normal text-ink-400">(billed · incl. GST + delivery)</span></p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{formatINR(yearGrossTotal)}</p>
+                <p className="text-xs text-ink-500">Avg {formatINR(Math.round(yearGrossTotal / 12))} a month · hover or tap a month</p>
+              </div>
+              <div className="hidden items-center gap-3 text-[11px] text-ink-500 sm:flex">
+                {TREND_SERIES.map((x) => <span key={x.key} className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: x.color }} />{x.label}</span>)}
+              </div>
+            </div>
+            <MonthBars totals={monthlyGross} parts={monthlyGrossByChannel} series={TREND_SERIES} year={trendYear} format={formatINR} height={170} unit={(i) => `${monthlyCount[i]} bill${monthlyCount[i] === 1 ? "" : "s"}`} />
           </Card>
 
           {/* Breakdowns */}
@@ -664,7 +709,7 @@ export default function AnalyticsPage() {
               <tbody className="divide-y divide-ink-50">
                 {invProducts
                   .filter((p) => p.name.toLowerCase().includes(prodQuery.toLowerCase()))
-                  .map((p) => ({ p, sold: m.qtyByItem.get(p.name) || 0, rev: m.revByItem.get(p.name) || 0 }))
+                  .map((p) => ({ p, sold: m.qtyByProduct.get(p.id) || 0, rev: m.revByProduct.get(p.id) || 0 }))
                   .sort((a, b) => b.rev - a.rev)
                   .map(({ p, sold, rev }) => (
                     <tr key={p.id} className="text-ink-800">

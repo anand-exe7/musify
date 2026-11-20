@@ -5,7 +5,7 @@ import { useVendors } from "@/lib/store/vendors";
 import { useAllSales } from "@/lib/client/sales";
 import { fetchJson } from "@/lib/client/api";
 import { downloadCsv, stamp } from "@/lib/csv";
-import { itemHistoryRows, categoryHistoryRows, type PurchaseRecord } from "@/lib/reports/inventory";
+import { itemHistoryRows, categoryHistoryRows, type PurchaseRecord, type Party } from "@/lib/reports/inventory";
 
 export type HistoryJob =
   | { kind: "one"; id: string; name: string }
@@ -47,13 +47,17 @@ export function HistoryExport({ job, range, onDone, onError }: {
   useEffect(() => {
     if (ran.current || loading || !inwards || !ids || !invLoaded) return;
     ran.current = true;
-    const vendorName = (id: string) => vendors.find((v) => v.id === id)?.name ?? id;
+    // Name + mobile for the ledger's "Vendor / Customer" and "Mobile Number" columns.
+    const vendorParty = (id: string): Party => {
+      const v = vendors.find((x) => x.id === id);
+      return { name: v?.name ?? id, phone: v?.phone };
+    };
     if (job.kind === "category") {
-      downloadCsv(`category-purchase-sales-${stamp()}`, categoryHistoryRows(products, inwards, sales, vendorName, range));
+      downloadCsv(`category-purchase-sales-${stamp()}`, categoryHistoryRows(products, inwards, sales, vendorParty, range));
     } else if (job.kind === "one") {
-      downloadCsv(`history-${job.name.replace(/[^\w]+/g, "-").toLowerCase()}-${stamp()}`, itemHistoryRows(products, inwards, sales, vendorName, range, new Set([job.id])));
+      downloadCsv(`history-${job.name.replace(/[^\w]+/g, "-").toLowerCase()}-${stamp()}`, itemHistoryRows(products, inwards, sales, vendorParty, range, new Set([job.id])));
     } else {
-      downloadCsv(`item-purchase-sales-history-${stamp()}`, itemHistoryRows(products, inwards, sales, vendorName, range, new Set(ids)));
+      downloadCsv(`item-purchase-sales-history-${stamp()}`, itemHistoryRows(products, inwards, sales, vendorParty, range, new Set(ids)));
     }
     onDone();
   }, [loading, inwards, ids, invLoaded, products, sales, vendors, range, job, onDone]);

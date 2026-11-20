@@ -298,19 +298,12 @@ export default function BillingPage() {
     setLookup({ kind: "idle" });
   };
 
-  /** The WhatsApp message for a bill: items, GST split-up (with rates) and the public invoice link. */
+  /** The WhatsApp message for a bill: items, what was paid and the public invoice link. The tax split-up
+   *  is deliberately left out — the customer reads it on the invoice itself. */
   const billMessage = (bill: Bill, link: string) => {
     const lines = bill.items
       .map((i) => `${E.note} ${i.name} × ${i.qty} — ${formatINR(i.price * i.qty - (i.discount || 0))}${i.discount ? ` _(after ${formatINR(i.discount)} off)_` : ""}`)
       .join("\n");
-    const split = gstSummary(bill.items.map((i) => ({ gst: i.gstRate ?? 0, amount: i.price * i.qty - (i.discount || 0) })), bill.cgst ?? 0, bill.sgst ?? 0, 0);
-    const gstLines =
-      bill.gstEnabled && (bill.gst ?? 0) > 0
-        ? `${E.chart} Taxable value: ${formatINR(bill.taxable ?? 0)}\n` +
-          `${E.tag} ${taxLabel("CGST", split)}: ${formatINR(bill.cgst ?? 0)}\n` +
-          `${E.tag} ${taxLabel("SGST", split)}: ${formatINR(bill.sgst ?? 0)}\n` +
-          `${E.tag} Total GST (incl.): ${formatINR(bill.gst ?? 0)}\n`
-        : "";
     const name = bill.customerName && bill.customerName !== "Walk-in" ? ` ${bill.customerName}` : "";
     return (
       `${E.notes} *${BUSINESS.name}* ${E.notes}\n` +
@@ -318,11 +311,9 @@ export default function BillingPage() {
       `${E.receipt} *Invoice:* ${bill.id}\n` +
       `${E.calendar} *Date:* ${new Date(bill.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}\n` +
       `${E.pin} *Branch:* ${branchLabel(bill.branch)}\n\n` +
-      `${E.cart} *Your items*\n${lines}\n\n` +
-      `${E.dollar} Subtotal: ${formatINR(bill.subtotal)}\n` +
-      (bill.discount > 0 ? `${E.gift} Discount: -${formatINR(bill.discount)}\n` : "") +
+      `${E.cart} *Your items*\n${lines}\n` +
+      (bill.discount > 0 ? `\n${E.gift} Discount: -${formatINR(bill.discount)}\n` : "") +
       (bill.delivery > 0 ? `${E.truck} Delivery: ${formatINR(bill.delivery)}\n` : "") +
-      gstLines +
       `\n${E.money} *Grand Total: ${formatINR(bill.total)}*\n` +
       (bill.status === "completed" ? `${E.check} Paid${bill.payment ? ` (${bill.payment})` : ""}\n` : `${E.hourglass} Balance pending\n`) +
       `\n${E.doc} View / download your invoice:\n${link}\n\n` +

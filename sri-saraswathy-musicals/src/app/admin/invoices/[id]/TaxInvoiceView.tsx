@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Lock, Pencil, Ban } from "lucide-react";
 import type { Invoice } from "@/types";
-import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
+import { TaxInvoiceSheet, InvoicePrintStyles } from "@/components/invoice/TaxInvoiceSheet";
 import { InvoiceEditor } from "./InvoiceEditor";
 import { FulfilmentPanel } from "@/components/admin/FulfilmentPanel";
 import { OutputActions } from "@/components/print/OutputActions";
@@ -54,7 +54,7 @@ It stays on record as Cancelled (its number is never reused). If it came from a 
 
   return (
     <div className="min-h-dvh bg-ivory-100 p-5 md:p-8">
-      <style>{TAX_INVOICE_PRINT_CSS}</style>
+      <InvoicePrintStyles />
 
       {/* Toolbar. Two tiers rather than one wrapping row: where you are, then what you can do —
           otherwise "Back to ledger" and six buttons wrapped into a ragged block. */}

@@ -20,6 +20,7 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "week", label: "This Week" },
   { key: "month", label: "This Month" },
   { key: "year", label: "This Year" },
+  { key: "custom", label: "Custom" },
 ];
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -217,6 +218,8 @@ function PreviewTable({ rate, labels }: { rate: number; labels: { cgstLabel: str
 
 function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: string; igstLabel: string } }) {
   const [period, setPeriod] = useState<Period>("month");
+  // GST-03: a custom from → to window, for a filing period that is not one of the presets.
+  const [custom, setCustom] = useState<{ from?: string; to?: string }>({});
   const [branch, setBranch] = useState<BranchFilter>("all");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -242,13 +245,23 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
   const scoped = useMemo(
     () =>
       invoices.filter(
-        (inv) => (branch === "all" || inv.branch === branch) && inPeriod(inv.date, period),
+        (inv) => (branch === "all" || inv.branch === branch) && inPeriod(inv.date, period, new Date(), custom),
       ),
-    [invoices, branch, period],
+    [invoices, branch, period, custom],
   );
-  const { buckets, totals } = useMemo(() => rateWiseSummary(scoped), [scoped]);
+  /**
+   * What actually gets filed. A cancelled bill carries no output tax, and `rateWiseSummary` has always
+   * dropped it — but the CSV's invoice-wise detail was built from `scoped`, so a cancelled invoice in the
+   * period was listed underneath a summary that never counted it, and the two halves of the same filing
+   * document stopped adding up.
+   */
+  const filed = useMemo(() => scoped.filter((inv) => inv.status !== "cancelled"), [scoped]);
+  const { buckets, totals } = useMemo(() => rateWiseSummary(filed), [filed]);
 
-  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? period;
+  const periodLabel =
+    period === "custom"
+      ? `${custom.from || "start"} to ${custom.to || "today"}`
+      : (PERIODS.find((p) => p.key === period)?.label ?? period);
 
   const exportCsv = () => {
     const branchLabel = branch === "all" ? "All-Branches" : branch;
@@ -265,7 +278,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
       [],
       ["Invoice-wise detail"],
       ["Invoice No", "Date", "Branch", "Customer", "Source", "GST Rate %", "Taxable", labels.cgstLabel, labels.sgstLabel, labels.igstLabel, "Total"],
-      ...scoped.map((inv) => [
+      ...filed.map((inv) => [
         inv.number, inv.date, inv.branch, inv.customer, inv.source ?? "", invoiceRateOf(inv),
         r2(inv.subtotal), r2(inv.cgst || 0), r2(inv.sgst || 0), r2(inv.igst || 0), r2(inv.total),
       ]),
@@ -274,7 +287,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gst-summary-${branchLabel}-${period}.csv`;
+    a.download = `gst-summary-${branchLabel}-${period === "custom" ? `${custom.from || "start"}_${custom.to || "today"}` : period}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -294,6 +307,17 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
             <button key={p.key} onClick={() => setPeriod(p.key)} className={cn(pill, period === p.key ? "bg-ink-900 text-ivory-50" : "text-ink-500 hover:text-ink-900")}>{p.label}</button>
           ))}
         </div>
+        {period === "custom" && (
+          <div className="flex max-w-full flex-wrap items-center gap-2 rounded-3xl bg-ivory-50 px-3 py-2 shadow-sm ring-1 ring-ink-100">
+            <input type="date" value={custom.from ?? ""} max={custom.to || undefined} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} aria-label="From date" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none" />
+            <span className="text-xs text-ink-400">→</span>
+            <input type="date" value={custom.to ?? ""} min={custom.from || undefined} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} aria-label="To date" className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm text-ink-900 focus:border-gold-500 focus:outline-none" />
+            <span className="text-[11px] text-ink-500">{totals.count} invoice{totals.count === 1 ? "" : "s"}</span>
+            {(custom.from || custom.to) && (
+              <button onClick={() => setCustom({})} className="text-[11px] font-semibold text-ink-500 underline hover:text-ink-900">Clear</button>
+            )}
+          </div>
+        )}
         <div className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl bg-ivory-50 p-1 shadow-sm ring-1 ring-ink-100">
           <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-ink-400">Branch</span>
           {lockedBranch ? (
@@ -306,7 +330,7 @@ function CollectionsTab({ labels }: { labels: { cgstLabel: string; sgstLabel: st
         </div>
         <button
           onClick={exportCsv}
-          disabled={status !== "ready" || scoped.length === 0}
+          disabled={status !== "ready" || filed.length === 0}
           className="ml-auto flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2 text-xs font-bold uppercase tracking-wider text-ivory-50 transition-colors hover:bg-ink-800 disabled:opacity-40"
         >
           <Download className="h-3.5 w-3.5" /> Export CSV
