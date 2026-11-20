@@ -184,12 +184,19 @@ export function rupees(paise: number): string {
   return `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** BIL-05 / LED-01 / QUO-04: WhatsApp message for any document — items, GST split-up, totals and the link, with emojis. */
+/**
+ * BIL-05 / LED-01 / QUO-04: WhatsApp message for any document — items, totals and the link, with emojis.
+ *
+ * An invoice message carries no taxable-value / CGST / SGST breakdown: the customer gets the full split-up on the
+ * invoice itself (and on the link), and the shop asked for the chat message to read as a short receipt. A quotation
+ * still shows its tax lines, because the whole point of a quote is the price build-up.
+ */
 export function docWhatsAppText(doc: PrintDoc, businessName: string, link?: string): string {
   const s = gstSummary(doc.lines, doc.cgst, doc.sgst, doc.igst);
+  const showTax = doc.kind === "quotation";
   const items = doc.lines.map((l) => `${E.note} ${l.name} × ${l.qty} — ${rupees(l.amount)}`).join("\n");
   const tax =
-    s.totalTax > 0
+    showTax && s.totalTax > 0
       ? s.interState
         ? `${E.tag} ${taxLabel("IGST", s)}: ${rupees(doc.igst)}\n`
         : `${E.tag} ${taxLabel("CGST", s)}: ${rupees(doc.cgst)}\n${E.tag} ${taxLabel("SGST", s)}: ${rupees(doc.sgst)}\n${E.tag} Total GST: ${rupees(s.totalTax)}\n`
@@ -204,7 +211,7 @@ export function docWhatsAppText(doc: PrintDoc, businessName: string, link?: stri
     `${E.calendar} *Date:* ${fmtDate(doc.date)}\n` +
     (doc.meta ?? []).map((m) => `▫ ${m.label}: ${m.value}\n`).join("") +
     `\n${E.cart} *Items*\n${items}\n\n` +
-    `${E.chart} Taxable value: ${rupees(doc.subtotal)}\n` +
+    (showTax ? `${E.chart} Taxable value: ${rupees(doc.subtotal)}\n` : "") +
     tax +
     ((doc.discount ?? 0) > 0 ? `${E.gift} Discount: -${rupees(doc.discount ?? 0)}\n` : "") +
     ((doc.delivery ?? 0) > 0 ? `${E.truck} Delivery: ${rupees(doc.delivery ?? 0)}\n` : "") +

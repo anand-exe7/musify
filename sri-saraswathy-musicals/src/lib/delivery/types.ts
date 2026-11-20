@@ -43,7 +43,25 @@ export interface Zone {
   eta: string;
   /** The weight ladder, lightest first. */
   rates: RateBand[];
+  /**
+   * Paise ADDED for every extra 500 g past the heaviest band — the courier card's
+   * "every additional 500 gms upto 5 kg" column. It adds up: a 2 kg parcel on a ladder that
+   * stops at 500 g pays the 500 g band plus three of these. 0 turns the step off, and the
+   * heaviest band is then charged flat however heavy the parcel is.
+   */
+  perAddl500?: number;
+  /** Paise PER KG once the parcel is over 5 kg, replacing the step. 0 = keep stepping. */
+  above5kgPerKg?: number;
+  /** Paise PER KG once the parcel is over 10 kg. 0 = carry on at the over-5 kg rate. */
+  above10kgPerKg?: number;
 }
+
+/** The step the "every additional …" rate is charged in. */
+export const ADDL_STEP_G = 500;
+/** Where that step stops and the per-kg rate takes over — the card's "upto 5 kg". */
+export const ADDL_STEP_LIMIT_G = 5_000;
+/** Where the second per-kg rate takes over. */
+export const PER_KG_TIER_2_G = 10_000;
 
 export type MethodPricing = "zone" | "flat";
 
@@ -111,6 +129,46 @@ export function bandFor(zone: Zone | undefined, weightG: number): RateBand | und
   return ladder.find((r) => w >= r.minG && w <= r.maxG) ?? ladder[ladder.length - 1];
 }
 
+/**
+ * What the courier charges `zone` for a parcel of `weightG`, before any method surcharge.
+ *
+ * Read like the rate card pinned up behind the counter, heaviest rule first:
+ *
+ *  • over 10 kg → `above10kgPerKg` × every started kg;
+ *  • over 5 kg  → `above5kgPerKg` × every started kg;
+ *  • inside the weight ladder → that band's price;
+ *  • past the heaviest band → that band, PLUS `perAddl500` for every started 500 g beyond it.
+ *
+ * That last line is the one the bands alone could not express: the extra 500 g lots ADD UP, they
+ * are not a ceiling. A ladder ending at 500 g with a ₹30 step prices 2 kg at band + 3 × ₹30.
+ * Every add-on is optional — leave them at 0 and a zone behaves exactly as it always did, with
+ * the heaviest band charged flat.
+ */
+export function priceForWeight(zone: Zone | undefined, weightG: number): { price: number; priced: boolean } {
+  const w = Math.max(0, Math.round(weightG));
+  const startedKg = Math.max(1, Math.ceil(w / 1000));
+  // Over 10 kg falls back to the over-5 kg rate when no separate one is set.
+  const perKg =
+    w > PER_KG_TIER_2_G
+      ? (zone?.above10kgPerKg || zone?.above5kgPerKg || 0)
+      : w > ADDL_STEP_LIMIT_G
+        ? (zone?.above5kgPerKg || 0)
+        : 0;
+  if (perKg > 0) return { price: startedKg * perKg, priced: true };
+
+  const band = bandFor(zone, w);
+  if (!band) return { price: 0, priced: false };
+  if (w <= band.maxG) return { price: band.price, priced: true };
+
+  // Heavier than the whole ladder. With no step set, the heaviest band stands (the old behaviour);
+  // with one, each started 500 g past it adds another lot. No cap here on purpose — a parcel only
+  // gets this far when the per-kg rates are switched off, and under-charging it would be worse.
+  const step = zone?.perAddl500 ?? 0;
+  if (step <= 0) return { price: band.price, priced: true };
+  const lots = Math.ceil((w - band.maxG) / ADDL_STEP_G);
+  return { price: band.price + lots * step, priced: true };
+}
+
 /** What `method` costs for a parcel of `weightG` going to `zone`. */
 export function priceMethod(
   method: DeliveryMethod,
@@ -118,9 +176,8 @@ export function priceMethod(
   weightG: number,
 ): { price: number; priced: boolean } {
   if (method.pricing === "flat") return { price: Math.max(0, method.flatPrice), priced: true };
-  const band = bandFor(zone, weightG);
-  if (!band) return { price: Math.max(0, method.surcharge), priced: false };
-  return { price: Math.max(0, band.price + method.surcharge), priced: true };
+  const { price, priced } = priceForWeight(zone, weightG);
+  return { price: Math.max(0, price + method.surcharge), priced };
 }
 
 /** Grams as the admin and the customer read them: "750 g", "2.5 kg". */

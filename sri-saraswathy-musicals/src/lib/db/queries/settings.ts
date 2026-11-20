@@ -73,7 +73,18 @@ export async function updateDeliverySettings(
 /** Zones with their weight ladders, lightest band first. Two reads, joined in memory. */
 export async function getZones(): Promise<Zone[]> {
   const [zs, rs] = await Promise.all([
-    db.select({ id: deliveryZones.id, name: deliveryZones.name, states: deliveryZones.states, eta: deliveryZones.eta }).from(deliveryZones),
+    db
+      .select({
+        id: deliveryZones.id,
+        name: deliveryZones.name,
+        states: deliveryZones.states,
+        eta: deliveryZones.eta,
+        // The courier card's add-on rules, applied past the weight ladder (see `priceForWeight`).
+        perAddl500: deliveryZones.perAddl500,
+        above5kgPerKg: deliveryZones.above5kgPerKg,
+        above10kgPerKg: deliveryZones.above10kgPerKg,
+      })
+      .from(deliveryZones),
     db.select().from(deliveryRates).orderBy(asc(deliveryRates.position), asc(deliveryRates.minG)),
   ]);
   const byZone = new Map<string, RateBand[]>();
@@ -92,9 +103,14 @@ export async function getZones(): Promise<Zone[]> {
 }
 
 export async function createZone(z: Pick<Zone, "id" | "name"> & Partial<Zone>): Promise<Zone> {
-  await db.insert(deliveryZones).values({ id: z.id, name: z.name, states: z.states ?? [], eta: z.eta ?? "" });
+  const addons = {
+    perAddl500: z.perAddl500 ?? 0,
+    above5kgPerKg: z.above5kgPerKg ?? 0,
+    above10kgPerKg: z.above10kgPerKg ?? 0,
+  };
+  await db.insert(deliveryZones).values({ id: z.id, name: z.name, states: z.states ?? [], eta: z.eta ?? "", ...addons });
   if (z.rates?.length) await db.insert(deliveryRates).values(z.rates.map((r, i) => ({ ...r, zoneId: z.id, position: r.position ?? i })));
-  return { id: z.id, name: z.name, states: z.states ?? [], eta: z.eta ?? "", rates: z.rates ?? [] };
+  return { id: z.id, name: z.name, states: z.states ?? [], eta: z.eta ?? "", rates: z.rates ?? [], ...addons };
 }
 
 /** Patch a zone's own fields. The weight bands have their own endpoints — `rates` here is ignored. */

@@ -5,7 +5,7 @@ import { Printer, Receipt, FileText, Download, MessageCircle, Loader2, Plus, Ext
 import type { Invoice } from "@/types";
 import { ThermalReceipt, type ThermalWidth } from "@/components/print/ThermalReceipt";
 import { TaxInvoiceSheet, TAX_INVOICE_PRINT_CSS } from "@/components/invoice/TaxInvoiceSheet";
-import { printThermal, printIsolated, downloadSheetPdf } from "@/components/print/OutputActions";
+import { printThermal, printIsolated, printA5, downloadSheetPdf } from "@/components/print/OutputActions";
 import { invoiceToDoc } from "@/lib/print/doc";
 import { cn } from "@/lib/utils";
 import { toastError } from "@/lib/store/toast";
@@ -14,7 +14,7 @@ const BILL_THERMAL_ROOT = "bill-thermal-root";
 const BILL_A4_ROOT = "bill-a4-root";
 
 /**
- * BIL-05 / 06 / 07: what the billing screen shows after "Generate Bill". Thermal (80 / 58 mm), A4 and PDF all run
+ * BIL-05 / 06 / 07: what the billing screen shows after "Generate Bill". Thermal (80 / 58 mm), A4, A5 and PDF all run
  * right here on the billing page — the saved bill's invoice is rendered off-screen and printed in place, so no new
  * tab has to load first. WhatsApp opens the chat with the bill message.
  */
@@ -86,6 +86,10 @@ export function BillOutputPanel({
     if (!invoice) return openPage("a4");
     printIsolated(BILL_A4_ROOT, "size: A4; margin: 8mm;", "a4");
   };
+  const doA5 = () => {
+    if (!invoice) return openPage("a5");
+    printA5(BILL_A4_ROOT);
+  };
   const doPdf = async () => {
     if (!invoice) return openPage("pdf");
     setBusy("pdf");
@@ -111,7 +115,7 @@ export function BillOutputPanel({
           <Printer className="h-4 w-4 text-gold-600" /> Print — choose size
           {!ready && <span className="ml-auto flex items-center gap-1 text-[11px] font-medium text-ink-400"><Loader2 className="h-3 w-3 animate-spin" /> {saving ? "Saving…" : "Preparing…"}</span>}
         </p>
-        <div className="mt-2.5 grid grid-cols-3 gap-2">
+        <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <button onClick={() => doThermal(80)} disabled={!ready || busy !== null} className={tile}>
             {busy === "t80" ? <Loader2 className="h-5 w-5 animate-spin" /> : <Receipt className="h-5 w-5" />}Thermal 80 mm
           </button>
@@ -120,6 +124,9 @@ export function BillOutputPanel({
           </button>
           <button onClick={doA4} disabled={!ready || busy !== null} className={tile}>
             <FileText className="h-5 w-5" />A4 sheet
+          </button>
+          <button onClick={doA5} disabled={!ready || busy !== null} className={tile}>
+            <FileText className="h-5 w-5" />A5 sheet
           </button>
         </div>
       </div>

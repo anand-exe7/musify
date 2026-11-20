@@ -7,6 +7,7 @@ import {
   dispatchDeadline,
   fallbackZone,
   formatWeight,
+  priceForWeight,
   priceMethod,
   zoneForState,
   type DeliveryMethod,
@@ -37,6 +38,21 @@ const rest: Zone = {
 };
 /** A zone the admin started and never filled in — the trap that priced everything at ₹0. */
 const halfMade: Zone = { id: "wip", name: "New zone", states: [], eta: "", rates: [] };
+
+/**
+ * The courier card in the photo on the shop wall, as a zone: ≤250 g ₹50, ≤500 g ₹60,
+ * +₹30 for every further 500 g to 5 kg, then ₹50/kg over 5 kg and ₹40/kg over 10 kg.
+ */
+const card: Zone = {
+  id: "chennai",
+  name: "Chennai",
+  states: ["Tamil Nadu"],
+  eta: "1–2 days",
+  rates: [band(0, 250, 5000, 0), band(251, 500, 6000, 1)],
+  perAddl500: 3000,
+  above5kgPerKg: 5000,
+  above10kgPerKg: 4000,
+};
 
 const method = (over: Partial<DeliveryMethod> = {}): DeliveryMethod => ({
   id: "standard",
@@ -172,5 +188,58 @@ describe("daysUntil", () => {
     expect(daysUntil(null, now)).toBeNull();
     expect(daysUntil(undefined, now)).toBeNull();
     expect(daysUntil("not a date", now)).toBeNull();
+  });
+});
+
+describe("priceForWeight — the courier rate card", () => {
+  it("charges the band inside the ladder", () => {
+    expect(priceForWeight(card, 1).price).toBe(5000);
+    expect(priceForWeight(card, 250).price).toBe(5000);
+    expect(priceForWeight(card, 251).price).toBe(6000);
+    expect(priceForWeight(card, 500).price).toBe(6000);
+  });
+
+  it("ADDS a lot for every started 500 g past the heaviest band", () => {
+    expect(priceForWeight(card, 501).price).toBe(6000 + 3000); // into the first extra lot
+    expect(priceForWeight(card, 1000).price).toBe(6000 + 3000);
+    expect(priceForWeight(card, 1001).price).toBe(6000 + 6000);
+    expect(priceForWeight(card, 2000).price).toBe(6000 + 9000); // 3 lots
+    expect(priceForWeight(card, 5000).price).toBe(6000 + 27000); // 9 lots, the top of the step
+  });
+
+  it("switches to the per-kg rate over 5 kg, and the cheaper one over 10 kg", () => {
+    expect(priceForWeight(card, 5001).price).toBe(6 * 5000); // 6 started kg at ₹50
+    expect(priceForWeight(card, 7000).price).toBe(7 * 5000);
+    expect(priceForWeight(card, 10000).price).toBe(10 * 5000);
+    expect(priceForWeight(card, 10001).price).toBe(11 * 4000); // 11 started kg at ₹40
+    expect(priceForWeight(card, 12000).price).toBe(12 * 4000);
+  });
+
+  it("carries the over-5 kg rate past 10 kg when no second rate is set", () => {
+    expect(priceForWeight({ ...card, above10kgPerKg: 0 }, 12000).price).toBe(12 * 5000);
+  });
+
+  it("keeps stepping past 5 kg when no per-kg rate is set", () => {
+    const stepOnly = { ...card, above5kgPerKg: 0, above10kgPerKg: 0 };
+    expect(priceForWeight(stepOnly, 6000).price).toBe(6000 + 11 * 3000);
+  });
+
+  it("leaves a zone with no add-ons exactly as it was — heaviest band, charged flat", () => {
+    expect(priceForWeight(tn, 300).price).toBe(6000);
+    expect(priceForWeight(tn, 50_000).price).toBe(15000);
+    expect(priceForWeight(halfMade, 300)).toEqual({ price: 0, priced: false });
+    expect(priceForWeight(undefined, 300).priced).toBe(false);
+  });
+
+  it("prices a heavy parcel from the per-kg rate even with no bands at all", () => {
+    const perKgOnly: Zone = { id: "x", name: "x", states: [], eta: "", rates: [], above5kgPerKg: 5000 };
+    expect(priceForWeight(perKgOnly, 8000)).toEqual({ price: 8 * 5000, priced: true });
+    expect(priceForWeight(perKgOnly, 800).priced).toBe(false); // nothing covers the light end
+  });
+
+  it("reaches checkout through priceMethod, surcharge and all", () => {
+    expect(priceMethod(method(), card, 2000).price).toBe(15000);
+    expect(priceMethod(method({ surcharge: 2500 }), card, 2000).price).toBe(17500);
+    expect(priceMethod(method({ pricing: "flat", flatPrice: 50000 }), card, 12000).price).toBe(50000);
   });
 });

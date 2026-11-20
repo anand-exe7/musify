@@ -30,7 +30,27 @@ function muteOtherPageRules(keep: HTMLStyleElement): () => void {
   };
 }
 
-function isolationCss(page: string): string {
+/**
+ * A5 is 148 mm wide against A4's 210. Printing the same sheet onto it with no scaling only narrows the
+ * columns — the type stays A4-sized, the table reflows and the bill runs onto a second small page. Zooming
+ * the whole sheet by the width ratio instead gives a true half-size copy of the A4 document.
+ *
+ * Only `zoom` is set. Under the standard `zoom` behaviour a percentage resolves against the containing block
+ * converted into the zoomed element's own coordinate space, so `width: 100%` (set just above, for every print)
+ * already lays the sheet out at A4 width and paints it at A5 width. An extra `width: 100% / scale` on top of
+ * that — which is what the first cut did — made it twice as wide, and the invoice ran off the right of the page.
+ * Lengths in mm are scaled too, so a sheet that fills 279mm of A4 fills 197mm of A5 by itself.
+ *
+ * The scale is MULTIPLIED into `--fit-zoom` rather than replacing it. On an invoice page the print root is the
+ * invoice sheet itself, which already sets `zoom: var(--fit-zoom)` to squeeze a long bill onto one page; an
+ * `!important` zoom here would throw that away and the bill would spill onto a second A5 page. Sheets that set
+ * no `--fit-zoom` fall back to 1 and are simply scaled.
+ */
+const A5_SCALE = 148 / 210;
+
+function isolationCss(page: string, mode: PrintMode): string {
+  const fit = mode === "a5" ? `
+  [data-print-root] { zoom: calc(var(--fit-zoom, 1) * ${A5_SCALE.toFixed(4)}) !important; }` : "";
   return `
 @media print {
   html, body {
@@ -81,16 +101,19 @@ function isolationCss(page: string): string {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  [data-print-root] .no-print { display: none !important; }
+  [data-print-root] .no-print { display: none !important; }${fit}
   @page { ${page} }
 }`;
 }
+
+/** The paper a sheet is going onto. Mirrored onto `<html data-print-mode>`. */
+export type PrintMode = "a4" | "a5" | "thermal";
 
 /**
  * Print `#rootId` on its own, at the given `@page` size. `mode` is mirrored onto
  * `<html data-print-mode>` so sheets can restyle themselves for the paper they are going onto.
  */
-export function printElement(rootId: string, page: string, mode: "a4" | "thermal" = "a4") {
+export function printElement(rootId: string, page: string, mode: PrintMode = "a4") {
   const root = document.getElementById(rootId);
   if (!root) {
     window.print();
@@ -106,7 +129,7 @@ export function printElement(rootId: string, page: string, mode: "a4" | "thermal
 
   const style = document.createElement("style");
   style.setAttribute("data-isolated-print", mode);
-  style.textContent = isolationCss(page);
+  style.textContent = isolationCss(page, mode);
   document.body.appendChild(style);
   const unmute = muteOtherPageRules(style);
   document.documentElement.dataset.printMode = mode;

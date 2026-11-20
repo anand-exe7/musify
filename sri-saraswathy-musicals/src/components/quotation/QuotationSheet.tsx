@@ -11,9 +11,22 @@ export const QUOTATION_PRINT_CSS = `
   body * { visibility: hidden !important; }
   #quotation-sheet, #quotation-sheet * { visibility: visible !important; }
   #quotation-sheet { position: absolute; left: 0; top: 0; width: 100%; margin: 0; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
-  @page { margin: 12mm; }
 }
 `;
+
+/** The page size, in a style element of its own — see the note on `TAX_INVOICE_PAGE_CSS`: an isolated print
+ *  (A5, say) mutes every other `@page` rule, and the layout above must survive that. */
+export const QUOTATION_PAGE_CSS = `@media print { @page { margin: 12mm; } }`;
+
+/** Both print stylesheets for a page whose own Ctrl+P should produce the quotation. */
+export function QuotationPrintStyles() {
+  return (
+    <>
+      <style>{QUOTATION_PRINT_CSS}</style>
+      <style>{QUOTATION_PAGE_CSS}</style>
+    </>
+  );
+}
 
 function fmtDate(d: string) {
   const date = new Date(d);

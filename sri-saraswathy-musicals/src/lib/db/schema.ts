@@ -794,8 +794,14 @@ export const deliveryZones = pgTable("delivery_zones", {
   /** Legacy flat rate — kept for backwards-compat; ignored when tier fields are set. */
   charge: integer("charge").notNull().default(0),
   eta: text("eta").notNull().default(""),
+  /** Superseded by the `delivery_rates` bands, which cover the light end of the card. */
   uptoGm250: integer("upto_gm_250").notNull().default(0),
   uptoGm500: integer("upto_gm_500").notNull().default(0),
+  /**
+   * The rest of the courier's rate card, which weight bands cannot express on their own because
+   * these ADD UP rather than cap: paise for every started 500 g past the heaviest band, then a
+   * per-kg rate over 5 kg and another over 10 kg. 0 switches a rule off. See `priceForWeight`.
+   */
   perAddl500: integer("per_addl_500").notNull().default(0),
   above5kgPerKg: integer("above_5kg_per_kg").notNull().default(0),
   above10kgPerKg: integer("above_10kg_per_kg").notNull().default(0),
@@ -804,7 +810,9 @@ export const deliveryZones = pgTable("delivery_zones", {
 /**
  * One courier weight band inside a zone: "0–500 g costs ₹60". The admin adds as many bands per zone
  * as the courier's tariff has, so nothing about the slabs is hard-coded any more (the old fixed
- * ≤250 g / ≤500 g / each-extra-500 g columns on `delivery_zones` are superseded by these rows).
+ * ≤250 g / ≤500 g columns on `delivery_zones` are superseded by these rows; the add-on rules
+ * beside them — per extra 500 g, and per kg over 5 / 10 kg — are still live and apply past the
+ * heaviest band).
  * `maxG` null means "and heavier" — the open-ended top band.
  */
 export const deliveryRates = pgTable("delivery_rates", {
